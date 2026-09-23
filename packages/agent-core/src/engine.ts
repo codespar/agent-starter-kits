@@ -14,6 +14,7 @@
 import { checkApprovalArtifact, createApprovalArtifact, type ApprovalSigner } from "./approval.js";
 import type { ProofBundle } from "./bundle.js";
 import { evaluateEscalation, type Escalation } from "./escalate.js";
+import { PAYMENT_FAILED, PAYMENT_SUCCEEDED } from "./events.js";
 import type { Guardrails } from "./guardrails.js";
 import { itemsHash, sha256Hex } from "./hash.js";
 import { newId } from "./ids.js";
@@ -354,12 +355,12 @@ export class ExecutionEngine {
   }
 
   private async ingestSettlement(execution: Execution, index: number, payment: RailPayment, receiptId: string | null): Promise<void> {
-    // The rail's answer is the `commerce.payment.settled` event of section 4.3, keyed by attempt so a replay is a no-op.
+    // The rail's answer is the `commerce.payment.succeeded` event the API publishes (section 4.3), keyed by attempt so a replay is a no-op.
     const appended = this.deps.store.appendEvent({
       run_id: this.deps.runId,
       execution_id: execution.id,
-      event_id: `settled:${payment.attempt_id}`,
-      type: "commerce.payment.settled",
+      event_id: `succeeded:${payment.attempt_id}`,
+      type: PAYMENT_SUCCEEDED,
       payload: { attempt_id: payment.attempt_id, amount: payment.amount_minor, payee: payment.payee, receipt_id: receiptId, actor: this.agentActor },
       at: this.clock().toISOString(),
     });
@@ -462,8 +463,8 @@ export class ExecutionEngine {
     if (execution.outcomes.some((o) => o.index === index)) return { applied: false, reason: "attempt already has an outcome" };
 
     let outcome: ItemOutcome;
-    if (event.type === "commerce.payment.settled") outcome = { index, attempt_id: event.attempt_id, status: "settled" };
-    else if (event.type === "commerce.payment.failed") outcome = { index, attempt_id: event.attempt_id, status: "failed", error: `event ${event.event_id}` };
+    if (event.type === PAYMENT_SUCCEEDED) outcome = { index, attempt_id: event.attempt_id, status: "settled" };
+    else if (event.type === PAYMENT_FAILED) outcome = { index, attempt_id: event.attempt_id, status: "failed", error: `event ${event.event_id}` };
     else return { applied: false, reason: `event type ${event.type} moves nothing` };
 
     const closed = this.close({ ...(execution as Execution<"executing">), outcomes: [...execution.outcomes, outcome] }, attempts.length);

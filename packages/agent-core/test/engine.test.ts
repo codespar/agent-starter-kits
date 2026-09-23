@@ -228,7 +228,7 @@ describe("section 10: idempotency, restart, reconcile", () => {
     expect(readdirSync(join(resumed.bundle.dir, "receipts"))).toHaveLength(1);
     // Exactly one attempt reached the rail, ever.
     expect(resumed.store.stubRailGet(`att_${stuck.idempotency_key.slice(4)}_0`)).toBeDefined();
-    const events = resumed.store.listEvents({ execution_id: stuck.id }).filter((e) => e.type === "commerce.payment.settled");
+    const events = resumed.store.listEvents({ execution_id: stuck.id }).filter((e) => e.type === "commerce.payment.succeeded");
     expect(events).toHaveLength(1);
   });
 
@@ -256,11 +256,11 @@ describe("section 10: idempotency, restart, reconcile", () => {
     const flaky = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { uncertainOnce: [attempt] } });
     const stuck = await flaky.engine.execute(d.execution.id);
     expect(stuck.state).toBe("executing");
-    const paid = { event_id: "evt_paid_1", type: "commerce.payment.settled", attempt_id: attempt };
+    const paid = { event_id: "evt_paid_1", type: "commerce.payment.succeeded", attempt_id: attempt };
     expect(flaky.engine.ingestExternalEvent(paid)).toEqual({ applied: true, reason: "settled" });
     expect(flaky.engine.ingestExternalEvent(paid)).toEqual({ applied: false, reason: "duplicate event id" });
     expect(flaky.engine.ingestExternalEvent({ event_id: "evt_created_late", type: "commerce.payment.created", attempt_id: attempt })).toMatchObject({ applied: false });
-    expect(flaky.engine.ingestExternalEvent({ event_id: "evt_paid_2", type: "commerce.payment.settled", attempt_id: attempt })).toMatchObject({ applied: false, reason: "execution already settled" });
+    expect(flaky.engine.ingestExternalEvent({ event_id: "evt_paid_2", type: "commerce.payment.succeeded", attempt_id: attempt })).toMatchObject({ applied: false, reason: "execution already settled" });
     expect(flaky.store.getExecution(stuck.id)!.state).toBe("settled");
     expect(flaky.store.listEvents({ execution_id: stuck.id }).filter((e) => e.type === "execution.transition" && (e.payload as { to: string }).to === "settled")).toHaveLength(1);
   });
@@ -418,11 +418,11 @@ describe("a multi-item execution closes only when every attempt has its outcome 
     const flaky = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { uncertainOnce: [a0, a1] } });
     const stuck = await flaky.engine.execute(d.execution.id);
     expect(stuck.state).toBe("executing");
-    expect(flaky.engine.ingestExternalEvent({ event_id: "e0", type: "commerce.payment.settled", attempt_id: a0 })).toMatchObject({ applied: true });
+    expect(flaky.engine.ingestExternalEvent({ event_id: "e0", type: "commerce.payment.succeeded", attempt_id: a0 })).toMatchObject({ applied: true });
     expect(flaky.store.getExecution(stuck.id)!.state).toBe("executing");
     expect(flaky.store.getOutbox(stuck.idempotency_key)!.status).toBe("sent");
-    expect(flaky.engine.ingestExternalEvent({ event_id: "e0", type: "commerce.payment.settled", attempt_id: a0 })).toMatchObject({ applied: false, reason: "duplicate event id" });
-    expect(flaky.engine.ingestExternalEvent({ event_id: "e1", type: "commerce.payment.settled", attempt_id: a1 })).toEqual({ applied: true, reason: "settled" });
+    expect(flaky.engine.ingestExternalEvent({ event_id: "e0", type: "commerce.payment.succeeded", attempt_id: a0 })).toMatchObject({ applied: false, reason: "duplicate event id" });
+    expect(flaky.engine.ingestExternalEvent({ event_id: "e1", type: "commerce.payment.succeeded", attempt_id: a1 })).toEqual({ applied: true, reason: "settled" });
     expect(flaky.store.getExecution(stuck.id)!.state).toBe("settled");
     expect(flaky.store.getOutbox(stuck.idempotency_key)!.status).toBe("done");
   });

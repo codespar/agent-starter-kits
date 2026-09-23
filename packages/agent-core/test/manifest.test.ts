@@ -12,11 +12,11 @@ escalate_above:
   new_beneficiary: true
   outside_hours: "22:00-07:00"
 mcp: "@codespar/mcp@0.5.8"
-cli: "@codespar/cli@0.12.1"
+cli: "@codespar/cli@0.13.0"
 tools: ./tools.json
 guardrails: ./guardrails.json
 mandate_schema: ./mandate.example.json
-events: [commerce.payment.settled, commerce.payment.failed]
+events: [commerce.payment.succeeded, commerce.payment.failed]
 channels: [terminal]
 maturity:
   pix-out: sandbox
@@ -36,7 +36,7 @@ describe("section 4.3: agent.yaml schema 1", () => {
 
   it("refuses an unpinned mcp or cli, a wrong schema, and an unknown field", () => {
     expect(() => parseManifest(valid.replace('"@codespar/mcp@0.5.8"', '"@codespar/mcp"'))).toThrow(/mcp/);
-    expect(() => parseManifest(valid.replace('"@codespar/cli@0.12.1"', '"@codespar/cli@latest"'))).toThrow(/cli/);
+    expect(() => parseManifest(valid.replace('"@codespar/cli@0.13.0"', '"@codespar/cli@latest"'))).toThrow(/cli/);
     expect(() => parseManifest(valid.replace("schema: 1", "schema: 2"))).toThrow();
     expect(() => parseManifest(valid + "telemetry: true\n")).toThrow(/unrecognized/i);
     expect(() => parseManifest(valid.replace("default_approval: human", "default_approval: mandate").replace("approval: [human, mandate]", "approval: [human]"))).toThrow(/default_approval/);

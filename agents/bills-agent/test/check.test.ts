@@ -65,6 +65,16 @@ describe("npm run check: the manifest is the index", () => {
     expect(codes(dir)).toContain("env_example_extra");
   });
 
+  it("fails when agent.yaml declares an event the API does not publish; the charge family the collections-agent declares passes", () => {
+    const dir = copyAgent();
+    const manifest = join(dir, "agent.yaml");
+    writeFileSync(manifest, readFileSync(manifest, "utf8").replace("commerce.payment.succeeded", "commerce.payment.settled"));
+    const report = checkAgent(dir);
+    expect(report.findings.filter((f) => f.code === "events_unknown").map((f) => f.message)).toEqual([expect.stringContaining("commerce.payment.settled")]);
+    writeFileSync(manifest, readFileSync(manifest, "utf8").replace("[commerce.payment.settled, commerce.payment.failed]", "[commerce.charge.paid, commerce.charge.expired]"));
+    expect(codes(dir)).toEqual([]);
+  });
+
   it("fails when eval.yaml does not extend the manifest or redeclares a field", () => {
     const dir = copyAgent();
     writeFileSync(join(dir, "evals", "eval.yaml"), "extends: ../agent.yaml\nname: other\n");

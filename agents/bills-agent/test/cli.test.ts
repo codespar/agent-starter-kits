@@ -71,7 +71,7 @@ describe("section 10: restart in executing, then resume", () => {
 
     const db2 = new DatabaseSync(join(stateDir, "state.db"));
     expect((db2.prepare("SELECT COUNT(*) AS n FROM stub_rail_attempts").get() as { n: number }).n).toBe(1);
-    expect((db2.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'commerce.payment.settled'").get() as { n: number }).n).toBe(1);
+    expect((db2.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'commerce.payment.succeeded'").get() as { n: number }).n).toBe(1);
     expect(db2.prepare("SELECT state FROM executions").all()).toEqual([{ state: "settled" }]);
     db2.close();
 

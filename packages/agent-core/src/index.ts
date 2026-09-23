@@ -15,6 +15,7 @@ export * from "./bundle.js";
 export * from "./engine.js";
 export * from "./agent.js";
 export * from "./check.js";
+export * from "./events.js";
 export * from "./state/store.js";
 export * from "./stubs/agentgate.js";
 export * from "./stubs/rail.js";
