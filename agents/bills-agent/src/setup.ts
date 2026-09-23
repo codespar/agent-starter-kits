@@ -140,7 +140,9 @@ export function setup(options: SetupOptions = {}): Setup {
   } else {
     // BILLS_KILL_AFTER_DISPATCH=1 simulates a crash right after the rail accepted the attempt and before the outcome was recorded.
     const killAfterDispatch = env["BILLS_KILL_AFTER_DISPATCH"] === "1" ? { afterDispatch: () => process.exit(137) } : {};
-    rail = new StubRail(store, { ...(options.now ? { clock: options.now } : {}), ...killAfterDispatch, ...(options.stubRail ?? {}) });
+    // BILLS_STUB_REFUSE=<payee,payee>: the stub rail refuses these payees, to drive a partial failure from a test process.
+    const refuse = env["BILLS_STUB_REFUSE"] ? { refusePayees: env["BILLS_STUB_REFUSE"].split(",").map((p) => p.trim()).filter(Boolean) } : {};
+    rail = new StubRail(store, { ...(options.now ? { clock: options.now } : {}), ...killAfterDispatch, ...refuse, ...(options.stubRail ?? {}) });
     mandate = options.mandate ?? loadMandate(manifest.resolvePath(manifest.manifest.mandate_schema));
   }
 

@@ -151,3 +151,27 @@ describe("npm run approve / deny <execution-id>", () => {
     db.close();
   });
 });
+
+describe("partial failure of a multi-item execution, and rerun reproducing it", () => {
+  it("names what settled and what failed, and rerun replays the rail's refusal", () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "bills-partial-"));
+    const runsDir = join(stateDir, "runs");
+    const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir, BILLS_STUB_REFUSE: "+5511999990001" };
+    const first = run("src/main.ts", ["--input", "libera o lote do mes", "--transcript", "evals/adversarial/false-authority.transcript.jsonl", "--approve", "--json"], env);
+    expect(first.code).toBe(0);
+    const payload = JSON.parse(first.stdout.trim()) as { run_id: string; executions: Array<{ state: string; receipt_ids: string[] }>; receipts: string[] };
+    expect(payload.executions[0]?.state).toBe("failed");
+    expect(payload.executions[0]?.receipt_ids).toHaveLength(1);
+    expect(payload.receipts).toHaveLength(1);
+    const events = readFileSync(join(runsDir, payload.run_id, "events.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; payload: { status?: string } });
+    expect(events.filter((e) => e.type === "rail.outcome").map((e) => e.payload.status)).toEqual(["settled", "failed"]);
+
+    const rerun = run("src/commands/rerun.ts", [payload.run_id, "--json"], { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir });
+    expect(rerun.code).toBe(0);
+    const r = JSON.parse(rerun.stdout.trim()) as { same_states: boolean; original: string[]; rerun: string[]; original_outcomes: string[]; rerun_outcomes: string[] };
+    expect(r.same_states).toBe(true);
+    expect(r.original).toEqual(["awaiting_approval", "approved", "executing", "failed"]);
+    expect(r.original_outcomes).toEqual(["settled", "failed"]);
+    expect(r.rerun_outcomes).toEqual(["settled", "failed"]);
+  });
+});
