@@ -40,7 +40,7 @@ Out of this delivery: WhatsApp, batch payouts, `npm run inspect`, the `codespar 
 | Command | Does |
 |---|---|
 | `npm start` | Interactive terminal. With a test key and no mandate yet, starts the consent first. |
-| `npm start -- --input "pague a escola de outubro" [--approve] [--json]` | One turn, no prompt. `--json`: machine data on stdout, people on stderr. Without `ANTHROPIC_API_KEY` it replays the recorded happy-path. |
+| `npm start -- --input "pague a escola de outubro" [--approve] [--json]` | One turn, no prompt. `--json`: machine data on stdout, people on stderr. Without `ANTHROPIC_API_KEY` it replays the recorded happy-path. To pipe the JSON, add npm's `--silent` (`npm start -s -- --input ... --json \| jq .`): npm itself prints the script banner on stdout. |
 | `npm start -- --scenario <name> [--mode human\|mandate]` | A scenario pack from `scenarios/`. |
 | `npm run check` | The manifest gate: fails if the prompt, tools or guardrails contradict `agent.yaml`, if `AGENTS.md` and `CLAUDE.md` differ, or if `mcp`, `cli` or `schema` are missing. |
 | `npm run eval` | The adversarial suite (`evals/adversarial/`) and every scenario in every mode, on the replay provider. |
