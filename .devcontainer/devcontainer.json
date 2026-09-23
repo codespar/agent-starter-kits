@@ -1,0 +1,36 @@
+{
+  "name": "CodeSpar Agent Starter Kits",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm",
+  "waitFor": "postCreateCommand",
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postAttachCommand": "bash .devcontainer/quick-path.sh",
+  "secrets": {
+    "CODESPAR_API_KEY": {
+      "description": "Test key from https://dashboard.codespar.dev (starts with csk_test_). A live key is refused. Set it as a Codespaces secret, never in a committed file.",
+      "documentationUrl": "https://github.com/codespar/agent-starter-kits#quickstart-clone-to-first-receipt"
+    },
+    "ANTHROPIC_API_KEY": {
+      "description": "Optional. From https://console.anthropic.com. Leave it unset to replay the recorded happy path.",
+      "documentationUrl": "https://github.com/codespar/agent-starter-kits#quickstart-clone-to-first-receipt"
+    },
+    "CODESPAR_API_URL": {
+      "description": "Staging keys only: https://api.staging.codespar.dev. A production key needs nothing here.",
+      "documentationUrl": "https://github.com/codespar/agent-starter-kits/blob/main/docs/OPEN_QUESTIONS.md"
+    }
+  },
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "4gb"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [],
+      "settings": {
+        "files.exclude": {
+          "**/node_modules": true
+        }
+      }
+    }
+  },
+  "remoteUser": "node"
+}
