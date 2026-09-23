@@ -10,9 +10,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "declaration": true,
-    "sourceMap": true,
-    "composite": true,
+    "noEmit": true,
     "types": ["node"]
   }
 }

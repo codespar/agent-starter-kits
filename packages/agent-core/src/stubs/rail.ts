@@ -34,11 +34,19 @@ export class StubRail implements PaymentRail {
     this.uncertainPending = new Set(options.uncertainOnce ?? []);
   }
 
+  private uncertainArmed = false;
+
+  /** The NEXT new attempt answers `uncertain` once, whatever its id. For scenarios that reconcile. */
+  armUncertainOnce(): void {
+    this.uncertainArmed = true;
+  }
+
   async pay(payment: RailPayment): Promise<RailOutcome> {
     const existing = this.store.stubRailGet(payment.attempt_id);
     if (existing) return existing.outcome as RailOutcome;
 
-    if (this.uncertainPending.has(payment.attempt_id)) {
+    if (this.uncertainArmed || this.uncertainPending.has(payment.attempt_id)) {
+      this.uncertainArmed = false;
       this.uncertainPending.delete(payment.attempt_id);
       return { status: "uncertain", code: "psp_dispatch_uncertain", message: "stub: outcome unknown on first presentation" };
     }

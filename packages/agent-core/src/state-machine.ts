@@ -133,12 +133,14 @@ export function transition<S extends ExecutionState, T extends NextState<S>>(
     ...(input.reason ? { reason: input.reason } : {}),
     ...(input.detail ? { detail: input.detail } : {}),
   };
+  // `reason`/`detail` describe the LATEST transition; a step without one clears what the previous step left.
+  const { reason: _reason, detail: _detail, ...rest } = execution;
   return {
-    ...execution,
+    ...rest,
     state: to,
     ...(input.reason ? { reason: input.reason } : {}),
     ...(input.detail ? { detail: input.detail } : {}),
     history: [...execution.history, record],
     updated_at: input.at,
-  };
+  } as Execution<T>;
 }
