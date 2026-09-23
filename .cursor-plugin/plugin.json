@@ -1,0 +1,6 @@
+{
+  "name": "codespar-core",
+  "description": "The CodeSpar MCP (pinned @codespar/mcp@0.5.8), the codespar-agent-builder skill (skills/) and the rule that points at the repository's AGENTS.md (rules/). Build agents that pay under a mandate, with approval and a receipt.",
+  "version": "0.1.0",
+  "author": { "name": "CodeSpar", "url": "https://codespar.dev" }
+}

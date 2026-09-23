@@ -15,7 +15,7 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "start": "npm start --workspace=agents/bills-agent --",
     "consent": "npm run consent --workspace=agents/bills-agent --",
-    "check": "npm run check --workspaces --if-present --",
+    "check": "node scripts/check-plugin.mjs && npm run check --workspaces --if-present --",
     "test": "vitest run --pool=forks --maxWorkers=1",
     "typecheck": "tsc --noEmit -p packages/agent-core/tsconfig.json && tsc --noEmit -p agents/bills-agent/tsconfig.json && tsc --noEmit -p agents/collections-agent/tsconfig.json",
     "secret-scan": "node scripts/secret-scan.mjs",

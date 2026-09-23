@@ -1,0 +1,13 @@
+---
+description: CodeSpar agents pay under a mandate, with approval and a receipt. Read the repository's AGENTS.md before editing an agent; use the codespar-agent-builder skill to create one.
+alwaysApply: true
+---
+
+You are working with CodeSpar Agent Starter Kits (`codespar/agent-starter-kits`).
+
+- Read `AGENTS.md` at the repository root first, then the `AGENTS.md` of the agent you are editing (`agents/<name>/AGENTS.md`). `agent.yaml` is the index; `SYSTEM_PROMPT.md`, `tools.json`, `guardrails.json` and `mandate.example.json` must agree with it.
+- To create a new agent, follow the `codespar-agent-builder` skill (`skills/codespar-agent-builder/SKILL.md`) end to end.
+- The model proposes, the code executes: nothing you write may let a model output reach `executing` outside `ExecutionEngine` in `@codespar/agent-core`.
+- Only `csk_test_` keys. Never commit `.env`, `.codespar/` or `runs/`.
+- Before saying a task is done: `npm run check`, `npm run eval --workspace=agents/<name>`, `npm run typecheck`, `npm test`. All green, or it is not done.
+- Use the CodeSpar MCP (`mcp.json`, pinned `@codespar/mcp@0.5.8`) to learn the real API; when the spec and the API diverge, follow the API and log it in `docs/OPEN_QUESTIONS.md`.

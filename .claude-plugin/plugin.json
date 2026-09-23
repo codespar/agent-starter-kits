@@ -1,0 +1,29 @@
+{
+  "name": "codespar-core",
+  "displayName": "CodeSpar Core",
+  "version": "0.1.0",
+  "description": "The CodeSpar MCP (pinned @codespar/mcp@0.5.8) and the codespar-agent-builder skill: build agents that pay under a mandate, with approval and a receipt. The repository's AGENTS.md carries the rules.",
+  "author": {
+    "name": "CodeSpar",
+    "url": "https://codespar.dev"
+  },
+  "homepage": "https://codespar.dev/agents",
+  "repository": "https://github.com/codespar/agent-starter-kits",
+  "license": "MIT",
+  "keywords": [
+    "codespar",
+    "pix",
+    "mandate",
+    "agent",
+    "mcp",
+    "latam"
+  ],
+  "skills": "./skills/",
+  "metadata": {
+    "agentsMd": "./AGENTS.md",
+    "mcp": "./.mcp.json",
+    "spec": "./docs/spec-v5.1.1.md"
+  },
+  "agents": [],
+  "commands": []
+}

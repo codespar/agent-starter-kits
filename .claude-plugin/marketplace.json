@@ -1,0 +1,15 @@
+{
+  "name": "codespar",
+  "owner": { "name": "CodeSpar", "url": "https://codespar.dev" },
+  "metadata": { "description": "CodeSpar Agent Starter Kits: agents that pay under a mandate, with approval and a receipt." },
+  "plugins": [
+    {
+      "name": "codespar-core",
+      "source": "./",
+      "description": "The CodeSpar MCP (pinned) and the codespar-agent-builder skill; the repository's AGENTS.md carries the rules.",
+      "version": "0.1.0",
+      "category": "development",
+      "keywords": ["codespar", "pix", "mandate", "agent", "mcp"]
+    }
+  ]
+}
