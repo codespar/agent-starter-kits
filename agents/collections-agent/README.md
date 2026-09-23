@@ -1,17 +1,26 @@
 # collections-agent
 
-The merchant's agent that collects. The payer answers the message about an open agreement; the agent proposes terms inside a negotiation envelope (discount ceiling, instalments, due-date window, collection hours); on acceptance the code issues one bolepix per instalment with an idempotency key, shows the QR and the copy-and-paste in the conversation, and closes the cycle when `commerce.charge.paid` or `commerce.charge.expired` arrives: "recebemos, acordo quitado". Terminal first; WhatsApp later.
+[![rail: bolepix](https://img.shields.io/badge/rail-bolepix-2E8B57)](agent.yaml) [![maturity: sandbox](https://img.shields.io/badge/maturity-sandbox-orange)](agent.yaml) [![approval: human | mandate](https://img.shields.io/badge/approval-human_%7C_mandate-555)](agent.yaml) [![charge → settled: 10 s](https://img.shields.io/badge/charge_%E2%86%92_settled-10_s-8A2BE2)](#quickstart)
 
-```
+The merchant's collections agent. A customer replies about an open debt; the agent proposes terms inside a negotiation envelope (maximum discount, number of instalments, due-date window, collection hours), and once the customer accepts, the code issues one bolepix per instalment, shows the QR code and the copy-and-paste Pix code in the chat, and closes the loop when the charge is paid or expires. Terminal for now; WhatsApp later.
+
+## Quickstart
+
+Node 22.13+ and a sandbox key (`csk_test_...`) from [codespar.dev/auth/signup](https://codespar.dev/auth/signup). No money moves: a sandbox payer plays the customer's bank.
+
+```sh
 git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits
-cp agents/collections-agent/.env.example agents/collections-agent/.env   # CODESPAR_API_KEY (csk_test_...) and ANTHROPIC_API_KEY
-npm install && npm start --workspace=agents/collections-agent
+cp agents/collections-agent/.env.example agents/collections-agent/.env   # paste your csk_test_ key
+npm install                                                              # at the repo root (npm workspace)
+npm run start:collections
 pagador> oi, recebi a mensagem sobre o acordo do pedido 1042
 ```
 
-`npm install` runs at the repository root (it is an npm workspace). You type as the payer; the operator's approval, in `human` mode, is asked on the same keyboard and labelled `[operador]`.
+You type as the customer. In `human` mode the operator's approval is asked on the same keyboard, labelled `[operador]`. Without a real `ANTHROPIC_API_KEY` (empty or the `.env.example` placeholder) the agent replays the recorded scenario.
 
-## What it proves
+Scaffold instead of cloning: `npx -y @codespar/cli@0.14.0 init my-agent --template collections-agent`.
+
+## What it shows
 
 | Contract | How |
 |---|---|
@@ -45,7 +54,7 @@ Read from `agent.yaml`, field `maturity`:
 
 What the agent applies on its own (`guardrails.json`): the envelope (15% maximum discount, up to 3 instalments, due dates within 90 days, R$ 50,00 minimum instalment, collection hours 08:00–20:00 in America/Sao_Paulo), the escalation threshold (R$ 3.000,00 per agreement in `mandate`), and "the core's total wins" when the model states another.
 
-Out of this delivery: WhatsApp, a policy signed by the API for the receiving side (section 16 of the spec: candidate to product), `npm run inspect`, the `codespar init --template` scaffold.
+Not in this kit yet: WhatsApp, a policy signed by the API for the receiving side (section 16 of the spec, candidate to product), `npm run inspect`.
 
 ## Commands
 
@@ -78,12 +87,12 @@ run.json                mode, rail, policy id
 
 No key and no secret is written there. Documents are masked; the payer's document is never in a message.
 
-## What this README declares
+## Limits and stubs
 
 - A policy for the receiving side, signed by the organization, does not exist in the API; the collection policy is the merchant's own file (`mandate.example.json`, in the shape of the consumer mandate, where the named entries are the debtors with an open agreement) and the envelope is the kit's code. Candidate to product (section 16 of the spec).
 - The approval artifact is signed by HMAC with a **local development key** (`.codespar/approval.key`). This is a stub: the CodeSpar API does not sign approval lists today. It proves what was approved to whoever runs the agent.
 - The API seals no record for a paid charge. The bundle keeps the paid charge as the API reports it, with `simulated: true` when the sandbox payer paid it. Nothing here is proof to anyone outside the merchant.
-- Revocation and the kill switch run against a **local stub** of the AgentGate (`packages/agent-core/src/stubs/agentgate.ts`); the collection policy has no API-side status to read.
+- Revocation and the kill switch run against a **local stub** (`LocalMandateStatusStub` in `packages/agent-core/src/stubs/mandate-status.ts`); the collection policy has no API-side status to read.
 - The `actor` of every call is carried locally on every event, approval and record copy. The API has no `actor` field on the wire today.
 - Collection over WhatsApp has rules: hours, secrecy of the debt, no embarrassment, LGPD. The prompt codifies them; the envelope enforces the hours; the code never sends a document.
 - CodeSpar does not host or run this agent. The repository delivers it; whoever runs it, runs it.

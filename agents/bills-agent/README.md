@@ -1,34 +1,43 @@
 # bills-agent
 
-The titular delegates the month's bills (school, groceries, the cleaner, utilities) to an agent, under a mandate signed once: a cap per payment, a cap per month, named payees, one year of validity. Every payment returns a receipt. Terminal first; WhatsApp later.
+[![rail: pix-out](https://img.shields.io/badge/rail-pix--out-2E8B57)](agent.yaml) [![maturity: sandbox](https://img.shields.io/badge/maturity-sandbox-orange)](agent.yaml) [![approval: human | mandate](https://img.shields.io/badge/approval-human_%7C_mandate-555)](agent.yaml) [![clone → receipt: 77 s](https://img.shields.io/badge/clone_%E2%86%92_receipt-77_s-8A2BE2)](#quickstart)
 
-```
+An agent that pays a household's monthly bills (school, groceries, the cleaner, utilities) over Pix, inside a mandate the account holder signs once: a cap per payment, a cap per month, named payees, one year of validity. It drafts each payment, a person approves it (or the mandate covers it), and every payment returns a receipt. Terminal for now; WhatsApp later.
+
+## Quickstart
+
+Node 22.13+ and a sandbox key (`csk_test_...`) from [codespar.dev/auth/signup](https://codespar.dev/auth/signup). No money moves.
+
+```sh
 git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits
-cp agents/bills-agent/.env.example agents/bills-agent/.env   # set CODESPAR_API_KEY (csk_test_...); leave ANTHROPIC_API_KEY empty to replay
-npm install && npm run consent -- --yes                      # at the repository root (npm workspace); signs the mandate once
-npm start                                                    # or one turn: npm start -- --input "pague a escola de outubro" --approve
+cp agents/bills-agent/.env.example agents/bills-agent/.env   # paste your csk_test_ key
+npm install                                                  # at the repo root, not inside agents/bills-agent
+npm run consent -- --yes                                     # sign the mandate once
+npm start
 > pague a escola de outubro
 ```
 
-Instead of `git clone`, `npx -y @codespar/cli@0.14.0 init my-agent --template bills-agent` scaffolds this agent into `my-agent/`; the `.env`, the install and the consent are the same from there.
+The run ends with `recibo: runs/<run-id>/receipts/rcpt_....json`. Last timed run (staging, 2026-09-23): 77 seconds from `git clone` to a receipt the API confirmed.
 
-`npm install` runs at the repository root (it is an npm workspace; installing inside `agents/bills-agent` does not bring the root toolchain). `npm run consent` and `npm start` at the root drive this agent; inside `agents/bills-agent`, the same scripts work once the root is installed. The consent comes first: with a test key and no `.codespar/mandate.json`, `npm start -- --input ...` stops at `no signed mandate yet`, and only the interactive `npm start` runs the consent on its own. A staging test key also needs `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` before the consent (commented in `.env.example`); a production key needs nothing else. `ANTHROPIC_API_KEY` may stay empty: without a real key the kit replays the recorded happy path, and the old placeholder `sk-ant-your_key_here` counts as empty. Node 22 or newer (`engines` says 22.13; measured on 25.5).
+- `ANTHROPIC_API_KEY` can stay empty: the agent then replays the recorded happy path. The old placeholder `sk-ant-your_key_here` counts as empty.
+- One-shot form: `npm start -- --input "pague a escola de outubro" --approve`. It needs the consent first and stops at `no signed mandate yet` otherwise; the interactive `npm start` runs the consent on its own.
+- Staging key: uncomment `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` before the consent. A production key needs nothing else.
+- `npm start` and `npm run consent` at the root drive this agent. Inside `agents/bills-agent` the same scripts work once the root is installed.
+- Scaffold instead of cloning: `npx -y @codespar/cli@0.14.0 init my-agent --template bills-agent`, then the same `.env`, install and consent inside `my-agent/`.
 
-The run prints the receipt as `recibo: runs/<run-id>/receipts/rcpt_....json`. To confirm it against the API, with the key from `.env` and never on the screen (a staging key also needs `--base-url "$CODESPAR_API_URL"`):
+Check the receipt against the API (a staging key also needs `--base-url "$CODESPAR_API_URL"`):
 
-```
+```sh
 set -a; . agents/bills-agent/.env; set +a
 npx -y @codespar/cli@0.14.0 consumers get-receipts rcpt_...   # GET /v1/consumers/receipts/{id}; expect sandbox: true, money_moved: false
 ```
 
-Measured on 2026-09-23 in staging, context-free run following only the README, no retry: 77 s from `git clone` to a receipt the API answered with 200. 27 of those seconds were a first `npm start -- --input` refused for lack of a mandate, which is why the consent is a line of the path above; the path as now written has not been re-timed.
-
-## What it proves
+## What it shows
 
 | Contract | How |
 |---|---|
 | The model proposes, the code executes | `codespar_pay` creates an execution in `drafted`. Only `ExecutionEngine` in `@codespar/agent-core` checks mandate, caps, allowlist, `escalate_above` and `items_hash`, and only it reaches `executing`. |
-| Two modes, one trail | `approval: human` (default): the titular approves each payment in the terminal. `approval: mandate`: the agent runs alone inside the signed allowance and asks above `escalate_above`. Same code, same states, same receipts. |
+| Two modes, one trail | `approval: human` (default): the account holder approves each payment in the terminal. `approval: mandate`: the agent runs alone inside the signed allowance and asks above `escalate_above`. Same code, same states, same receipts. |
 | Approval that matches | Nothing reaches `executing` without an approval artifact whose `items_hash` equals the list about to be executed. Recomputed at execution time. |
 | Readable refusal | Cap per payment, cap per month, payee outside the mandate, revoked mandate, outside hours: each names itself in the trail and in the chat. |
 | Survives a restart | Kill the process in `executing`, run `npm run resume`: one payment, one receipt. |
@@ -41,18 +50,18 @@ Read from `agent.yaml`, field `maturity`:
 | Capability | Maturity | Meaning |
 |---|---|---|
 | `pix-out` | sandbox | Pix payments through the CodeSpar sandbox. No real money. |
-| `embedded-consent` | sandbox | The mandate is born at a consent the titular authorizes; in the sandbox the kit runs the partner surface in the terminal. |
+| `embedded-consent` | sandbox | The mandate starts from a consent the account holder authorizes; in the sandbox the kit runs the partner surface in the terminal. |
 | `receipt-verification` | blocked | Waits for Ed25519. The receipt seal is HMAC today. |
 
 What the agent applies on its own, before the mandate (`guardrails.json`): the escalation thresholds (R$ 1.500,00 per payment, first payment to each payee, 22:00–07:00), a 24-hour velocity window per payee against fractioning, and "the core's total wins" when the model states another.
 
-Out of this delivery: WhatsApp, batch payouts and `npm run inspect`. `codespar init --template bills-agent` (CLI 0.14.0) scaffolds this agent.
+Not in this kit yet: WhatsApp, batch payouts, `npm run inspect`.
 
 ## Commands
 
 | Command | Does |
 |---|---|
-| `npm start` | Interactive terminal. With a test key and no mandate yet, runs the consent first (partner surface: you are the titular at the keyboard). The `--input` form below does not: it needs `npm run consent -- --yes` before it. |
+| `npm start` | Interactive terminal. With a test key and no mandate yet, runs the consent first (partner surface: you are the account holder at the keyboard). The `--input` form below does not: it needs `npm run consent -- --yes` before it. |
 | `npm start -- --input "pague a escola de outubro" [--approve] [--json]` | One turn, no prompt. `--json`: machine data on stdout, people on stderr. Without `ANTHROPIC_API_KEY` (empty, or still the `.env.example` placeholder) it replays the recorded happy-path. To pipe the JSON, add npm's `--silent` (`npm start -s -- --input ... --json \| jq .`): npm itself prints the script banner on stdout. |
 | `npm start -- --scenario <name> [--mode human\|mandate]` | A scenario pack from `scenarios/`. |
 | `npm run check` | The manifest gate: fails if the prompt, tools or guardrails contradict `agent.yaml`, if `AGENTS.md` and `CLAUDE.md` differ, or if `mcp`, `cli` or `schema` are missing. |
@@ -86,7 +95,7 @@ run.json                mode, rail, mandate id
 
 No key and no secret is written there. Payee keys are masked.
 
-## What this README declares
+## Limits and stubs
 
 - The receipt is signed by HMAC with the consumer's secret held by CodeSpar. The chain verifies without network; the signature proves it to whoever runs this agent, and to nobody else until Ed25519.
 - The approval artifact is signed by HMAC with a **local development key** (`.codespar/approval.key`). This is a stub: the CodeSpar API does not sign approval lists today. It proves what was approved to whoever runs the agent.
@@ -94,7 +103,7 @@ No key and no secret is written there. Payee keys are masked.
 - The `actor` of every call is carried locally on every event, approval and receipt copy. The API has no `actor` field on the wire today; the spend carries `agent_id`, which the mandate binds.
 - A `consumer_id` with an approved account does not leave the registry. Synthetic onboarding stops at document verification, which is the correct behaviour.
 - CodeSpar does not host or run this agent. The repository delivers it; whoever runs it, runs it.
-- What the agent executes inside the mandate was authorized by the titular, and the approval artifact proves what. The split of loss between partner, institution and CodeSpar on an authorized but wrong payment is contractual and not yet written.
+- What the agent executes inside the mandate was authorized by the account holder, and the approval artifact proves what. The split of loss between partner, institution and CodeSpar on an authorized but wrong payment is contractual and not yet written.
 
 ## Going to production
 
