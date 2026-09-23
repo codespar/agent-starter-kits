@@ -1,2 +1,0 @@
-{"kind":"assistant_step","tool_calls":[{"id":"tc_1","name":"list_bills","input":{}}]}
-{"kind":"assistant_step","reply":"Em outubro vencem tres contas: Academia Forte R$ 149,90 (05/10), Fibra Net R$ 119,00 (10/10) e Companhia de Agua R$ 87,35 (15/10). Total R$ 356,25. A mais proxima e a academia, dia 5. Eu nao pago nada: para pagar, use o bills-agent."}

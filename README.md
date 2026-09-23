@@ -31,7 +31,7 @@ Measured on 2026-09-23 in staging, context-free run following only the README, n
 | [`docs/spec-v5.1.1.md`](docs/spec-v5.1.1.md) | The spec this wave was built against. |
 | [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) | Where the spec and the API diverged, what the code does, what is a stub. Input for v5.2. |
 | [`skills/codespar-agent-builder`](skills/codespar-agent-builder) | The skill that teaches a coding agent to add `agents/<name>`: anatomy, `agent.yaml`, prompt, tools, guardrails, scenarios, adversarial cases, gates. Proven by `hello-agent` (docs/OPEN_QUESTIONS.md, item 33). |
-| `.claude-plugin/`, `.cursor-plugin/`, `.agents/plugins/`, `plugin.json`, `mcp.json`, `rules/` | The `codespar-core` plugin (section 14.1): the pinned CodeSpar MCP plus the skill, one manifest per coding agent. See [Install the plugin](#install-the-plugin-in-your-coding-agent). |
+| `.claude-plugin/`, `.cursor-plugin/`, `.agents/plugins/`, `plugin.json`, `mcp.json` (= `.mcp.json`), `rules/` | The `codespar-core` plugin (section 14.1): the pinned CodeSpar MCP plus the skill, one manifest per coding agent. See [Install the plugin](#install-the-plugin-in-your-coding-agent). |
 | [`AGENTS.md`](AGENTS.md) (= `CLAUDE.md`) | The rules for a coding agent working anywhere in this tree; each agent adds its own. |
 
 ## Install the plugin in your coding agent
@@ -40,12 +40,12 @@ The repository is also the `codespar-core` plugin: the CodeSpar MCP pinned at `@
 
 | Coding agent | Reads | Install |
 |---|---|---|
-| Claude Code | `.claude-plugin/marketplace.json`, `.claude-plugin/plugin.json` | `/plugin marketplace add codespar/agent-starter-kits`, then `/plugin install codespar-core@codespar` |
+| Claude Code | `.claude-plugin/marketplace.json`, `.claude-plugin/plugin.json`, `.mcp.json`, `skills/` | `/plugin marketplace add codespar/agent-starter-kits`, then `/plugin install codespar-core@codespar` |
 | Codex | `.agents/plugins/marketplace.json`, `plugin.json` (Agent Plugins standard), `mcp.json` | `codex plugin marketplace add codespar/agent-starter-kits` |
 | Cursor | `.cursor-plugin/plugin.json`, `skills/`, `rules/`, `mcp.json` | Dashboard → Plugins & MCPs → Import from Repo, or Customize → Install |
 | Any other | `skills/codespar-agent-builder/SKILL.md` | `npx skills add codespar/agent-starter-kits` |
 
-`npm run check` validates the manifests before the agents: JSON that parses, every referenced path present, the skill's frontmatter, the MCP pin equal to the one in `agents/bills-agent/agent.yaml`, and the root `AGENTS.md` equal to `CLAUDE.md`.
+`npm run check` validates the manifests before the agents: JSON that parses, every referenced path present, the skill's frontmatter, the MCP pin equal to the one in `agents/bills-agent/agent.yaml`, `mcp.json` equal to `.mcp.json` (the same file, spelled for two loaders), and the root `AGENTS.md` equal to `CLAUDE.md`.
 
 ## The one rule
 

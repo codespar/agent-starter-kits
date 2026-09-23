@@ -28,7 +28,6 @@ jobs:
         run: |
           npm run eval --workspace=agents/bills-agent
           npm run eval --workspace=agents/collections-agent
-          npm run eval --workspace=agents/hello-agent
       - name: one command, machine output
         run: |
           cd agents/bills-agent

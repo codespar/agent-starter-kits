@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const PLUGIN_NAME = "codespar-core";
-const MANIFESTS = [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".cursor-plugin/plugin.json", "plugin.json", "mcp.json", ".agents/plugins/marketplace.json"];
+const MANIFESTS = [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".cursor-plugin/plugin.json", "plugin.json", "mcp.json", ".mcp.json", ".agents/plugins/marketplace.json"];
 const SKILLS_DIR = "skills";
 const RULES_DIR = "rules";
 const AGENTS_MD = "AGENTS.md";
@@ -71,7 +71,10 @@ export function checkPlugin(root = ROOT) {
   const claudePlugin = docs[".claude-plugin/plugin.json"];
   if (claudePlugin && claudePlugin.skills !== undefined && !String(claudePlugin.skills).startsWith(`./${SKILLS_DIR}`)) error("manifest_skills", `.claude-plugin/plugin.json must point skills at ./${SKILLS_DIR}/`);
 
-  // The MCP is the pinned one, and the pin is the manifest's.
+  // The MCP is the pinned one, and the pin is the manifest's. Two spellings of one file: `mcp.json` is the Agent
+  // Plugins standard (Codex, Cursor); `.mcp.json` is the default Claude Code loads (measured 2026-09-23: neither the
+  // `mcpServers` path field nor an inline object registered the server; the dotfile did).
+  if (docs["mcp.json"] && docs[".mcp.json"] && read("mcp.json") !== read(".mcp.json")) error("mcp_split", "mcp.json and .mcp.json differ; they are the same file spelled for two loaders");
   const mcp = docs["mcp.json"];
   if (mcp) {
     const servers = mcp.mcpServers;

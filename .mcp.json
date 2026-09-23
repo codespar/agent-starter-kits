@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "codespar": {
+      "command": "npx",
+      "args": ["-y", "@codespar/mcp@0.5.8"]
+    }
+  }
+}

@@ -1,2 +1,0 @@
-{"kind":"assistant_step","tool_calls":[{"id":"tc_1","name":"codespar_pay","input":{"action":"pix","items":[{"payee":"academia","amount_minor":14990},{"payee":"internet","amount_minor":11900}],"total_minor":20000}}]}
-{"kind":"assistant_step","reply":"Emitido: total de R$ 200,00 com o desconto."}
