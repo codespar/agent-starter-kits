@@ -37,6 +37,15 @@ describe("npm start -- --input ... --json", () => {
     expect(out.stderr).toContain("replay");
   });
 
+  it("replays when ANTHROPIC_API_KEY still holds the .env.example placeholder", () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "bills-placeholder-"));
+    const out = run("src/main.ts", ["--input", "pague a escola de outubro", "--approve", "--json"], { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs"), ANTHROPIC_API_KEY: "sk-ant-your_key_here" });
+    expect(out.code).toBe(0);
+    expect(out.stderr).toContain("[replay] no ANTHROPIC_API_KEY");
+    const payload = JSON.parse(out.stdout.trim()) as { executions: Array<{ state: string }> };
+    expect(payload.executions.map((e) => e.state)).toEqual(["settled"]);
+  });
+
   it("refuses a key outside csk_test_ before anything else", () => {
     const stateDir = mkdtempSync(join(tmpdir(), "bills-live-"));
     const out = run("src/main.ts", ["--input", "pague a escola de outubro", "--json"], { BILLS_STATE_DIR: stateDir, CODESPAR_API_KEY: ["csk", "live", "0000000000"].join("_") });

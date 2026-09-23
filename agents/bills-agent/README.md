@@ -4,12 +4,22 @@ The titular delegates the month's bills (school, groceries, the cleaner, utiliti
 
 ```
 git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits
-cp agents/bills-agent/.env.example agents/bills-agent/.env   # CODESPAR_API_KEY (csk_test_...) and ANTHROPIC_API_KEY
-npm install && npm start                                     # at the repository root: it is an npm workspace
+cp agents/bills-agent/.env.example agents/bills-agent/.env   # set CODESPAR_API_KEY (csk_test_...); leave ANTHROPIC_API_KEY empty to replay
+npm install && npm run consent -- --yes                      # at the repository root (npm workspace); signs the mandate once
+npm start                                                    # or one turn: npm start -- --input "pague a escola de outubro" --approve
 > pague a escola de outubro
 ```
 
-`npm install` runs at the repository root (it is an npm workspace; installing inside `agents/bills-agent` does not bring the root toolchain). `npm start` at the root opens this agent; inside `agents/bills-agent`, the same scripts work once the root is installed. A staging test key also needs `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` (commented in `.env.example`); a production key needs nothing else.
+`npm install` runs at the repository root (it is an npm workspace; installing inside `agents/bills-agent` does not bring the root toolchain). `npm run consent` and `npm start` at the root drive this agent; inside `agents/bills-agent`, the same scripts work once the root is installed. The consent comes first: with a test key and no `.codespar/mandate.json`, `npm start -- --input ...` stops at `no signed mandate yet`, and only the interactive `npm start` runs the consent on its own. A staging test key also needs `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` before the consent (commented in `.env.example`); a production key needs nothing else. `ANTHROPIC_API_KEY` may stay empty: without a real key the kit replays the recorded happy path, and the old placeholder `sk-ant-your_key_here` counts as empty. Node 22 or newer (`engines` says 22.13; measured on 25.5).
+
+The run prints the receipt as `recibo: runs/<run-id>/receipts/rcpt_....json`. To confirm it against the API, with the key from `.env` and never on the screen (a staging key also needs `--base-url "$CODESPAR_API_URL"`):
+
+```
+set -a; . agents/bills-agent/.env; set +a
+npx -y @codespar/cli@0.13.0 consumers get-receipts rcpt_...   # GET /v1/consumers/receipts/{id}; expect sandbox: true, money_moved: false
+```
+
+Measured on 2026-09-23 in staging, context-free run following only the README, no retry: 77 s from `git clone` to a receipt the API answered with 200. 27 of those seconds were a first `npm start -- --input` refused for lack of a mandate, which is why the consent is a line of the path above; the path as now written has not been re-timed.
 
 ## What it proves
 
@@ -40,8 +50,8 @@ Out of this delivery: WhatsApp, batch payouts, `npm run inspect`, and a kit temp
 
 | Command | Does |
 |---|---|
-| `npm start` | Interactive terminal. With a test key and no mandate yet, runs the consent first (partner surface: you are the titular at the keyboard). |
-| `npm start -- --input "pague a escola de outubro" [--approve] [--json]` | One turn, no prompt. `--json`: machine data on stdout, people on stderr. Without `ANTHROPIC_API_KEY` it replays the recorded happy-path. To pipe the JSON, add npm's `--silent` (`npm start -s -- --input ... --json \| jq .`): npm itself prints the script banner on stdout. |
+| `npm start` | Interactive terminal. With a test key and no mandate yet, runs the consent first (partner surface: you are the titular at the keyboard). The `--input` form below does not: it needs `npm run consent -- --yes` before it. |
+| `npm start -- --input "pague a escola de outubro" [--approve] [--json]` | One turn, no prompt. `--json`: machine data on stdout, people on stderr. Without `ANTHROPIC_API_KEY` (empty, or still the `.env.example` placeholder) it replays the recorded happy-path. To pipe the JSON, add npm's `--silent` (`npm start -s -- --input ... --json \| jq .`): npm itself prints the script banner on stdout. |
 | `npm start -- --scenario <name> [--mode human\|mandate]` | A scenario pack from `scenarios/`. |
 | `npm run check` | The manifest gate: fails if the prompt, tools or guardrails contradict `agent.yaml`, if `AGENTS.md` and `CLAUDE.md` differ, or if `mcp`, `cli` or `schema` are missing. |
 | `npm run eval` | The adversarial suite (`evals/adversarial/`) and every scenario in every mode, on the replay provider. |
@@ -49,7 +59,7 @@ Out of this delivery: WhatsApp, batch payouts, `npm run inspect`, and a kit temp
 | `npm run resume` | After a crash: dispatches only what the outbox proves was never sent, reconciles the rest from the rail, expires what went stale. Never pays twice. |
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches. |
 | `npm run reconcile` | Compares local state with the rail. Closes an `executing` execution only from a recorded rail outcome; what the rail has not answered yet stays `executing` with an `execution.uncertain` event, for a human. Never dispatches. |
-| `npm run consent [--yes]` | Runs a new consent for a mandate (test key, partner surface). The signed envelope is stored in `.codespar/mandate.json`, mode 0600. |
+| `npm run consent -- --yes` | Runs a new consent for a mandate (test key, partner surface); without `--yes` it asks at the keyboard. The signed envelope is stored in `.codespar/mandate.json`, mode 0600. The first thing to run after `.env`: `npm start -- --input` needs it. |
 
 The same through the CLI `agent.yaml` pins (`cli: "@codespar/cli@0.13.0"`; the lines match its `--help`):
 
