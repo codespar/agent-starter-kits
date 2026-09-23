@@ -45,9 +45,10 @@ Out of this delivery: WhatsApp, batch payouts, `npm run inspect`, the `codespar 
 | `npm start -- --scenario <name> [--mode human\|mandate]` | A scenario pack from `scenarios/`. |
 | `npm run check` | The manifest gate: fails if the prompt, tools or guardrails contradict `agent.yaml`, if `AGENTS.md` and `CLAUDE.md` differ, or if `mcp`, `cli` or `schema` are missing. |
 | `npm run eval` | The adversarial suite (`evals/adversarial/`) and every scenario in every mode, on the replay provider. |
-| `npm run resume` | After a crash: reconciles what was `executing`, expires what went stale. Never pays twice. |
+| `npm run approve <execution-id>` / `npm run deny <execution-id>` | The human decision of `human` mode, as its own command: decides an execution left in `awaiting_approval` (a `--input` run without `--approve`, a restart), writes the section 4.2 artifact and runs it through the same last gate `npm start` uses. |
+| `npm run resume` | After a crash: dispatches only what the outbox proves was never sent, reconciles the rest from the rail, expires what went stale. Never pays twice. |
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches. |
-| `npm run reconcile` | Compares local state with the rail. |
+| `npm run reconcile` | Compares local state with the rail. Closes an `executing` execution only from a recorded rail outcome; what the rail has not answered yet stays `executing` with an `execution.uncertain` event, for a human. Never dispatches. |
 | `npm run consent [--yes]` | Runs a new consent for a mandate (test key, partner surface). The signed envelope is stored in `.codespar/mandate.json`, mode 0600. |
 
 ## The proof bundle
