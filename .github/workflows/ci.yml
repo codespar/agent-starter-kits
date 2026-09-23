@@ -33,10 +33,12 @@ jobs:
           cd agents/bills-agent
           npm start --silent -- --input "pague a escola de outubro" --approve --json > /tmp/out.json
           node -e 'const o=JSON.parse(require("fs").readFileSync("/tmp/out.json","utf8")); if(o.executions[0].state!=="settled"||o.receipts.length!==1||!o.actor) process.exit(1)'
-      - name: the receivable cycle closes in one command (stub rail, fixture payer)
+      # Pinned instant: the collection-hours guardrail (08:00-20:00 America/Sao_Paulo) and the fixture's due date read the
+      # engine clock, and the wall clock made this gate red between 20:00 and 08:00 (#16).
+      - name: the receivable cycle closes in one command (stub rail, fixture payer, pinned clock)
         run: |
           cd agents/collections-agent
-          npm start --silent -- --input "fechado, pago à vista" --transcript test/fixtures/accept-1042.transcript.jsonl --approve --simulate-payer --json > /tmp/coll.json
+          npm start --silent -- --input "fechado, pago à vista" --transcript test/fixtures/accept-1042.transcript.jsonl --approve --simulate-payer --json --now 2026-09-23T14:00:00-03:00 > /tmp/coll.json
           node -e 'const o=JSON.parse(require("fs").readFileSync("/tmp/coll.json","utf8")); if(o.executions[0].state!=="settled"||o.executions[0].charges.length!==1||o.receipts.length!==1||!o.actor) process.exit(1)'
       - name: tests (core + agent, including restart and rerun)
         run: npm test

@@ -8,7 +8,7 @@
  */
 import { stderr, stdout } from "node:process";
 import { relative, resolve } from "node:path";
-import { NotATestKeyError, isTestKey } from "@codespar/agent-core";
+import { FIXED_CLOCK_ENV, NotATestKeyError, isTestKey, resolveFixedClock } from "@codespar/agent-core";
 import { closeTerminal, defaultAsk, handleExecution, interactive } from "../channels/terminal/index.js";
 import { runEmbeddedConsent, loadLocalMandate } from "./modules/embedded-consent.js";
 import { checkScenario, listScenarios, loadScenario, runScenario, scenariosDir } from "./scenarios.js";
@@ -25,6 +25,8 @@ interface Args {
   transcript?: string;
   rail?: RailKind;
   user: string;
+  /** ISO 8601 instant the run is pinned to (the guardrails read it instead of the wall clock). */
+  now?: string;
   help: boolean;
 }
 
@@ -57,6 +59,7 @@ export function parseArgs(argv: string[]): Args {
       if (v !== "stub" && v !== "api") throw new Error("--rail must be stub or api");
       args.rail = v;
     } else if (a === "--user") args.user = next();
+    else if (a === "--now") args.now = next();
     else if (a === "--help" || a === "-h") args.help = true;
     else throw new Error(`unknown argument ${a}`);
   }
@@ -67,7 +70,8 @@ const USAGE = `bills-agent
   npm start                                         interactive terminal
   npm start -- --input "pague a escola de outubro"  one turn (add --approve/--deny to decide, --json for machine output)
   npm start -- --scenario <name>                    run a scenario pack (${"see scenarios/"})
-options: --mode human|mandate  --provider anthropic|replay  --transcript <file>  --rail stub|api  --user <id>  --json`;
+options: --mode human|mandate  --provider anthropic|replay  --transcript <file>  --rail stub|api  --user <id>  --json
+         --now <ISO 8601>  pin the run to that instant (escalation hours, timestamps); env ${FIXED_CLOCK_ENV} is the same thing`;
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   let args: Args;
@@ -83,6 +87,15 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   }
   readDotEnv();
   const say = (line: string) => stderr.write(line + "\n");
+
+  // A pinned instant makes the guardrails deterministic: `outside_hours` reads it instead of the wall clock.
+  let now: (() => Date) | undefined;
+  try {
+    now = resolveFixedClock(args.now, process.env);
+  } catch (err) {
+    stderr.write(`${err instanceof Error ? err.message : String(err)}\n${USAGE}\n`);
+    return 2;
+  }
 
   if (args.scenario) return runScenarioCommand(args, say);
 
@@ -116,7 +129,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     }
   }
 
-  const s = setup({ mode: args.mode, rail: railKind, provider, transcript, say });
+  const s = setup({ mode: args.mode, rail: railKind, provider, transcript, now, say });
   const approver = { id: args.user, channel: "terminal" };
   try {
     const runtime = s.makeRuntime();

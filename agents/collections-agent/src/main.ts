@@ -8,7 +8,7 @@
  */
 import { stderr, stdout } from "node:process";
 import { relative, resolve } from "node:path";
-import { NotATestKeyError, isTestKey } from "@codespar/agent-core";
+import { FIXED_CLOCK_ENV, NotATestKeyError, isTestKey, resolveFixedClock } from "@codespar/agent-core";
 import { closeTerminal, handleExecution, interactive } from "../channels/terminal/index.js";
 import { checkScenario, listScenarios, loadScenario, runScenario, scenariosDir } from "./scenarios.js";
 import { readDotEnv, resolveRailKind, setup, type RailKind } from "./setup.js";
@@ -26,6 +26,8 @@ interface Args {
   wait?: number;
   simulatePayer: boolean;
   payer?: "pays" | "expires" | "never";
+  /** ISO 8601 instant the run is pinned to (the guardrails read it instead of the wall clock). */
+  now?: string;
   help: boolean;
 }
 
@@ -67,7 +69,8 @@ export function parseArgs(argv: string[]): Args {
       const v = next();
       if (v !== "pays" && v !== "expires" && v !== "never") throw new Error("--payer must be pays, expires or never");
       args.payer = v;
-    } else if (a === "--help" || a === "-h") args.help = true;
+    } else if (a === "--now") args.now = next();
+    else if (a === "--help" || a === "-h") args.help = true;
     else throw new Error(`unknown argument ${a}`);
   }
   return args;
@@ -78,7 +81,8 @@ const USAGE = `collections-agent
   npm start -- --input "oi, recebi a mensagem do acordo 1042"    one turn (add --approve/--deny to decide, --json for machine output)
   npm start -- --scenario <name>                               run a scenario pack (see scenarios/)
 options: --mode human|mandate  --provider anthropic|replay  --transcript <file>  --rail stub|api  --user <id>
-         --wait <seconds>  --simulate-payer  --payer pays|expires|never (stub only)  --json`;
+         --wait <seconds>  --simulate-payer  --payer pays|expires|never (stub only)  --json
+         --now <ISO 8601>  pin the run to that instant (collection hours, due dates, timestamps); env ${FIXED_CLOCK_ENV} is the same thing`;
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   let args: Args;
@@ -94,6 +98,15 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   }
   readDotEnv();
   const say = (line: string) => stderr.write(line + "\n");
+
+  // A pinned instant makes the guardrails deterministic: the CI runs the fixture inside collection hours whatever the hour is.
+  let now: (() => Date) | undefined;
+  try {
+    now = resolveFixedClock(args.now, process.env);
+  } catch (err) {
+    stderr.write(`${err instanceof Error ? err.message : String(err)}\n${USAGE}\n`);
+    return 2;
+  }
 
   // Sandbox by construction: a live key dies here, before anything else runs.
   const railKind = resolveRailKind(process.env, args.rail);
@@ -116,7 +129,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     }
   }
 
-  const s = setup({ mode: args.mode, rail: railKind, provider, transcript, say });
+  const s = setup({ mode: args.mode, rail: railKind, provider, transcript, now, say });
   if (args.payer) s.payer.behave(args.payer);
   const approver = { id: args.user, channel: "terminal" };
   const started = Date.now();

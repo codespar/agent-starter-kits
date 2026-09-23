@@ -7,6 +7,7 @@ export * from "./manifest.js";
 export * from "./guardrails.js";
 export * from "./mandate.js";
 export * from "./escalate.js";
+export * from "./clock.js";
 export * from "./secrets.js";
 export * from "./revocation.js";
 export * from "./rail.js";
