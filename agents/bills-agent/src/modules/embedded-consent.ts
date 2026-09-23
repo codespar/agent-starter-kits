@@ -8,7 +8,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ApiClient } from "@codespar/sdk";
-import { MandateSchema, type Mandate, describeApiError } from "@codespar/agent-core";
+import { MandateSchema, windowCap, type Mandate, describeApiError } from "@codespar/agent-core";
 
 export interface ConsentOptions {
   api: ApiClient;
@@ -104,10 +104,10 @@ export async function runEmbeddedConsent(options: ConsentOptions): Promise<Manda
   throw new Error("consent not signed in time; run `npm run consent` to start again");
 }
 
-/** Section 15 of the spec: the sandbox account is credited so the first spend has a balance. */
+/** The sandbox account is credited with one window's cap, so the first spend has a balance. */
 export async function fundSandbox(api: ApiClient, mandate: Mandate, say: (line: string) => void): Promise<void> {
   try {
-    const funded = await api.post("/v1/test/fund", { body: { consumer_id: mandate.consumer_id, amount_minor: mandate.cap_minor } });
+    const funded = await api.post("/v1/test/fund", { body: { consumer_id: mandate.consumer_id, amount_minor: windowCap(mandate) } });
     say(`Sandbox creditado: ${funded.amount_minor} centavos em ${funded.account} (deposit ${funded.deposit_id}).`);
   } catch (err) {
     const f = describeApiError(err);

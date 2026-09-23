@@ -49,6 +49,10 @@ export const MandateSchema = z
     if (m.per_tx_cap_minor > m.cap_minor) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["per_tx_cap_minor"], message: "per_tx_cap_minor cannot exceed cap_minor" });
     }
+    // The API's own rule (`periodic_cap_never_binds`): the window cap must sit below the lifetime cap, or it is a limit the consumer was shown and never enforced.
+    if (m.periodic_cap && m.periodic_cap.cap_minor >= m.cap_minor) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["periodic_cap", "cap_minor"], message: "periodic_cap.cap_minor must be below cap_minor (the lifetime cap)" });
+    }
     for (const [i, b] of m.beneficiaries.entries()) {
       if (!m.merchant_allowlist.includes(b.payee)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["beneficiaries", i, "payee"], message: `payee ${b.payee} is not in merchant_allowlist` });

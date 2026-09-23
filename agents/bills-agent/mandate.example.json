@@ -5,9 +5,12 @@
   "agent_id": "bills-agent",
   "purpose": "contas do mes",
   "currency": "BRL",
-  "cap_minor": 600000,
+  "cap_minor": 7200000,
   "per_tx_cap_minor": 250000,
-  "periodic_cap": { "window": "month", "cap_minor": 600000 },
+  "periodic_cap": {
+    "window": "month",
+    "cap_minor": 600000
+  },
   "merchant_pin_kind": "pix-key",
   "merchant_allowlist": [
     "financeiro@escola-aurora.example.com.br",
@@ -16,10 +19,26 @@
     "cobranca@energia.example.com.br"
   ],
   "beneficiaries": [
-    { "alias": "escola", "name": "Escola Aurora", "payee": "financeiro@escola-aurora.example.com.br" },
-    { "alias": "mercado", "name": "Mercado do Bairro", "payee": "+5511999990001" },
-    { "alias": "funcionaria", "name": "Maria (diarista)", "payee": "12345678909" },
-    { "alias": "contas", "name": "Energia (conta de luz)", "payee": "cobranca@energia.example.com.br" }
+    {
+      "alias": "escola",
+      "name": "Escola Aurora",
+      "payee": "financeiro@escola-aurora.example.com.br"
+    },
+    {
+      "alias": "mercado",
+      "name": "Mercado do Bairro",
+      "payee": "+5511999990001"
+    },
+    {
+      "alias": "funcionaria",
+      "name": "Maria (diarista)",
+      "payee": "12345678909"
+    },
+    {
+      "alias": "contas",
+      "name": "Energia (conta de luz)",
+      "payee": "cobranca@energia.example.com.br"
+    }
   ],
   "status": "active",
   "expires_at": "2027-09-23T00:00:00.000Z",

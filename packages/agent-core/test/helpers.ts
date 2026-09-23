@@ -56,7 +56,7 @@ export function testMandate(over: Partial<Mandate> = {}): Mandate {
     agent_id: "bills-agent",
     purpose: "contas do mes",
     currency: "BRL",
-    cap_minor: 600000,
+    cap_minor: 7200000,
     per_tx_cap_minor: 250000,
     periodic_cap: { window: "month", cap_minor: 600000 },
     merchant_pin_kind: "pix-key",
