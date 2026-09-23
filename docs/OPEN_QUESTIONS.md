@@ -18,9 +18,9 @@ The API does not sign approval lists; its HMAC is the mandate proof and the rece
 
 `codespar mandates revoke` and `org pauseAll` are AgentGate preview. The `MandateStatusSource` interface is in the core; the shipped implementation is `packages/agent-core/src/stubs/agentgate.ts` over the local state.db, which the `mandate-revoked` scenario drives. With a test key, `ApiMandateStatusSource` reads `GET /v1/mandates/{id}` for the mandate status (`active | paused | revoked | expired`, and expiry from `expires_at`); the organization pause has no API surface, so `org_paused` still comes from the stub. **Open:** an org-level pause read, and a way for a revocation to reach a running agent (a trigger event) instead of a poll before `executing`.
 
-## 5. Spend by id, not by signed envelope
+## 5. Spend by envelope, not by id (revised after the first receipt)
 
-The brief expected `POST /v1/consumer-payments/execute` with `{ mandate, signature }`. The consent flow returns `{ mandate, signature }` to the **callback_url** or to the consumer's browser at submit; a terminal kit with no server never receives them. `POST /v1/consumers/mandates/{id}/spend` (same lifecycle, same gates, "the path `codespar_pay` takes internally") needs only the id, which `GET /v1/mandates` lists. The kit spends by id. **v5.2:** name the by-id route as the kit's path; keep the signed-envelope route for callers that hold the envelope.
+The brief expected `POST /v1/consumer-payments/execute` with `{ mandate, signature }`. The first design spent by id (`POST /v1/consumers/mandates/{id}/spend`) because the hosted consent never hands the envelope to a backend. On staging the by-id route refused the windowed mandate (§14b), so the kit now obtains the envelope through the partner surface (§16) and spends by envelope; by id remains the fallback for a mandate stored without one. **v5.2:** name both routes and when each applies.
 
 ## 6. `new_beneficiary: true` makes the first month look like `human` mode
 
@@ -46,10 +46,34 @@ It is the output of `codespar audit replay` (AgentGate preview). Nothing local s
 
 The spec gives `"22:00-07:00"` as the window in which execution is "outside hours". The code reads it as the CLOSED window (crosses midnight when start > end) in `guardrails.timezone` (default `America/Sao_Paulo`), and `guardrails.outside_hours_action` picks `escalate` (default) or `refuse`. **v5.2:** confirm the reading and the timezone rule.
 
-## 12. First receipt — blocked on a test key
+## 12. First receipt — measured: 375 s from clone to receipt, on STAGING, with two fixes made mid-run
 
-The one-time real run (clone → `.env` → `npm install && npm start` → "pague a escola de outubro" → approve) needs a `csk_test_` key for a project whose consumer can sign a hosted consent in the sandbox. The key at `~/.codespar/demo-keys/payer.key` on the build machine is an x402 EOA, not a CodeSpar key, so the run was not made and the timing was not recorded. The path is implemented (`embedded-consent` module: `POST /v1/consents/init`, poll `GET /v1/mandates`, `POST /v1/test/fund`, spend by id, `GET /v1/consumers/receipts/{id}`) and typed against the SDK 0.16.2 OpenAPI snapshot, but it has not been exercised against the sandbox. See the PR for the status.
+Run on 2026-09-23 with a `csk_test_` key of the staging environment (`https://api.staging.codespar.dev`, org `org_demo`, project `prj_f1622489344f39fe`), no `ANTHROPIC_API_KEY` on the machine (the model was the recorded happy-path transcript through the replay provider; the core, the consent, the spend and the receipt were real). Clock: `git clone` at 04:23:58Z → receipt file at 04:30:13Z = **375 s**, above the five-minute contract. The time includes three things the contract does not: (a) `npm install` inside `agents/bills-agent` did not install the root toolchain (§15), (b) the first consent was refused by `periodic_cap_never_binds` (§14a), (c) the first spend by mandate id answered `bad_signature` (§14b), each fixed, committed and pulled into the timed clone before continuing. The receipt: `rcpt_RgWgZXIcVnokR_1fgwmRi8`, `state: paid`, `sandbox: true`, `money_moved: false`, rail `pix-consent`, mandate `cm_aYHUpzAX3k39oFTn`, in `runs/run_20260923043010_human_cf213e/receipts/` of the bundle (copied out of the deleted clone). One retry was used (the by-id failure was the first attempt). A clean re-run of the fixed path was not made, so no lower number is claimed.
 
-## 13. Things reality showed the spec got wrong (summary for v5.2)
+**The contract as written assumes a production test key.** Ours targets staging, which needs `CODESPAR_API_URL` in `.env` — a third variable the spec's `.env.example` forbids. `.env.example` still declares two; the URL is documented as a staging-only extra. **v5.2:** say which environment the five minutes are measured against.
 
-- CLI version (1). `actor` on the wire (2). Who signs the approval list (3). Spend by id (5). `new_beneficiary` and the first month (6). Fractioning counts only autonomous runs (7). `approval.json` is a list (9). `outside_hours` is a closed window in a named timezone (11).
+## 14. Two API rules the spec does not state (found on the first consent and the first spend)
+
+a. **`periodic_cap.cap_minor` must be strictly below `cap_minor`** (`400 periodic_cap_never_binds`): the lifetime cap binds first, so a window cap at or above it is "a limit the consumer was shown but never enforced". The spec's "teto mensal que renova sozinho" over "um ano de validade" therefore needs a lifetime cap of at least 12 × monthly. `mandate.example.json` now carries lifetime 7 200 000 / month 600 000, and the local `MandateSchema` mirrors the rule. **v5.2:** state it in 4.3 and in the `mandate.example.json` of section 5.
+
+b. **Spend by id answers `bad_signature` for a mandate that carries `periodic_cap`** (`POST /v1/consumers/mandates/{id}/spend` → `422 mandate_verify` / `bad_signature: consumer mandate verification failed`, staging, 2026-09-23). The signed payload the consent returns includes `periodic_cap`; the stored-row reconstruction the by-id route verifies (`storedMandatePayload` in `consumer-mandate-integrity.ts`) does not name it, so the HMAC never matches. The signed-envelope route (`POST /v1/consumer-payments/execute` with the `{ mandate, signature }` the consent returned) verifies and settles. The kit now spends by envelope when it holds one and falls back to id otherwise. **Needs an enterprise issue:** either the stored-row payload includes `periodic_cap`, or the consent does not sign it.
+
+## 15. `npm install` must run at the repository root
+
+It is an npm workspace; `npm install` inside `agents/bills-agent` installed 13 packages and none of the root devDependencies (`tsx`), so `npm start` died with `ERR_MODULE_NOT_FOUND`. The READMEs and the runbook now say `cd agent-starter-kits && npm install && npm start` (root `npm start` delegates to the agent). **v5.2:** the five-minute script in section 15 should name the directory.
+
+## 16. The hosted consent surface cannot deliver the envelope to a terminal kit
+
+`surface: hosted` (the default) has the consumer sign at `codespar.dev/consent/<token>` and returns `{ mandate, signature }` to the consumer's browser or to a `callback_url`; the partner backend never sees it, and `GET /v1/mandates/{id}` deliberately projects no signed material. With §14b, a kit that only has the id cannot spend a windowed mandate. In the sandbox the kit therefore runs `surface: partner`: it is the partner backend, the titular is at the keyboard, the submit carries `attestation: { method: "in_person" }`, and the envelope is stored in `.codespar/mandate.json` (0600). Sandbox rails accepted a placeholder `provider_token` for `pix-consent`. **Open:** is `in_person` from a terminal an acceptable attestation for a demo, and what should the production kit do (a `callback_url` receiver, or the by-id route once §14b is fixed)?
+
+## 17. `/v1/test/fund` does not credit a `pix-consent` consumer
+
+`POST /v1/test/fund` answered `400 no_provider_account: the consumer has no active pix-celcoin funding source and no account was provided`. The consent created a `pix-consent` funding source, not a `pix-celcoin` account, and the sandbox spend under `pix-consent` settled without any credit (`provider: pix`, `tx_id: mock_psp_…`). The kit treats the credit as best effort and says so. **v5.2:** the "sandbox money" step of section 15 applies to Celcoin-backed consumers only.
+
+## 18. The receipt names no payee unless the spend carries a `quote`
+
+`GET /v1/consumers/receipts/{id}` answered `quote: null`, so the receipt's payee is null; the payee is only on the receipt when the spend presents a `SpendQuote` (`seller`, `resource`, `price_minor`, `payee`). The kit does not send one yet, so the local receipt copy carries the payee from the execution, not from the seal. **Open:** should the kit pass a quote on every spend so the sealed receipt names the payee?
+
+## 19. Things reality showed the spec got wrong (summary for v5.2)
+
+- CLI version (1). `actor` on the wire (2). Who signs the approval list (3). Spend by envelope, because by id fails with `periodic_cap` (5, 14b). `new_beneficiary` and the first month (6). Fractioning counts only autonomous runs (7). `approval.json` is a list (9). `outside_hours` is a closed window in a named timezone (11). Five minutes measured on staging, with a third env var (12). Window cap strictly below lifetime cap (14a). `npm install` at the root (15). Hosted consent cannot hand a terminal kit the envelope; partner surface in the sandbox (16). `/v1/test/fund` is Celcoin-only (17). Receipt payee needs a quote (18).
