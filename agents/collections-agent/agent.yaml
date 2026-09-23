@@ -12,7 +12,7 @@ escalate_above:
   # the first charge to a debtor is the normal case, not a risk. No `outside_hours` either: collection hours are a LEGAL
   # rule the envelope refuses in both modes (guardrails.envelope.collection_hours), not an escalation.
 mcp: "@codespar/mcp@0.5.8"
-cli: "@codespar/cli@0.12.1"   # the published version on 2026-09-23 (docs/OPEN_QUESTIONS.md section 1)
+cli: "@codespar/cli@0.13.0"   # the published version on 2026-09-23 (docs/OPEN_QUESTIONS.md section 1)
 tools: ./tools.json
 guardrails: ./guardrails.json
 mandate_schema: ./mandate.example.json

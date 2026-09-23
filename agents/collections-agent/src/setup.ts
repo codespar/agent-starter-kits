@@ -12,7 +12,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  AgentGateStub,
+  LocalMandateStatusStub,
   AgentLoop,
   CodeSparChargeRail,
   ExecutionEngine,
@@ -92,7 +92,7 @@ export interface Setup {
   mandate: Mandate;
   envelope: Envelope;
   store: StateStore;
-  gate: AgentGateStub;
+  gate: LocalMandateStatusStub;
   rail: PaymentRail;
   railKind: RailKind;
   api: ApiClient | undefined;
@@ -144,7 +144,9 @@ export function setup(options: SetupOptions = {}): Setup {
   const stateDir = options.stateDir ?? env["COLLECTIONS_STATE_DIR"] ?? STATE_DIR;
   const runs = options.runsDir ?? runsDir(env);
   const store = new StateStore(join(stateDir, "state.db"));
-  const gate = new AgentGateStub(store, options.now);
+  // The collection policy is the merchant's own file: there is no `GET /v1/mandates/{id}` to read for it, so the section 4.7 gate
+  // is the local stub in BOTH rails (the bills-agent reads the API with a test key). See docs/OPEN_QUESTIONS.md section 25.
+  const gate = new LocalMandateStatusStub(store, options.now);
   const signer = loadOrCreateLocalApprovalKey(stateDir);
   const mandate = options.mandate ?? loadMandate(manifest.resolvePath(manifest.manifest.mandate_schema));
 

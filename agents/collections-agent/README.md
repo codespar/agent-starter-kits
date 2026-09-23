@@ -28,7 +28,7 @@ pagador> oi, recebi a mensagem sobre o acordo do pedido 1042
 
 The API delivers `commerce.charge.*` through triggers to a URL. A terminal has none, so the kit's default is to LOOK: `GET /v1/charges/{id}` every three seconds (the stub's fixture, offline) through the core's `reconcile`, which is read-only on the rail and never re-issues. The first look that finds the instrument payable prints the QR (as an image, in the terminal) with the copy-and-paste under it; the look that finds it paid or expired closes the execution and tells the payer once. `npm run poll` continues after a restart or a timeout; nothing shown twice, nothing said twice, because both marks live in `state.db`.
 
-`channels/webhook/` is the other closer, a documented stub: the receiving contract of a trigger delivery (`X-CodeSpar-Signature: t=..,v1=..`, body `{ id, type, data: { payment_id } }`), signature verification with the trigger's secret, dedup by event id, and `npm run webhook` to run it on localhost. Registering the trigger and exposing the URL are the developer's steps (`codespar triggers create`). See `docs/OPEN_QUESTIONS.md` section 20.
+`channels/webhook/` is the other closer, a documented stub: the receiving contract of a trigger delivery (`X-CodeSpar-Signature: t=..,v1=..`, body `{ id, type, data: { payment_id } }`), signature verification with the trigger's secret, dedup by event id, and `npm run webhook` to run it on localhost. Registering the trigger and exposing the URL are the developer's steps (`codespar triggers create`). See `docs/OPEN_QUESTIONS.md` section 21.
 
 ## The sandbox payer
 
