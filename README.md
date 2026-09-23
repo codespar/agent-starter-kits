@@ -13,6 +13,8 @@ Two agents ship today, both in TypeScript, both running against the CodeSpar san
 
 You need Node 22.13+ and a sandbox key (`csk_test_...`). Get one at [codespar.dev/auth/signup](https://codespar.dev/auth/signup). No money moves.
 
+No Node? [Use this template](https://github.com/codespar/agent-starter-kits/generate) → [Codespaces](https://codespaces.new/codespar/agent-starter-kits?quickstart=1), or open the clone in a devcontainer (`.devcontainer/`); the same commands run inside, with the keys as Codespaces secrets instead of `.env` (see [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md), item 35).
+
 ```sh
 git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits
 cp agents/bills-agent/.env.example agents/bills-agent/.env   # paste your csk_test_ key

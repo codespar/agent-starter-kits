@@ -42,3 +42,27 @@ jobs:
           node -e 'const o=JSON.parse(require("fs").readFileSync("/tmp/coll.json","utf8")); if(o.executions[0].state!=="settled"||o.executions[0].charges.length!==1||o.receipts.length!==1||!o.actor) process.exit(1)'
       - name: tests (core + agent, including restart and rerun)
         run: npm test
+
+  # Plan item 2.4: the five-minute contract holds without local Node. This is
+  # the same .devcontainer/devcontainer.json a Codespace builds, built here on
+  # the published image; the gates inside it run on the replay provider and the
+  # stub rail, so the job needs no key either. The action needs Docker on the
+  # runner, which ubuntu-latest has; the equivalent by hand is
+  # `npx @devcontainers/cli up --workspace-folder .` then `... exec`.
+  devcontainer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build the devcontainer, then run the gates inside it
+        uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          runCmd: |
+            set -euo pipefail
+            node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major !== 22 || minor < 13) { console.error(`node ${process.versions.node}; the container must ship 22.13 or newer of the 22 line`); process.exit(1); }'
+            test "$(git config core.hooksPath)" = ".githooks"
+            npm ci
+            npm run check --workspaces --if-present
+            cd agents/bills-agent
+            npm start --silent -- --input "pague a escola de outubro" --approve --json > /tmp/out.json
+            node -e 'const o=JSON.parse(require("fs").readFileSync("/tmp/out.json","utf8")); if(o.executions[0].state!=="settled"||o.receipts.length!==1||!o.actor) process.exit(1)'
