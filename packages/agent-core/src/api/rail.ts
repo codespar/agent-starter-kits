@@ -14,7 +14,7 @@
  */
 import type { ApiClient } from "@codespar/sdk";
 import type { Mandate } from "../mandate.js";
-import type { PaymentRail, RailOutcome, RailPayment, RailReceipt } from "../rail.js";
+import type { PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt } from "../rail.js";
 import type { Actor } from "../types.js";
 import { describeApiError, isUncertain } from "./client.js";
 
@@ -66,9 +66,9 @@ export class CodeSparRail implements PaymentRail {
    * answers the state it reached. `psp_attempt_in_flight` means the first
    * presentation is still running.
    */
-  async lookup(_attemptId: string, payment: RailPayment): Promise<RailOutcome | undefined> {
+  async lookup(_attemptId: string, payment: RailPayment): Promise<RailLookup> {
     const outcome = await this.pay(payment);
-    if (outcome.status === "failed" && outcome.code === "psp_attempt_in_flight") return undefined;
+    if (outcome.status === "failed" && outcome.code === "psp_attempt_in_flight") return { status: "in_flight" };
     return outcome;
   }
 

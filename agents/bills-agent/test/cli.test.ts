@@ -109,3 +109,45 @@ describe("npm run check", () => {
     expect(report.findings.filter((f) => (f as { level: string }).level === "error")).toEqual([]);
   });
 });
+
+describe("npm run approve / deny <execution-id>", () => {
+  it("decides an execution left awaiting, produces the artifact and runs it through the last gate", () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "bills-decide-"));
+    const runsDir = join(stateDir, "runs");
+    const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir };
+    const left = run("src/main.ts", ["--input", "pague a escola de outubro", "--json"], env);
+    expect(left.code).toBe(0);
+    const payload = JSON.parse(left.stdout.trim()) as { executions: Array<{ id: string; state: string }> };
+    expect(payload.executions[0]?.state).toBe("awaiting_approval");
+    const id = payload.executions[0]!.id;
+
+    const denied = run("src/commands/deny.ts", ["nope_unknown", "--json"], env);
+    expect(denied.code).toBe(1);
+
+    const approved = run("src/commands/approve.ts", [id, "--user", "usr_titular", "--json"], env);
+    expect(approved.code).toBe(0);
+    const out = JSON.parse(approved.stdout.trim()) as { state: string; approval_id: string | null; receipt_ids: string[]; bundle_dir: string };
+    expect(out.state).toBe("settled");
+    expect(out.approval_id).toMatch(/^apr_/);
+    expect(out.receipt_ids).toHaveLength(1);
+    const artifacts = JSON.parse(readFileSync(join(AGENT_DIR, out.bundle_dir, "approval.json"), "utf8")) as Array<{ approver: { type: string; id: string } }>;
+    expect(artifacts[0]?.approver).toEqual({ type: "person", id: "usr_titular", channel: "terminal" });
+
+    const again = run("src/commands/approve.ts", [id, "--json"], env);
+    expect(again.code).toBe(1);
+    expect(again.stderr).toContain("not awaiting_approval");
+  });
+
+  it("deny leaves a terminal denied execution and sends nothing", () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "bills-deny-"));
+    const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") };
+    const left = run("src/main.ts", ["--input", "pague a escola de outubro", "--json"], env);
+    const id = (JSON.parse(left.stdout.trim()) as { executions: Array<{ id: string }> }).executions[0]!.id;
+    const denied = run("src/commands/deny.ts", [id, "--json"], env);
+    expect(denied.code).toBe(0);
+    expect(JSON.parse(denied.stdout.trim())).toMatchObject({ state: "denied", reason: "denied_by_approver", receipt_ids: [] });
+    const db = new DatabaseSync(join(stateDir, "state.db"));
+    expect((db.prepare("SELECT COUNT(*) AS n FROM stub_rail_attempts").get() as { n: number }).n).toBe(0);
+    db.close();
+  });
+});

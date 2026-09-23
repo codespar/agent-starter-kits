@@ -36,7 +36,7 @@ Same code, same trail, same receipts. Start in `human`; flip the key when the cl
 - `npm run typecheck`: includes a type test proving a transition outside the table does not compile.
 - `npm run check --workspace=agents/bills-agent`: the manifest is the index; the prompt, tools and guardrails must agree with it.
 - `npm run eval --workspace=agents/bills-agent`: adversarial suite plus every scenario in every mode, on the replay provider. Blocks merge.
-- `npm test`: the core, the restart-in-`executing`-then-`resume` test, `rerun`, and `--json` output.
+- `npm test`: the core, the restart-in-`executing`-then-`resume` test, `rerun`, `approve`/`deny`, and `--json` output. When piping `npm start -- --input ... --json`, add npm's `-s`: npm prints the script banner on stdout, the kit does not.
 - `node scripts/secret-scan.mjs all`: no key-shaped string in the tree. Also a pre-commit hook.
 
 Requires Node 22.13 or newer (`node:sqlite`, no native build).

@@ -7,7 +7,7 @@
  * form; nothing about them is verifiable by anyone.
  */
 import { sha256Hex } from "../hash.js";
-import type { PaymentRail, RailOutcome, RailPayment, RailReceipt } from "../rail.js";
+import type { PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt } from "../rail.js";
 import type { StateStore } from "../state/store.js";
 import type { Actor } from "../types.js";
 
@@ -19,6 +19,8 @@ export interface StubRailOptions {
   uncertainOnce?: string[];
   /** Test hook: called after the attempt is persisted and before the outcome is returned. */
   afterDispatch?: (attemptId: string) => void;
+  /** Attempt ids whose first lookup answers `in_flight` and whose second lookup finds the provider finished (settled), with no pay() in between. */
+  inFlightThenSettled?: string[];
 }
 
 export class StubRail implements PaymentRail {
@@ -35,8 +37,13 @@ export class StubRail implements PaymentRail {
   }
 
   private uncertainArmed = false;
+  private readonly inFlightSeen = new Set<string>();
+  /** Attempts that answered `uncertain` because the stub was armed: the "provider" did take them, and a later lookup finds them finished. */
+  private readonly lateAttempts = new Set<string>();
+  /** How many times pay() reached the point of persisting a NEW attempt. */
+  payCount = 0;
 
-  /** The NEXT new attempt answers `uncertain` once, whatever its id. For scenarios that reconcile. */
+  /** The NEXT new attempt answers `uncertain` once, whatever its id; the provider still took it, so a later lookup sees it in flight and then settled. For scenarios that reconcile. */
   armUncertainOnce(): void {
     this.uncertainArmed = true;
   }
@@ -46,6 +53,7 @@ export class StubRail implements PaymentRail {
     if (existing) return existing.outcome as RailOutcome;
 
     if (this.uncertainArmed || this.uncertainPending.has(payment.attempt_id)) {
+      if (this.uncertainArmed) this.lateAttempts.add(payment.attempt_id);
       this.uncertainArmed = false;
       this.uncertainPending.delete(payment.attempt_id);
       return { status: "uncertain", code: "psp_dispatch_uncertain", message: "stub: outcome unknown on first presentation" };
@@ -63,13 +71,34 @@ export class StubRail implements PaymentRail {
           raw: { stub: true, attempt_id: payment.attempt_id, at },
         };
     const { actor: _actor, ...request } = payment;
+    this.payCount += 1;
     this.store.stubRailPut(payment.attempt_id, request, outcome, at);
     this.options.afterDispatch?.(payment.attempt_id);
     return outcome;
   }
 
-  async lookup(attemptId: string): Promise<RailOutcome | undefined> {
-    return this.store.stubRailGet(attemptId)?.outcome as RailOutcome | undefined;
+  async lookup(attemptId: string, payment: RailPayment): Promise<RailLookup> {
+    const recorded = this.store.stubRailGet(attemptId)?.outcome as RailOutcome | undefined;
+    if (recorded) return recorded;
+    if (this.options.inFlightThenSettled?.includes(attemptId) || this.lateAttempts.has(attemptId)) {
+      if (!this.inFlightSeen.has(attemptId)) {
+        this.inFlightSeen.add(attemptId);
+        return { status: "in_flight" };
+      }
+      // The provider finished on its own; the stub records the outcome as the rail would, without a new dispatch.
+      const { actor: _actor, ...request } = payment;
+      const outcome: RailOutcome = {
+        status: "settled",
+        transaction_id: `stubtx_${sha256Hex(attemptId).slice(0, 16)}`,
+        receipt_id: `rcpt_stub_${sha256Hex(`receipt:${attemptId}`).slice(0, 16)}`,
+        money_moved: false,
+        sandbox: true,
+        raw: { stub: true, attempt_id: attemptId, finished_in_background: true },
+      };
+      this.store.stubRailPut(attemptId, request, outcome, this.clock().toISOString());
+      return outcome;
+    }
+    return undefined;
   }
 
   async receipt(receiptId: string, actor: Actor): Promise<RailReceipt | undefined> {

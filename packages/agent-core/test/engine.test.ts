@@ -194,18 +194,20 @@ describe("section 4.7: revocation and kill switch (against the stub)", () => {
     expect(d.ok && d.execution.state).toBe("approved");
   });
 
-  it("revoked while executing: reconciled, not cancelled", async () => {
-    const h = harness({ mode: "mandate", manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { uncertainOnce: ["att_" + "x"] } });
+  it("revoked while executing: reconciled from the rail, not cancelled", async () => {
+    const h = harness({ mode: "mandate", manifest: { escalate_above: {} }, guardrails: { escalate_above: {} } });
     const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
     if (!d.ok) throw new Error("refused");
-    // Force the first attempt to answer uncertain by naming it after the fact.
     const attempt = `att_${d.execution.idempotency_key.slice(4)}_0`;
-    const h2 = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { uncertainOnce: [attempt] } });
+    // The provider took the payment and answered late: uncertain now, in flight on the first lookup, settled on the second.
+    const h2 = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { uncertainOnce: [attempt], inFlightThenSettled: [attempt] } });
     const stuck = await h2.engine.execute(d.execution.id);
     expect(stuck.state).toBe("executing");
     h2.gate.revoke("mdt_test_0001");
+    expect((await h2.engine.reconcile(stuck.id)).state).toBe("executing");
     const closed = await h2.engine.reconcile(stuck.id);
     expect(closed.state).toBe("settled");
+    expect(h2.rail.payCount).toBe(0);
   });
 });
 
@@ -230,7 +232,7 @@ describe("section 10: idempotency, restart, reconcile", () => {
     expect(events).toHaveLength(1);
   });
 
-  it("an uncertain outcome is never retried blind: it stays executing until reconciled", async () => {
+  it("an uncertain outcome is never retried blind: it stays executing, marked unresolved, until the rail answers", async () => {
     const h = harness({ mode: "mandate", manifest: { escalate_above: {} }, guardrails: { escalate_above: {} } });
     const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
     if (!d.ok) throw new Error("refused");
@@ -238,10 +240,12 @@ describe("section 10: idempotency, restart, reconcile", () => {
     const flaky = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { uncertainOnce: [attempt] } });
     const stuck = await flaky.engine.execute(d.execution.id);
     expect(stuck.state).toBe("executing");
+    expect(stuck.reason).toBe("rail_uncertain");
     expect(flaky.store.stubRailGet(attempt)).toBeUndefined();
-    const closed = await flaky.engine.reconcile(stuck.id);
-    expect(closed.state).toBe("settled");
-    expect(closed.outcomes).toHaveLength(1);
+    const still = await flaky.engine.reconcile(stuck.id);
+    expect(still.state).toBe("executing");
+    expect(still.outcomes).toHaveLength(0);
+    expect(flaky.rail.payCount).toBe(0);
   });
 
   it("duplicate and out-of-order rail events settle once", async () => {
@@ -291,5 +295,135 @@ describe("section 10: idempotency, restart, reconcile", () => {
     expect(back.reason).toBe("items_hash_mismatch");
     expect(back.approval_id).toBeUndefined();
     expect(h.store.listOutbox()).toHaveLength(0);
+  });
+});
+
+describe("the policy runs at every gate, not only at draft (review of PR #1)", () => {
+  it("two drafts each inside the window cap cannot both settle: the second is refused by the reservation, and the last gate refuses what slipped past", async () => {
+    const h = harness({ mode: "human" });
+    const a = await h.engine.draft({ items: [{ payee: "escola", amount: 240000 }, { payee: "mercado", amount: 160000 }] }); // 400000
+    if (!a.ok) throw new Error("refused");
+    expect(a.execution.state).toBe("awaiting_approval");
+    const b = await h.engine.draft({ items: [{ payee: "funcionaria", amount: 200000 }, { payee: "mercado", amount: 100000 }] }); // 300000
+    if (!b.ok) throw new Error("refused");
+    expect(b.execution.state).toBe("denied");
+    expect(b.execution.reason).toBe("window_cap_exceeded");
+
+    // What slipped past: an approved execution whose window filled up before it ran (another process settled 300000 meanwhile).
+    const approvedA = h.engine.approve(a.execution.id, approver);
+    expect(approvedA.state).toBe("approved");
+    const foreign = { ...approvedA, id: "exe_other_process", state: "settled" as const, total: 300000, approval_id: undefined, history: [] };
+    h.store.saveExecution(foreign as never);
+    const last = await h.engine.execute(approvedA.id);
+    expect(last.state).toBe("denied");
+    expect(last.reason).toBe("window_cap_exceeded");
+    expect(h.store.listOutbox()).toHaveLength(0);
+    expect(h.engine.list({ state: "settled" }).reduce((s, e) => s + e.total, 0)).toBe(300000);
+  });
+
+  it("a list tampered after approval goes back to awaiting_approval, and a yes on the tampered list is refused by the policy, not re-approved", async () => {
+    const h = harness({ mode: "human" });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!d.ok) throw new Error("refused");
+    const approved = h.engine.approve(d.execution.id, approver);
+    h.store.saveExecution({ ...approved, items: [{ ...approved.items[0]!, beneficiary: "atacante", payee: "pix@atacante.example.com" }] });
+    const back = await h.engine.execute(approved.id);
+    expect(back.state).toBe("awaiting_approval");
+    expect(back.reason).toBe("items_hash_mismatch");
+    const afterYes = h.engine.approve(back.id, approver);
+    expect(afterYes.state).toBe("denied");
+    expect(afterYes.reason).toBe("beneficiary_not_allowed");
+    expect(h.store.listOutbox()).toHaveLength(0);
+  });
+
+  it("a mandate-approved execution re-checks escalate_above at the last gate; a person's approval satisfies it", async () => {
+    // Approved by the mandate during the day, executed at night: back to a human.
+    const day = new Date("2026-09-23T18:00:00Z");
+    const h = harness({ mode: "mandate", now: day, manifest: { escalate_above: { outside_hours: "22:00-07:00" } }, guardrails: { escalate_above: { outside_hours: "22:00-07:00" }, approval_ttl_minutes: 24 * 60 } });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!d.ok) throw new Error("refused");
+    expect(d.execution.state).toBe("approved");
+    h.setNow(new Date("2026-09-24T02:00:00Z"));
+    const night = await h.engine.execute(d.execution.id);
+    expect(night.state).toBe("awaiting_approval");
+    expect(night.escalation?.trigger).toBe("outside_hours");
+    const settled = await h.engine.execute(h.engine.approve(night.id, approver).id);
+    expect(settled.state).toBe("settled");
+  });
+});
+
+describe("reconcile never re-dispatches (review of PR #1)", () => {
+  async function stuckExecution(rail: import("../src/stubs/rail.js").StubRailOptions | undefined) {
+    const h = harness({ mode: "mandate", manifest: { escalate_above: {} }, guardrails: { escalate_above: {} } });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!d.ok) throw new Error("refused");
+    const attempt = `att_${d.execution.idempotency_key.slice(4)}_0`;
+    const flaky = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { uncertainOnce: [attempt], ...(rail ?? {}), inFlightThenSettled: [attempt] } });
+    const stuck = await flaky.engine.execute(d.execution.id);
+    expect(stuck.state).toBe("executing");
+    expect(stuck.reason).toBe("rail_uncertain");
+    return { h: flaky, stuck, attempt };
+  }
+
+  it("in flight, then settled: two reconciles, zero new payments", async () => {
+    const { h, stuck, attempt } = await stuckExecution(undefined);
+    const paysBefore = h.rail.payCount;
+    const first = await h.engine.reconcile(stuck.id);
+    expect(first.state).toBe("executing");
+    expect(first.detail).toContain("in_flight");
+    expect(h.rail.payCount).toBe(paysBefore);
+    expect(h.store.stubRailGet(attempt)).toBeUndefined();
+    const second = await h.engine.reconcile(stuck.id);
+    expect(second.state).toBe("settled");
+    expect(h.rail.payCount).toBe(paysBefore);
+    expect(h.store.listOutbox()[0]?.status).toBe("done");
+  });
+
+  it("unknown to the rail after the outbox was sent: stays executing for a human, nothing re-sent", async () => {
+    const h = harness({ mode: "mandate", manifest: { escalate_above: {} }, guardrails: { escalate_above: {} } });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!d.ok) throw new Error("refused");
+    const attempt = `att_${d.execution.idempotency_key.slice(4)}_0`;
+    const flaky = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { uncertainOnce: [attempt] } });
+    const stuck = await flaky.engine.execute(d.execution.id);
+    expect(stuck.state).toBe("executing");
+    const again = await flaky.engine.reconcile(stuck.id);
+    expect(again.state).toBe("executing");
+    expect(again.reason).toBe("rail_uncertain");
+    expect(flaky.rail.payCount).toBe(0);
+    expect(flaky.store.stubRailGet(attempt)).toBeUndefined();
+  });
+
+  it("outbox still pending (crash before any call): the attempts go out once, under the same ids", async () => {
+    const h = harness({ mode: "mandate", manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { afterDispatch: () => { throw new Error("crash"); } } });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!d.ok) throw new Error("refused");
+    // Simulate a crash between the transaction and the first call: rewind the outbox to pending.
+    await expect(h.engine.execute(d.execution.id)).rejects.toThrow("crash");
+    const fresh = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} } });
+    expect(fresh.store.getOutbox(d.execution.idempotency_key)?.status).toBe("sent");
+    const closed = await fresh.engine.reconcile(d.execution.id);
+    expect(closed.state).toBe("settled");
+    expect(fresh.rail.payCount).toBe(0);
+  });
+});
+
+describe("a multi-item execution closes only when every attempt has its outcome (review of PR #1)", () => {
+  it("one rail event settles one attempt; the second closes the execution and the outbox", async () => {
+    const h = harness({ mode: "mandate", manifest: { escalate_above: {} }, guardrails: { escalate_above: {} } });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }, { payee: "mercado", amount: 2000 }] });
+    if (!d.ok) throw new Error("refused");
+    const a0 = `att_${d.execution.idempotency_key.slice(4)}_0`;
+    const a1 = `att_${d.execution.idempotency_key.slice(4)}_1`;
+    const flaky = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { uncertainOnce: [a0, a1] } });
+    const stuck = await flaky.engine.execute(d.execution.id);
+    expect(stuck.state).toBe("executing");
+    expect(flaky.engine.ingestExternalEvent({ event_id: "e0", type: "commerce.payment.settled", attempt_id: a0 })).toMatchObject({ applied: true });
+    expect(flaky.store.getExecution(stuck.id)!.state).toBe("executing");
+    expect(flaky.store.getOutbox(stuck.idempotency_key)!.status).toBe("sent");
+    expect(flaky.engine.ingestExternalEvent({ event_id: "e0", type: "commerce.payment.settled", attempt_id: a0 })).toMatchObject({ applied: false, reason: "duplicate event id" });
+    expect(flaky.engine.ingestExternalEvent({ event_id: "e1", type: "commerce.payment.settled", attempt_id: a1 })).toEqual({ applied: true, reason: "settled" });
+    expect(flaky.store.getExecution(stuck.id)!.state).toBe("settled");
+    expect(flaky.store.getOutbox(stuck.idempotency_key)!.status).toBe("done");
   });
 });

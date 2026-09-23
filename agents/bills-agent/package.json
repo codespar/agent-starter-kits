@@ -14,7 +14,9 @@
     "reconcile": "node --disable-warning=ExperimentalWarning --import tsx src/commands/reconcile.ts",
     "consent": "node --disable-warning=ExperimentalWarning --import tsx src/commands/consent.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --pool=forks --maxWorkers=1 --root ../.. agents/bills-agent"
+    "test": "vitest run --pool=forks --maxWorkers=1 --root ../.. agents/bills-agent",
+    "approve": "node --disable-warning=ExperimentalWarning --import tsx src/commands/approve.ts",
+    "deny": "node --disable-warning=ExperimentalWarning --import tsx src/commands/deny.ts"
   },
   "dependencies": {
     "@codespar/agent-core": "0.1.0"

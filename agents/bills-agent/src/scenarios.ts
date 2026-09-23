@@ -144,8 +144,10 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
       replies.push(result.reply);
       refusedBeforeDraft += s.store.listEvents({ run_id: s.runId }).filter((e) => e.type === "execution.refused_before_draft").length - refusedBeforeDraft;
     }
-    // Section 10: what is still executing is reconciled, never repeated.
-    for (const stuck of s.engine.list({ state: "executing" })) await s.engine.reconcile(stuck.id);
+    // Section 10: what is still executing is reconciled, never repeated. A rail that answers late needs more than one look.
+    for (let round = 0; round < 3 && s.engine.list({ state: "executing" }).length > 0; round += 1) {
+      for (const stuck of s.engine.list({ state: "executing" })) await s.engine.reconcile(stuck.id);
+    }
 
     const executions = s.engine.list().filter((e) => e.run_id === s.runId);
     return {

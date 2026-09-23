@@ -56,10 +56,13 @@ export interface RailReceipt {
   raw: unknown;
 }
 
+/** What a reconcile learns: a recorded outcome, "still running", or nothing. Never a new payment. */
+export type RailLookup = RailOutcome | { status: "in_flight" } | undefined;
+
 export interface PaymentRail {
   readonly name: "stub" | "codespar";
   pay(payment: RailPayment): Promise<RailOutcome>;
-  /** Answers the outcome of an attempt already presented, or `undefined` when the rail never saw it. */
-  lookup(attemptId: string, payment: RailPayment): Promise<RailOutcome | undefined>;
+  /** Answers the outcome of an attempt already presented, `in_flight` while the rail is still on it, or `undefined` when the rail never saw it. */
+  lookup(attemptId: string, payment: RailPayment): Promise<RailLookup>;
   receipt(receiptId: string, actor: Actor): Promise<RailReceipt | undefined>;
 }
