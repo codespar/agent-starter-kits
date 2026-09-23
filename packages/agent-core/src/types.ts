@@ -38,6 +38,7 @@ export type ExecutionReason =
   | "window_cap_exceeded"
   | "approval_expired"
   | "items_hash_mismatch"
+  | "mandate_changed"
   | "denied_by_approver"
   | "rail_failed"
   | "rail_uncertain"

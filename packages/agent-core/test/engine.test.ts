@@ -427,3 +427,98 @@ describe("a multi-item execution closes only when every attempt has its outcome 
     expect(flaky.store.getOutbox(stuck.idempotency_key)!.status).toBe("done");
   });
 });
+
+describe("probes named in the second review: the mandate can change between approve and execute", () => {
+  it("(a) the mandate was tightened to a smaller per-payment cap: the last gate refuses", async () => {
+    const h = harness({ mode: "human" });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 200000 }] });
+    if (!d.ok) throw new Error("refused");
+    const approved = h.engine.approve(d.execution.id, approver);
+    // A new process reads the tightened mandate (same version: an operator lowered the cap in place).
+    const tightened = harness({ mode: "human", dir: h.dir, mandate: { per_tx_cap_minor: 100000 } });
+    const out = await tightened.engine.execute(approved.id);
+    expect(out.state).toBe("denied");
+    expect(out.reason).toBe("per_tx_cap_exceeded");
+    expect(tightened.store.listOutbox()).toHaveLength(0);
+  });
+
+  it("(a') the mandate was re-signed (new version): the old artifact no longer matches, and the yes that follows is judged again", async () => {
+    const h = harness({ mode: "human" });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 200000 }] });
+    if (!d.ok) throw new Error("refused");
+    const approved = h.engine.approve(d.execution.id, approver);
+    const resigned = harness({ mode: "human", dir: h.dir, mandate: { version: 2, per_tx_cap_minor: 100000 } });
+    const back = await resigned.engine.execute(approved.id);
+    expect(back.state).toBe("awaiting_approval");
+    expect(back.reason).toBe("mandate_changed");
+    expect(back.mandate).toEqual({ id: "mdt_test_0001", version: 2 });
+    const afterYes = resigned.engine.approve(back.id, approver);
+    expect(afterYes.state).toBe("denied");
+    expect(afterYes.reason).toBe("per_tx_cap_exceeded");
+  });
+
+  it("(c) the payee left the allowlist between approve and execute: denied, nothing sent", async () => {
+    const h = harness({ mode: "human" });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!d.ok) throw new Error("refused");
+    const approved = h.engine.approve(d.execution.id, approver);
+    const narrowed = harness({ mode: "human", dir: h.dir, mandate: { merchant_allowlist: [MERCADO], beneficiaries: [{ alias: "mercado", name: "Mercado do Bairro", payee: MERCADO }] } });
+    const out = await narrowed.engine.execute(approved.id);
+    expect(out.state).toBe("denied");
+    expect(out.reason).toBe("beneficiary_not_allowed");
+    expect(narrowed.store.listOutbox()).toHaveLength(0);
+    expect(narrowed.rail.payCount).toBe(0);
+  });
+});
+
+describe("reconcile is read-only; only resume dispatches, and only a pending outbox", () => {
+  it("outbox sent + lookup absent: reconcile never calls rail.pay and records execution.uncertain", async () => {
+    const h = harness({ mode: "mandate", manifest: { escalate_above: {} }, guardrails: { escalate_above: {} } });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!d.ok) throw new Error("refused");
+    const attempt = `att_${d.execution.idempotency_key.slice(4)}_0`;
+    const flaky = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { uncertainOnce: [attempt] } });
+    const stuck = await flaky.engine.execute(d.execution.id);
+    expect(flaky.store.getOutbox(stuck.idempotency_key)?.status).toBe("sent");
+    const pays = flaky.rail.payCount;
+    const still = await flaky.engine.reconcile(stuck.id);
+    expect(still.state).toBe("executing");
+    expect(flaky.rail.payCount).toBe(pays);
+    expect(flaky.store.stubRailGet(attempt)).toBeUndefined();
+    expect(flaky.store.listEvents({ execution_id: stuck.id }).some((e) => e.type === "execution.uncertain")).toBe(true);
+  });
+
+  it("outbox pending: reconcile leaves it; resumePending dispatches once", async () => {
+    const h = harness({ mode: "mandate", manifest: { escalate_above: {} }, guardrails: { escalate_above: {} } });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!d.ok) throw new Error("refused");
+    // Rewind the row to what a crash between the transaction and the first call leaves behind.
+    const armed = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, rail: { afterDispatch: () => { throw new Error("crash"); } } });
+    await expect(armed.engine.execute(d.execution.id)).rejects.toThrow("crash");
+    armed.store.updateOutbox(d.execution.idempotency_key, "pending", undefined, "2026-09-23T18:00:00.000Z");
+    const fresh = harness({ mode: "mandate", dir: h.dir, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} } });
+    const left = await fresh.engine.reconcile(d.execution.id);
+    expect(left.state).toBe("executing");
+    expect(fresh.rail.payCount).toBe(0);
+    const closed = await fresh.engine.resumePending(d.execution.id);
+    expect(closed.state).toBe("settled");
+  });
+});
+
+describe("multi-item partial failure is named item by item", () => {
+  it("first item settles with its receipt, second is refused: execution failed, outcomes and approval name both", async () => {
+    const h = harness({ mode: "human", rail: { refusePayees: [MERCADO] } });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }, { payee: "mercado", amount: 2000 }] });
+    if (!d.ok) throw new Error("refused");
+    const out = await h.engine.execute(h.engine.approve(d.execution.id, approver).id);
+    expect(out.state).toBe("failed");
+    expect(out.outcomes).toEqual([
+      expect.objectContaining({ index: 0, status: "settled", receipt_id: expect.stringMatching(/^rcpt_stub_/) }),
+      expect.objectContaining({ index: 1, status: "failed", error: expect.stringContaining("psp_dispatch_failed") }),
+    ]);
+    expect(readdirSync(join(h.bundle.dir, "receipts"))).toHaveLength(1);
+    expect(h.bundle.readApprovals()[0]?.items.map((i) => i.payee)).toEqual([ESCOLA, MERCADO]);
+    expect(h.store.getOutbox(out.idempotency_key)?.status).toBe("failed");
+    expect(h.store.getOutbox(out.idempotency_key)?.response).toEqual(out.outcomes);
+  });
+});

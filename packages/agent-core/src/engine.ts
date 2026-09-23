@@ -264,6 +264,11 @@ export class ExecutionEngine {
     // Everything below is one transaction: the last policy run, the artifact check, the outbox row and the state change land together or not at all.
     const payments = this.paymentsFor(execution);
     const decided = this.deps.store.transaction((): Execution => {
+      // The approval was given under one mandate; a re-signed one (new version) is a new authorization, and the person decides again under it.
+      const current = { id: this.deps.mandate.id, version: this.deps.mandate.version };
+      if (execution.mandate.id !== current.id || execution.mandate.version !== current.version) {
+        return this.persist(transition({ ...this.withoutApproval(approved), mandate: current }, "awaiting_approval", { at, actor: this.agentActor, reason: "mandate_changed", detail: `approved under mandate ${execution.mandate.id} v${execution.mandate.version}; the mandate is now ${current.id} v${current.version}` }));
+      }
       // 4.2: recompute the hash of what is about to be executed and compare.
       const check = checkApprovalArtifact(this.deps.signer, artifact, execution, now);
       if (!check.ok) {
@@ -344,7 +349,7 @@ export class ExecutionEngine {
   private leaveUnresolved(execution: Execution<"executing">, detail: string): Execution {
     const kept: Execution<"executing"> = { ...execution, reason: "rail_uncertain", detail, updated_at: this.clock().toISOString() };
     this.deps.store.saveExecution(kept);
-    this.record("execution.unresolved", execution.id, { detail });
+    this.record("execution.uncertain", execution.id, { detail });
     return kept;
   }
 
@@ -371,13 +376,12 @@ export class ExecutionEngine {
   // ---- section 10: resume and reconcile ---------------------------------
 
   /**
-   * An execution left in `executing` is reconciled, NEVER re-dispatched. Each
+   * An execution left in `executing` is reconciled, NEVER dispatched. Each
    * attempt without an outcome is looked up on the rail; a recorded settled
    * or failed answer is taken, and anything else (in flight, uncertain,
-   * unknown) leaves the execution in `executing`, marked unresolved, for a
-   * human. The single exception is an outbox row still `pending`: the state
-   * changed but no call was ever made, so the attempts go out now under the
-   * same ids.
+   * unknown) leaves the execution in `executing` with an `execution.uncertain`
+   * event, for a human. "Unknown" is not "never sent": on the real rail a
+   * receipt is indexed seconds after settlement (~43 s measured on Celcoin).
    */
   async reconcile(executionId: string): Promise<Execution> {
     const execution = this.mustGet(executionId);
@@ -385,8 +389,7 @@ export class ExecutionEngine {
     const payments = this.paymentsFor(execution);
     const outbox = this.deps.store.getOutbox(execution.idempotency_key);
     if (outbox?.status === "pending") {
-      this.record("rail.reconcile", execution.id, { detail: "outbox pending: nothing was ever sent; dispatching under the same attempt ids" });
-      return this.dispatch(execution as Execution<"executing">, payments);
+      return this.leaveUnresolved(execution as Execution<"executing">, "outbox pending: nothing was ever sent; `resume` dispatches it, reconcile does not");
     }
 
     const outcomes: ItemOutcome[] = [...execution.outcomes];
@@ -409,6 +412,21 @@ export class ExecutionEngine {
     const updated: Execution<"executing"> = { ...(execution as Execution<"executing">), outcomes };
     if (unresolved) return this.leaveUnresolved(updated, unresolved);
     return this.close(updated, payments.length);
+  }
+
+  /**
+   * `resume` only: dispatches the attempts of an `executing` execution whose
+   * outbox row is still `pending`. `pending` flips to `sent` before the first
+   * rail call, so a `pending` row proves nothing ever left; anything `sent`
+   * goes through `reconcile()` instead and is never re-sent.
+   */
+  async resumePending(executionId: string): Promise<Execution> {
+    const execution = this.mustGet(executionId);
+    if (execution.state !== "executing") return execution;
+    const outbox = this.deps.store.getOutbox(execution.idempotency_key);
+    if (outbox?.status !== "pending") return this.reconcile(executionId);
+    this.record("rail.resume", execution.id, { detail: "outbox pending: nothing was ever sent; dispatching once under the same attempt ids" });
+    return this.dispatch(execution as Execution<"executing">, this.paymentsFor(execution));
   }
 
   /** Time-based exits: an open execution past its approval TTL closes as `expired`. */
