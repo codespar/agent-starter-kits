@@ -28,6 +28,7 @@ import {
   loadOrCreateLocalApprovalKey,
   loadToolsFile,
   newRunId,
+  resolveFixedClock,
   NotATestKeyError,
   paySandboxCharge,
   type AgentRuntime,
@@ -132,6 +133,8 @@ export function resolveRailKind(env: NodeJS.ProcessEnv, requested: RailKind | un
 export function setup(options: SetupOptions = {}): Setup {
   const env = options.env ?? process.env;
   const say = options.say ?? ((line: string) => process.stderr.write(line + "\n"));
+  // `--now` on the one-shot, or CODESPAR_AGENT_NOW for every command: the clock the engine, the stubs, the gate and the loop read (#16).
+  const now = options.now ?? resolveFixedClock(undefined, env);
   const manifest = loadManifest(join(AGENT_DIR, "agent.yaml"));
   const guardrails = loadGuardrails(manifest.resolvePath(manifest.manifest.guardrails));
   const envelope = loadEnvelope(guardrails);
@@ -146,7 +149,7 @@ export function setup(options: SetupOptions = {}): Setup {
   const store = new StateStore(join(stateDir, "state.db"));
   // The collection policy is the merchant's own file: there is no `GET /v1/mandates/{id}` to read for it, so the section 4.7 gate
   // is the local stub in BOTH rails (the bills-agent reads the API with a test key). See docs/OPEN_QUESTIONS.md section 25.
-  const gate = new LocalMandateStatusStub(store, options.now);
+  const gate = new LocalMandateStatusStub(store, now);
   const signer = loadOrCreateLocalApprovalKey(stateDir);
   const mandate = options.mandate ?? loadMandate(manifest.resolvePath(manifest.manifest.mandate_schema));
 
@@ -180,7 +183,7 @@ export function setup(options: SetupOptions = {}): Setup {
     const behaviour = env["COLLECTIONS_STUB_PAYER"];
     const fixture: Pick<StubChargeRailOptions, "payer"> = behaviour === "pays" || behaviour === "expires" || behaviour === "never" ? { payer: behaviour } : {};
     const refuse = env["COLLECTIONS_STUB_REFUSE"] ? { refusePayees: env["COLLECTIONS_STUB_REFUSE"].split(",").map((p) => p.trim()).filter(Boolean) } : {};
-    const stub = new StubChargeRail(store, { ...(options.now ? { clock: options.now } : {}), ...killAfterDispatch, ...fixture, ...refuse, ...(options.stubRail ?? {}) });
+    const stub = new StubChargeRail(store, { ...(now ? { clock: now } : {}), ...killAfterDispatch, ...fixture, ...refuse, ...(options.stubRail ?? {}) });
     rail = stub;
     pollIntervalMs = 0;
     payer = {
@@ -196,7 +199,7 @@ export function setup(options: SetupOptions = {}): Setup {
   const runId = options.runId ?? newRunId(mode);
   const bundle = new ProofBundle(runs, runId);
   bundle.mandateSnapshot(mandate);
-  bundle.meta({ run_id: runId, agent: `${manifest.manifest.name}@${manifest.manifest.version}`, mode, rail: railKind, mandate_id: mandate.id, started_at: (options.now ?? (() => new Date()))().toISOString() });
+  bundle.meta({ run_id: runId, agent: `${manifest.manifest.name}@${manifest.manifest.version}`, mode, rail: railKind, mandate_id: mandate.id, started_at: (now ?? (() => new Date()))().toISOString() });
 
   const engine = new ExecutionEngine({
     store,
@@ -211,7 +214,7 @@ export function setup(options: SetupOptions = {}): Setup {
     runId,
     onBehalfOf: mandate.consumer_id,
     policyExtension: envelopePolicy(envelope),
-    ...(options.now ? { clock: options.now } : {}),
+    ...(now ? { clock: now } : {}),
   });
 
   const handlers = makeHandlers(envelope);
@@ -244,7 +247,7 @@ export function setup(options: SetupOptions = {}): Setup {
     tools,
     pollIntervalMs,
     makeRuntime,
-    makeLoop: (runtime, onExecution) => new AgentLoop({ runtime, tools, handlers, system, bundle, engine, onExecution, ...(options.now ? { clock: options.now } : {}) }),
+    makeLoop: (runtime, onExecution) => new AgentLoop({ runtime, tools, handlers, system, bundle, engine, onExecution, ...(now ? { clock: now } : {}) }),
     close: () => store.close(),
   };
 }

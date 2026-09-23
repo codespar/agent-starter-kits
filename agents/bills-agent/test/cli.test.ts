@@ -55,6 +55,41 @@ describe("npm start -- --input ... --json", () => {
   });
 });
 
+// #16: `escalate_above.outside_hours` (22:00-07:00) reads the engine clock too. The escalation order is amount, new_beneficiary,
+// outside_hours, so the hour can only be the trigger on a payee the mandate already knows, below the amount threshold: the
+// state is seeded with one settled payment to the school first, in its own process, the way a real day would.
+describe("--now pins the clock the mandate-mode escalation reads", () => {
+  function seedKnownPayee(label: string): Record<string, string> {
+    const stateDir = mkdtempSync(join(tmpdir(), `bills-now-${label}-`));
+    const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") };
+    const seed = run("src/main.ts", ["--mode", "mandate", "--input", "paga 400 reais pra escola (material)", "--transcript", "test/fixtures/material-400.transcript.jsonl", "--approve", "--json", "--now", "2026-09-23T14:00:00-03:00"], env);
+    expect(seed.code).toBe(0);
+    const payload = JSON.parse(seed.stdout.trim()) as { executions: Array<{ state: string; escalation: { trigger: string } | null }> };
+    expect(payload.executions[0]).toMatchObject({ state: "settled", escalation: { trigger: "new_beneficiary" } });
+    return env;
+  }
+  const EXCURSAO = ["--mode", "mandate", "--input", "e mais 300 reais pra escola, a excursao", "--transcript", "test/fixtures/excursao-300.transcript.jsonl", "--json"];
+  type Payload = { executions: Array<{ state: string; escalation: { trigger: string; detail: string } | null; receipt_ids: string[] }> };
+
+  it("at 23:00 America/Sao_Paulo a payment inside the mandate is escalated (outside_hours) and waits for a human", () => {
+    const out = run("src/main.ts", [...EXCURSAO, "--now", "2026-09-23T23:00:00-03:00"], seedKnownPayee("night"));
+    expect(out.code).toBe(0);
+    const payload = JSON.parse(out.stdout.trim()) as Payload;
+    expect(payload.executions).toHaveLength(1);
+    expect(payload.executions[0]).toMatchObject({ state: "awaiting_approval", escalation: { trigger: "outside_hours" } });
+    expect(payload.executions[0]?.escalation?.detail).toContain("23:00");
+    expect(payload.executions[0]?.receipt_ids).toEqual([]);
+  });
+
+  it("at 14:00 America/Sao_Paulo the same payment runs alone: no trigger, one receipt", () => {
+    const out = run("src/main.ts", [...EXCURSAO, "--now", "2026-09-23T14:00:00-03:00"], seedKnownPayee("day"));
+    expect(out.code).toBe(0);
+    const payload = JSON.parse(out.stdout.trim()) as Payload;
+    expect(payload.executions[0]).toMatchObject({ state: "settled", escalation: null });
+    expect(payload.executions[0]?.receipt_ids).toHaveLength(1);
+  });
+});
+
 describe("section 10: restart in executing, then resume", () => {
   it("one payment, one receipt, never two", () => {
     const stateDir = mkdtempSync(join(tmpdir(), "bills-restart-"));

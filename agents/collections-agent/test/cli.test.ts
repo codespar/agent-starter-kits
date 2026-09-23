@@ -17,7 +17,8 @@ const HAPPY = "oi, recebi a mensagem sobre o acordo do pedido 1042";
 function run(script: string, args: string[], env: Record<string, string>) {
   const result = spawnSync(NODE, ["--disable-warning=ExperimentalWarning", "--import", "tsx", script, ...args], {
     cwd: AGENT_DIR,
-    env: { ...process.env, ANTHROPIC_API_KEY: "", CODESPAR_API_KEY: "", ...env },
+    // Pinned inside collection hours (#16): these processes must not depend on the hour the suite runs at. A test overrides it.
+    env: { ...process.env, ANTHROPIC_API_KEY: "", CODESPAR_API_KEY: "", CODESPAR_AGENT_NOW: "2026-09-23T14:00:00-03:00", ...env },
     encoding: "utf8",
     timeout: 60_000,
   });
@@ -56,6 +57,42 @@ describe("npm start -- --input ... --json", () => {
     expect(payload.executions[0]?.charges).toHaveLength(1);
     expect(payload.receipts).toHaveLength(1);
     expect(out.stderr).toContain("copia e cola");
+  });
+
+  // #16: the collection-hours guardrail reads the engine clock. Pinned, the gate is the same at 03:00 and at 15:00.
+  describe("--now pins the clock the guardrails read", () => {
+    const ARGS = ["--input", "fechado, pago à vista", "--transcript", "test/fixtures/accept-1042.transcript.jsonl", "--approve", "--simulate-payer", "--json"];
+    type Payload = { executions: Array<{ state: string; reason: string | null; charges: unknown[] }>; receipts: string[] };
+
+    it("at 20:08 America/Sao_Paulo the fixture is denied (outside_hours) and nothing is issued", () => {
+      const out = run("src/main.ts", [...ARGS, "--now", "2026-09-23T20:08:00-03:00"], scratch("now-night"));
+      expect(out.code).toBe(0);
+      const payload = JSON.parse(out.stdout.trim()) as Payload;
+      expect(payload.executions).toHaveLength(1);
+      expect(payload.executions[0]).toMatchObject({ state: "denied", reason: "outside_hours", charges: [] });
+      expect(payload.receipts).toHaveLength(0);
+      expect(out.stderr).toContain("agora sao 20:08");
+    });
+
+    it("at 14:00 America/Sao_Paulo the same command settles, whatever the wall clock says", () => {
+      const out = run("src/main.ts", [...ARGS, "--now", "2026-09-23T14:00:00-03:00"], scratch("now-day"));
+      expect(out.code).toBe(0);
+      const payload = JSON.parse(out.stdout.trim()) as Payload;
+      expect(payload.executions.map((e) => e.state)).toEqual(["settled"]);
+      expect(payload.executions[0]?.charges).toHaveLength(1);
+      expect(payload.receipts).toHaveLength(1);
+    });
+
+    it("CODESPAR_AGENT_NOW is the same pin from the environment; an unparseable value exits 2 before anything runs", () => {
+      const out = run("src/main.ts", ARGS, { ...scratch("now-env"), CODESPAR_AGENT_NOW: "2026-09-23T20:08:00-03:00" });
+      expect(out.code).toBe(0);
+      expect((JSON.parse(out.stdout.trim()) as Payload).executions[0]).toMatchObject({ state: "denied", reason: "outside_hours" });
+
+      const bad = run("src/main.ts", [...ARGS, "--now", "yesterday"], scratch("now-bad"));
+      expect(bad.code).toBe(2);
+      expect(bad.stdout).toBe("");
+      expect(bad.stderr).toContain("--now must be an ISO 8601 instant");
+    });
   });
 
   it("refuses a key outside csk_test_ before anything else", () => {

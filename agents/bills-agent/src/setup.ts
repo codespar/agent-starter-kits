@@ -24,6 +24,7 @@ import {
   loadOrCreateLocalApprovalKey,
   loadToolsFile,
   newRunId,
+  resolveFixedClock,
   NotATestKeyError,
   type AgentRuntime,
   type ApprovalMode,
@@ -121,6 +122,8 @@ export function resolveRailKind(env: NodeJS.ProcessEnv, requested: RailKind | un
 export function setup(options: SetupOptions = {}): Setup {
   const env = options.env ?? process.env;
   const say = options.say ?? ((line: string) => process.stderr.write(line + "\n"));
+  // `--now` on the one-shot, or CODESPAR_AGENT_NOW for every command: the clock the engine, the stubs, the gate and the loop read (#16).
+  const now = options.now ?? resolveFixedClock(undefined, env);
   const manifest = loadManifest(join(AGENT_DIR, "agent.yaml"));
   const guardrails = loadGuardrails(manifest.resolvePath(manifest.manifest.guardrails));
   const tools = loadToolsFile(manifest.resolvePath(manifest.manifest.tools));
@@ -132,7 +135,7 @@ export function setup(options: SetupOptions = {}): Setup {
   const stateDir = options.stateDir ?? env["BILLS_STATE_DIR"] ?? STATE_DIR;
   const runs = options.runsDir ?? runsDir(env);
   const store = new StateStore(join(stateDir, "state.db"));
-  const gate = new LocalMandateStatusStub(store, options.now);
+  const gate = new LocalMandateStatusStub(store, now);
   const signer = loadOrCreateLocalApprovalKey(stateDir);
 
   const railKind = resolveRailKind(env, options.rail);
@@ -148,20 +151,20 @@ export function setup(options: SetupOptions = {}): Setup {
     mandate = local;
     rail = new CodeSparRail(api, { canonical: mandate.canonical, signature: mandate.signature });
     // Section 4.7 against the real status: the local stub answers only runs without a key.
-    status = new ApiMandateStatusSource(api, options.now);
+    status = new ApiMandateStatusSource(api, now);
   } else {
     // BILLS_KILL_AFTER_DISPATCH=1 simulates a crash right after the rail accepted the attempt and before the outcome was recorded.
     const killAfterDispatch = env["BILLS_KILL_AFTER_DISPATCH"] === "1" ? { afterDispatch: () => process.exit(137) } : {};
     // BILLS_STUB_REFUSE=<payee,payee>: the stub rail refuses these payees, to drive a partial failure from a test process.
     const refuse = env["BILLS_STUB_REFUSE"] ? { refusePayees: env["BILLS_STUB_REFUSE"].split(",").map((p) => p.trim()).filter(Boolean) } : {};
-    rail = new StubRail(store, { ...(options.now ? { clock: options.now } : {}), ...killAfterDispatch, ...refuse, ...(options.stubRail ?? {}) });
+    rail = new StubRail(store, { ...(now ? { clock: now } : {}), ...killAfterDispatch, ...refuse, ...(options.stubRail ?? {}) });
     mandate = options.mandate ?? loadMandate(manifest.resolvePath(manifest.manifest.mandate_schema));
   }
 
   const runId = options.runId ?? newRunId(mode);
   const bundle = new ProofBundle(runs, runId);
   bundle.mandateSnapshot(mandate);
-  bundle.meta({ run_id: runId, agent: `${manifest.manifest.name}@${manifest.manifest.version}`, mode, rail: railKind, mandate_id: mandate.id, started_at: (options.now ?? (() => new Date()))().toISOString() });
+  bundle.meta({ run_id: runId, agent: `${manifest.manifest.name}@${manifest.manifest.version}`, mode, rail: railKind, mandate_id: mandate.id, started_at: (now ?? (() => new Date()))().toISOString() });
 
   const engine = new ExecutionEngine({
     store,
@@ -175,7 +178,7 @@ export function setup(options: SetupOptions = {}): Setup {
     mode,
     runId,
     onBehalfOf: mandate.consumer_id,
-    ...(options.now ? { clock: options.now } : {}),
+    ...(now ? { clock: now } : {}),
   });
 
   const handlers: Record<string, ToolHandler> = { codespar_pay: codesparPay, codespar_ledger: codesparLedger, list_bills: listBills };
@@ -205,7 +208,7 @@ export function setup(options: SetupOptions = {}): Setup {
     handlers,
     tools,
     makeRuntime,
-    makeLoop: (runtime, onExecution) => new AgentLoop({ runtime, tools, handlers, system, bundle, engine, onExecution, ...(options.now ? { clock: options.now } : {}) }),
+    makeLoop: (runtime, onExecution) => new AgentLoop({ runtime, tools, handlers, system, bundle, engine, onExecution, ...(now ? { clock: now } : {}) }),
     close: () => store.close(),
   };
 }

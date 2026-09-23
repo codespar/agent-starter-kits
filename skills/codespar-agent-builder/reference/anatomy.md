@@ -20,7 +20,7 @@ to do with each file when you scaffold `agents/<name>` from that directory.
 | `evals/adversarial/*.json` + `*.transcript.jsonl` | Section 9 cases. | WRITE seven cases. See `evals.md`. |
 | `scenarios/*.json` + `*.transcript.jsonl` | Section 12 packs. | WRITE at least `happy-path`. See `evals.md`. |
 | `channels/terminal/index.ts` | The terminal channel of `npm start`: describes what the core decided, asks on `awaiting_approval`, runs `approved`. | ADAPT: the `formatBRL` import (from your fixture file) and the two banner strings. The logic stays. |
-| `src/main.ts` | `npm start`, `--input`, `--scenario`, `--json`. | ADAPT: the usage text; a non-payer removes the embedded-consent block (lines that import `./modules/embedded-consent.js` and the `if (railKind === "api" && !loadLocalMandate(...))` branch) and its `createCodeSparClient`/`loadMandate` imports. |
+| `src/main.ts` | `npm start`, `--input`, `--scenario`, `--json`, `--now` (a pinned clock for the guardrails; `CODESPAR_AGENT_NOW` from the environment). | ADAPT: the usage text; a non-payer removes the embedded-consent block (lines that import `./modules/embedded-consent.js` and the `if (railKind === "api" && !loadLocalMandate(...))` branch) and its `createCodeSparClient`/`loadMandate` imports. |
 | `src/setup.ts` | Wires manifest, guardrails, tools, state, rail, status source, signer, bundle, provider. | ADAPT: the `handlers` map (your tool handlers), the module imports, the `BILLS_` env prefix, and for a non-payer the `railKind === "api"` branch (a read-only agent has no rail: force `stub` and load `mandate.example.json`). |
 | `src/bills.ts` | The deterministic fixture the demo reads (`BILLS`, `MONTH`, `formatBRL`). | REPLACE with your own fixture file (keep a `formatBRL` for the channel). |
 | `src/modules/pix-out.ts` | The tool handlers: `codespar_pay` drafts through the engine, `codespar_ledger` and `list_bills` read. | REPLACE with `src/modules/<your-module>.ts`: one handler per tool of `tools.json`. |
@@ -43,7 +43,7 @@ to do with each file when you scaffold `agents/<name>` from that directory.
 
 - `npm run check` (the manifest gate, `checkAgent` in the core).
 - `npm run eval` (the section 9 suite plus every scenario in every mode, replay provider, no network).
-- `npm start -- --input "..." [--approve|--deny] [--json]`, `--scenario <name>`, interactive `npm start`.
+- `npm start -- --input "..." [--approve|--deny] [--json] [--now <ISO>]`, `--scenario <name>`, interactive `npm start`. A gate that runs a one-shot passes `--now` so an hours guardrail reads a pinned instant, not the hour the CI happens to run at.
 - `npm run approve|deny <execution-id>`, `npm run resume`, `npm run reconcile`, `npm run rerun <run-id>`.
 - The proof bundle under `runs/<run-id>/` (transcript, approvals, mandate snapshot, events, receipts), every line stamped with `actor`.
 - The `csk_test_` guard, the replay provider when `ANTHROPIC_API_KEY` is empty, and `--json` on stdout with people on stderr.
