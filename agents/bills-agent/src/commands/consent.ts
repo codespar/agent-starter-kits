@@ -1,5 +1,6 @@
 /**
- * `npm run consent [--yes]`: runs the partner-surface consent for a new
+ * `npm run consent -- --yes` (or `npm run consent --yes`, which npm keeps as
+ * `npm_config_yes`): runs the partner-surface consent for a new
  * mandate with the test key (the titular authorizes at the keyboard), stores
  * the signed envelope locally and credits the sandbox. Module `embedded-consent`.
  */
@@ -13,7 +14,7 @@ readDotEnv();
 const say = (l: string) => stderr.write(l + "\n");
 const api = createCodeSparClient({ apiKey: process.env["CODESPAR_API_KEY"], baseUrl: process.env["CODESPAR_API_URL"], projectId: process.env["CODESPAR_PROJECT_ID"] });
 const example = loadMandate(resolve(AGENT_DIR, "mandate.example.json"));
-const yes = process.argv.includes("--yes");
+const yes = process.argv.includes("--yes") || process.env["npm_config_yes"] === "true";
 const confirm = async (question: string): Promise<boolean> => {
   if (yes) return true;
   const { createInterface } = await import("node:readline/promises");

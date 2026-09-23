@@ -12,7 +12,7 @@ import { NotATestKeyError, isTestKey } from "@codespar/agent-core";
 import { closeTerminal, defaultAsk, handleExecution, interactive } from "../channels/terminal/index.js";
 import { runEmbeddedConsent, loadLocalMandate } from "./modules/embedded-consent.js";
 import { checkScenario, listScenarios, loadScenario, runScenario, scenariosDir } from "./scenarios.js";
-import { AGENT_DIR, MANDATE_PATH, NoMandateError, readDotEnv, resolveRailKind, setup, type RailKind } from "./setup.js";
+import { AGENT_DIR, MANDATE_PATH, NoMandateError, readDotEnv, resolveProvider, resolveRailKind, setup, type ProviderKind, type RailKind } from "./setup.js";
 import { loadMandate, createCodeSparClient } from "@codespar/agent-core";
 
 interface Args {
@@ -21,7 +21,7 @@ interface Args {
   mode?: "human" | "mandate";
   json: boolean;
   decision?: "approve" | "deny";
-  provider?: "anthropic" | "replay";
+  provider?: ProviderKind;
   transcript?: string;
   rail?: RailKind;
   user: string;
@@ -106,7 +106,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 
   // One-shot without a model: replay the recorded happy-path when the input is its first turn.
   let transcript = args.transcript;
-  const provider = args.provider ?? (process.env["ANTHROPIC_API_KEY"] && process.env["ANTHROPIC_API_KEY"] !== "sk-ant-your_key_here" ? "anthropic" : "replay");
+  const provider = resolveProvider(process.env, args.provider);
   if (provider === "replay" && !transcript && args.input) {
     const match = listScenarios().map(loadScenario).find((s) => s.turns[0].input === args.input);
     if (match) transcript = resolve(scenariosDir(), match.transcript);

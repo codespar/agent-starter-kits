@@ -55,7 +55,7 @@ export type RailKind = "stub" | "api";
 export interface SetupOptions {
   mode?: ApprovalMode | undefined;
   rail?: RailKind | undefined;
-  provider?: "anthropic" | "replay" | undefined;
+  provider?: ProviderKind | undefined;
   transcript?: string | undefined;
   runId?: string | undefined;
   runsDir?: string | undefined;
@@ -98,6 +98,17 @@ export function readDotEnv(agentDir = AGENT_DIR): void {
     const value = (m[2] ?? "").replace(/^["']|["']$/g, "");
     if (process.env[m[1]] === undefined) process.env[m[1]] = value;
   }
+}
+
+export type ProviderKind = "anthropic" | "replay";
+
+/** The `.env.example` placeholder counts as no key: a copied example must replay, not call Anthropic with a fake key. */
+export const ANTHROPIC_KEY_PLACEHOLDER = "sk-ant-your_key_here";
+
+export function resolveProvider(env: NodeJS.ProcessEnv, requested: ProviderKind | undefined): ProviderKind {
+  if (requested) return requested;
+  const key = env["ANTHROPIC_API_KEY"]?.trim();
+  return key && key !== ANTHROPIC_KEY_PLACEHOLDER ? "anthropic" : "replay";
 }
 
 export function resolveRailKind(env: NodeJS.ProcessEnv, requested: RailKind | undefined): RailKind {
@@ -170,7 +181,7 @@ export function setup(options: SetupOptions = {}): Setup {
   const handlers: Record<string, ToolHandler> = { codespar_pay: codesparPay, codespar_ledger: codesparLedger, list_bills: listBills };
 
   const makeRuntime = (): AgentRuntime => {
-    const provider = options.provider ?? (env["ANTHROPIC_API_KEY"] && env["ANTHROPIC_API_KEY"] !== "sk-ant-your_key_here" ? "anthropic" : "replay");
+    const provider = resolveProvider(env, options.provider);
     if (provider === "anthropic") return new AnthropicRuntime({ apiKey: env["ANTHROPIC_API_KEY"] });
     if (!options.transcript) throw new Error("the replay provider needs a transcript (--transcript <file> or --scenario <name>)");
     say(`[replay] no ANTHROPIC_API_KEY: replaying ${options.transcript}`);
@@ -201,7 +212,7 @@ export function setup(options: SetupOptions = {}): Setup {
 
 export class NoMandateError extends Error {
   constructor() {
-    super("no signed mandate yet: run `npm run consent` (or `npm start`, which starts the consent when a test key is present)");
+    super("no signed mandate yet: run `npm run consent -- --yes` first (or `npm start` without --input, which starts the consent when a test key is present)");
     this.name = "NoMandateError";
   }
 }

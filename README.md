@@ -1,15 +1,25 @@
 # CodeSpar Agent Starter Kits
 
-Agents that pay under a mandate, with approval and a receipt. Clone, add two keys, talk to an agent in the terminal in five minutes.
+Agents that pay under a mandate, with approval and a receipt. Clone, add one key, sign the mandate once, talk to an agent in the terminal.
 
 ```
 git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits
-cp agents/bills-agent/.env.example agents/bills-agent/.env   # CODESPAR_API_KEY (csk_test_...) and ANTHROPIC_API_KEY
-npm install && npm start                                     # at the repository root: it is an npm workspace
+cp agents/bills-agent/.env.example agents/bills-agent/.env   # set CODESPAR_API_KEY (csk_test_...); leave ANTHROPIC_API_KEY empty to replay
+npm install && npm run consent -- --yes                      # at the repository root (npm workspace); signs the mandate once
+npm start                                                    # or one turn: npm start -- --input "pague a escola de outubro" --approve
 > pague a escola de outubro
 ```
 
-A staging test key also needs `CODESPAR_API_URL=https://api.staging.codespar.dev` in that `.env` (the line is there, commented). A production key needs nothing else.
+The consent comes first: `npm start -- --input ...` refuses to run without a signed mandate (`no signed mandate yet`), and the interactive `npm start` offers the consent itself when a test key is present. A staging test key also needs `CODESPAR_API_URL=https://api.staging.codespar.dev` in that `.env` before the consent (the line is there, commented). A production key needs nothing else. `ANTHROPIC_API_KEY` may stay empty: without a real key the kit replays the recorded happy path, and the old placeholder `sk-ant-your_key_here` counts as empty.
+
+The run prints the receipt as `recibo: runs/<run-id>/receipts/rcpt_....json`. To confirm it against the API, with the key from `.env` and never on the screen (a staging key also needs `--base-url "$CODESPAR_API_URL"`):
+
+```
+set -a; . agents/bills-agent/.env; set +a
+npx -y @codespar/cli@0.13.0 consumers get-receipts rcpt_...   # GET /v1/consumers/receipts/{id}; expect sandbox: true, money_moved: false
+```
+
+Measured on 2026-09-23 in staging, context-free run following only the README, no retry: 77 s from `git clone` to a receipt the API answered with 200. 27 of those seconds were a first `npm start -- --input` refused for lack of a mandate, which is why the consent is a line of the path above; the path as now written has not been re-timed.
 
 ## What is here
 
@@ -42,7 +52,7 @@ Same code, same trail, same receipts. Start in `human`; flip the key when the cl
 - `npm test`: the core, the restart-in-`executing`-then-`resume` test, `rerun`, `approve`/`deny`, and `--json` output. When piping `npm start -- --input ... --json`, add npm's `-s`: npm prints the script banner on stdout, the kit does not.
 - `node scripts/secret-scan.mjs all`: no key-shaped string in the tree. Also a pre-commit hook.
 
-Requires Node 22.13 or newer (`node:sqlite`, no native build).
+Requires Node 22 or newer (`engines` says 22.13, the `node:sqlite` floor, no native build; the measured run used 25.5).
 
 ## The same, through the CLI
 
