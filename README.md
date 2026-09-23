@@ -5,9 +5,11 @@ Agents that pay under a mandate, with approval and a receipt. Clone, add two key
 ```
 git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits
 cp agents/bills-agent/.env.example agents/bills-agent/.env   # CODESPAR_API_KEY (csk_test_...) and ANTHROPIC_API_KEY
-npm install && npm start
+npm install && npm start                                     # at the repository root: it is an npm workspace
 > pague a escola de outubro
 ```
+
+A staging test key also needs `CODESPAR_API_URL=https://api.staging.codespar.dev` in that `.env` (the line is there, commented). A production key needs nothing else.
 
 ## What is here
 
@@ -40,6 +42,18 @@ Same code, same trail, same receipts. Start in `human`; flip the key when the cl
 - `node scripts/secret-scan.mjs all`: no key-shaped string in the tree. Also a pre-commit hook.
 
 Requires Node 22.13 or newer (`node:sqlite`, no native build).
+
+## The same, through the CLI
+
+`agent.yaml` pins `cli: "@codespar/cli@0.13.0"`, the version whose help these lines match. The `npm` scripts stay as shortcuts.
+
+```
+npx -y @codespar/cli@0.13.0 agent run agents/bills-agent --input "pague a escola de outubro" --approve
+npx -y @codespar/cli@0.13.0 eval agents/bills-agent
+npx -y @codespar/cli@0.13.0 mandate revoke <mandate-id> --reason "cancelled by the titular"
+```
+
+`agent run` drives the agent's own `npm start` (without `--input`, the interactive terminal); `eval` runs `npm run check` plus the adversarial suite and the scenarios; `mandate revoke` is the section 4.7 kill switch for one mandate, against the API.
 
 ## What is sandbox, what is a stub
 

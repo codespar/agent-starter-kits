@@ -12,6 +12,7 @@ import { loadManifest, ManifestSchema, type LoadedManifest } from "./manifest.js
 import { MandateSchema } from "./mandate.js";
 import { ToolsFileSchema } from "./tools.js";
 import { canonicalJson } from "./hash.js";
+import { PUBLISHED_EVENTS, isPublishedEvent } from "./events.js";
 
 export interface CheckFinding {
   level: "error" | "warning";
@@ -40,6 +41,10 @@ export function checkAgent(agentDir: string): CheckReport {
   const raw = parseYaml(readFileSync(manifestPath, "utf8")) as Record<string, unknown> | null;
   for (const field of ["schema", "mcp", "cli"]) {
     if (!raw || raw[field] === undefined) error("manifest_field_missing", `agent.yaml has no \`${field}\``);
+  }
+  // The events an agent declares must be ones the API publishes; the list is the core's (events.ts), the manifest only names entries of it.
+  for (const name of Array.isArray(raw?.["events"]) ? raw["events"] : []) {
+    if (typeof name === "string" && !isPublishedEvent(name)) error("events_unknown", `agent.yaml declares the event \`${name}\`, which the API does not publish; known: ${PUBLISHED_EVENTS.join(", ")}`);
   }
 
   let loaded: LoadedManifest;

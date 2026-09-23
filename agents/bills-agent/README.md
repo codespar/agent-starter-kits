@@ -5,11 +5,11 @@ The titular delegates the month's bills (school, groceries, the cleaner, utiliti
 ```
 git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits
 cp agents/bills-agent/.env.example agents/bills-agent/.env   # CODESPAR_API_KEY (csk_test_...) and ANTHROPIC_API_KEY
-npm install && npm start
+npm install && npm start                                     # at the repository root: it is an npm workspace
 > pague a escola de outubro
 ```
 
-`npm install` runs at the repository root (it is an npm workspace; installing inside `agents/bills-agent` does not bring the root toolchain). `npm start` at the root opens this agent; inside `agents/bills-agent`, the same scripts work once the root is installed.
+`npm install` runs at the repository root (it is an npm workspace; installing inside `agents/bills-agent` does not bring the root toolchain). `npm start` at the root opens this agent; inside `agents/bills-agent`, the same scripts work once the root is installed. A staging test key also needs `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` (commented in `.env.example`); a production key needs nothing else.
 
 ## What it proves
 
@@ -34,7 +34,7 @@ Read from `agent.yaml`, field `maturity`:
 
 What the agent applies on its own, before the mandate (`guardrails.json`): the escalation thresholds (R$ 1.500,00 per payment, first payment to each payee, 22:00–07:00), a 24-hour velocity window per payee against fractioning, and "the core's total wins" when the model states another.
 
-Out of this delivery: WhatsApp, batch payouts, `npm run inspect`, the `codespar init --template` scaffold.
+Out of this delivery: WhatsApp, batch payouts, `npm run inspect`, and a kit template for `codespar init --template` (0.13.0 ships `init`, but its templates are not these agents yet).
 
 ## Commands
 
@@ -50,6 +50,14 @@ Out of this delivery: WhatsApp, batch payouts, `npm run inspect`, the `codespar 
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches. |
 | `npm run reconcile` | Compares local state with the rail. Closes an `executing` execution only from a recorded rail outcome; what the rail has not answered yet stays `executing` with an `execution.uncertain` event, for a human. Never dispatches. |
 | `npm run consent [--yes]` | Runs a new consent for a mandate (test key, partner surface). The signed envelope is stored in `.codespar/mandate.json`, mode 0600. |
+
+The same through the CLI `agent.yaml` pins (`cli: "@codespar/cli@0.13.0"`; the lines match its `--help`):
+
+| Command | Does |
+|---|---|
+| `npx -y @codespar/cli@0.13.0 agent run agents/bills-agent --input "pague a escola de outubro" [--approve\|--deny]` | One turn through the agent's own `npm start`; without `--input`, the interactive terminal. |
+| `npx -y @codespar/cli@0.13.0 eval agents/bills-agent` | `npm run check` plus the eval suite; exit 1 on any failing case. |
+| `npx -y @codespar/cli@0.13.0 mandate revoke <mandate-id> [--reason <text>]` | Revokes a mandate against the API (`active` or `paused` → `revoked`, terminal). The next gate of every open execution answers `mandate_revoked`. |
 
 ## The proof bundle
 

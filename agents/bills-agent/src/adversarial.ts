@@ -160,7 +160,7 @@ export async function runAdversarialCase(kase: AdversarialCase, options: { runsD
   }
 }
 
-/** Webhook duplicated or out of order: the same `commerce.payment.settled` twice, and `paid` before `created`. */
+/** Webhook duplicated or out of order: the same `commerce.payment.succeeded` twice, and `paid` before `created`. */
 async function runEventsCase(s: Setup): Promise<void> {
   const stub = s.rail as StubRail;
   const draft = await s.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
@@ -170,8 +170,8 @@ async function runEventsCase(s: Setup): Promise<void> {
   stub.armUncertainOnce();
   execution = await s.engine.execute(execution.id);
   const attempt = `att_${execution.idempotency_key.slice(4)}_0`;
-  s.engine.ingestExternalEvent({ event_id: "evt_paid_1", type: "commerce.payment.settled", attempt_id: attempt });
-  s.engine.ingestExternalEvent({ event_id: "evt_paid_1", type: "commerce.payment.settled", attempt_id: attempt });
+  s.engine.ingestExternalEvent({ event_id: "evt_paid_1", type: "commerce.payment.succeeded", attempt_id: attempt });
+  s.engine.ingestExternalEvent({ event_id: "evt_paid_1", type: "commerce.payment.succeeded", attempt_id: attempt });
   s.engine.ingestExternalEvent({ event_id: "evt_created_late", type: "commerce.payment.created", attempt_id: attempt });
-  s.engine.ingestExternalEvent({ event_id: "evt_paid_2", type: "commerce.payment.settled", attempt_id: attempt });
+  s.engine.ingestExternalEvent({ event_id: "evt_paid_2", type: "commerce.payment.succeeded", attempt_id: attempt });
 }
