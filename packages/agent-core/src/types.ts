@@ -32,6 +32,7 @@ export type ExecutionReason =
   | "mandate_revoked"
   | "mandate_paused"
   | "mandate_expired"
+  | "mandate_status_unavailable"
   | "org_paused"
   | "beneficiary_not_allowed"
   | "per_tx_cap_exceeded"

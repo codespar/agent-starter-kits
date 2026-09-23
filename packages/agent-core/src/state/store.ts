@@ -272,7 +272,7 @@ export class StateStore {
     return result.changes === 1;
   }
 
-  // stub mandate status / org pause (AgentGate stand-in)
+  // stub mandate status / org pause (the local stand-in of stubs/mandate-status.ts, for runs without a key)
 
   stubMandateStatus(mandateId: string): { status: string; reason: string | null } | undefined {
     return this.db.prepare("SELECT status, reason FROM stub_mandate_status WHERE mandate_id = ?").get(mandateId) as { status: string; reason: string | null } | undefined;

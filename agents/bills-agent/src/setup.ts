@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  AgentGateStub,
+  LocalMandateStatusStub,
   AgentLoop,
   ApiMandateStatusSource,
   CodeSparRail,
@@ -73,7 +73,7 @@ export interface Setup {
   mode: ApprovalMode;
   mandate: Mandate;
   store: StateStore;
-  gate: AgentGateStub;
+  gate: LocalMandateStatusStub;
   rail: PaymentRail;
   railKind: RailKind;
   api: ApiClient | undefined;
@@ -121,7 +121,7 @@ export function setup(options: SetupOptions = {}): Setup {
   const stateDir = options.stateDir ?? env["BILLS_STATE_DIR"] ?? STATE_DIR;
   const runs = options.runsDir ?? runsDir(env);
   const store = new StateStore(join(stateDir, "state.db"));
-  const gate = new AgentGateStub(store, options.now);
+  const gate = new LocalMandateStatusStub(store, options.now);
   const signer = loadOrCreateLocalApprovalKey(stateDir);
 
   const railKind = resolveRailKind(env, options.rail);
@@ -136,7 +136,8 @@ export function setup(options: SetupOptions = {}): Setup {
     if (!local) throw new NoMandateError();
     mandate = local;
     rail = new CodeSparRail(api, { canonical: mandate.canonical, signature: mandate.signature });
-    status = new ApiMandateStatusSource(api, gate, options.now);
+    // Section 4.7 against the real status: the local stub answers only runs without a key.
+    status = new ApiMandateStatusSource(api, options.now);
   } else {
     // BILLS_KILL_AFTER_DISPATCH=1 simulates a crash right after the rail accepted the attempt and before the outcome was recorded.
     const killAfterDispatch = env["BILLS_KILL_AFTER_DISPATCH"] === "1" ? { afterDispatch: () => process.exit(137) } : {};

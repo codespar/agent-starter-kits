@@ -8,7 +8,8 @@ import { GuardrailsSchema, type Guardrails } from "../src/guardrails.js";
 import { MandateSchema, type Mandate } from "../src/mandate.js";
 import { ManifestSchema, type Manifest } from "../src/manifest.js";
 import { StateStore } from "../src/state/store.js";
-import { AgentGateStub } from "../src/stubs/agentgate.js";
+import { LocalMandateStatusStub } from "../src/stubs/mandate-status.js";
+import type { MandateStatusSource } from "../src/revocation.js";
 import { StubRail, type StubRailOptions } from "../src/stubs/rail.js";
 import type { ApprovalMode } from "../src/types.js";
 
@@ -75,7 +76,7 @@ export function testMandate(over: Partial<Mandate> = {}): Mandate {
 export interface Harness {
   dir: string;
   store: StateStore;
-  gate: AgentGateStub;
+  gate: LocalMandateStatusStub;
   rail: StubRail;
   bundle: ProofBundle;
   engine: ExecutionEngine;
@@ -92,6 +93,8 @@ export interface HarnessOptions {
   rail?: StubRailOptions;
   dir?: string;
   runId?: string;
+  /** The section 4.7 status source; the local stub unless a test wires the API one. */
+  status?: MandateStatusSource;
 }
 
 export function harness(options: HarnessOptions = {}): Harness {
@@ -99,7 +102,7 @@ export function harness(options: HarnessOptions = {}): Harness {
   let now = options.now ?? new Date("2026-09-23T18:00:00Z"); // 15:00 in Sao Paulo
   const clock = () => now;
   const store = new StateStore(join(dir, "state.db"));
-  const gate = new AgentGateStub(store, clock);
+  const gate = new LocalMandateStatusStub(store, clock);
   const rail = new StubRail(store, { clock, ...(options.rail ?? {}) });
   const runId = options.runId ?? "run_test";
   const bundle = new ProofBundle(join(dir, "runs"), runId);
@@ -107,7 +110,7 @@ export function harness(options: HarnessOptions = {}): Harness {
   const deps: EngineDeps = {
     store,
     rail,
-    status: gate,
+    status: options.status ?? gate,
     signer: hmacSigner("test", Buffer.alloc(32, 1)),
     manifest: testManifest(options.manifest),
     guardrails: testGuardrails({ approval: mode, ...(options.guardrails ?? {}) }),

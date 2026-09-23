@@ -57,7 +57,7 @@ npx -y @codespar/cli@0.13.0 mandate revoke <mandate-id> --reason "cancelled by t
 
 ## What is sandbox, what is a stub
 
-Everything runs in the CodeSpar sandbox with a `csk_test_` key; any other key is refused before a network call. Two pieces are local stubs, marked in code and in the READMEs: the signature of the approval artifact (a local dev key; the API does not sign approval lists) and the revocation/kill-switch source (the AgentGate is in preview). The receipt seal is HMAC; it proves the payment to whoever runs the agent, and to nobody else until Ed25519.
+Everything runs in the CodeSpar sandbox with a `csk_test_` key; any other key is refused before a network call. With a test key, the revocation check of section 4.7 is real: before `executing` the core reads the mandate's status from the API (`GET /v1/mandates/{id}`) and executes on `active` only; `paused`, `revoked` and `expired` refuse, and a read that does not answer refuses too (`mandate_status_unavailable`), never "assume active". Two pieces are local stubs, marked in code and in the READMEs: the signature of the approval artifact (a local dev key; the API does not sign approval lists) and, for runs without a key (the CI, the scenarios), the status source over the local state.db, which also carries the organization kill switch (`org pauseAll`) the API does not expose yet. The receipt seal is HMAC; it proves the payment to whoever runs the agent, and to nobody else until Ed25519.
 
 ## Protocols
 

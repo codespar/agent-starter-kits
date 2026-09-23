@@ -21,7 +21,7 @@ import { newId } from "./ids.js";
 import { mandateExpired, payeeAllowed, resolveBeneficiary, windowCap, windowStart, type Mandate } from "./mandate.js";
 import type { Manifest } from "./manifest.js";
 import type { PaymentRail, RailPayment } from "./rail.js";
-import type { MandateStatusSource } from "./revocation.js";
+import type { MandateStatusReport, MandateStatusSource } from "./revocation.js";
 import { isTerminal, transition, type Execution, type ExecutionState } from "./state-machine.js";
 import type { StateStore } from "./state/store.js";
 import type { Actor, ApprovalArtifact, ApprovalMode, ExecutionItem, ExecutionReason, ItemOutcome } from "./types.js";
@@ -183,7 +183,7 @@ export class ExecutionEngine {
     const now = this.clock();
     const at = now.toISOString();
     const gate = await this.mandateGate();
-    if (gate) return this.persist(transition(execution, "denied", { at, actor: this.agentActor, reason: gate.reason, detail: gate.detail }));
+    if (gate) return this.persist(transition(execution, gate.to, { at, actor: this.agentActor, reason: gate.reason, detail: gate.detail }));
 
     const verdict = this.policy(execution, now, "draft", false);
     switch (verdict.kind) {
@@ -257,7 +257,7 @@ export class ExecutionEngine {
 
     // 4.7: the artifact may predate a revocation. Ask the source, every time.
     const gate = await this.mandateGate();
-    if (gate) return this.persist(transition(approved, "denied", { at, actor: this.agentActor, reason: gate.reason, detail: gate.detail }));
+    if (gate) return this.persist(transition(approved, gate.to, { at, actor: this.agentActor, reason: gate.reason, detail: gate.detail }));
 
     const artifact = execution.approval_id ? this.deps.store.getApproval(execution.approval_id) : undefined;
     if (!artifact) throw new Error(`execution ${executionId} is approved without an approval artifact`);
@@ -483,14 +483,35 @@ export class ExecutionEngine {
 
   // ---- helpers ------------------------------------------------------------
 
-  private async mandateGate(): Promise<{ reason: ExecutionReason; detail: string } | undefined> {
+  /**
+   * Section 4.7, fail-closed: `executing` is reached on `active` and on
+   * nothing else. A source that cannot answer (a failed read, a status this
+   * code does not know, an exception) is `mandate_status_unavailable`, never
+   * "assume active". An expired mandate closes the execution as `expired`;
+   * the other refusals close it as `denied`.
+   */
+  private async mandateGate(): Promise<{ reason: ExecutionReason; detail: string; to: "denied" | "expired" } | undefined> {
     const { mandate } = this.deps;
-    const report = await this.deps.status.check(mandate.id);
-    if (report.org_paused) return { reason: "org_paused", detail: "the organization paused every mandate (kill switch)" };
-    if (report.status === "revoked") return { reason: "mandate_revoked", detail: `mandate ${mandate.id} was revoked` };
-    if (report.status === "paused") return { reason: "mandate_paused", detail: `mandate ${mandate.id} is paused` };
-    if (report.status === "expired" || mandateExpired(mandate, this.clock())) return { reason: "mandate_expired", detail: `mandate ${mandate.id} expired at ${mandate.expires_at}` };
-    return undefined;
+    let report: MandateStatusReport;
+    try {
+      report = await this.deps.status.check(mandate.id);
+    } catch (err) {
+      return { to: "denied", reason: "mandate_status_unavailable", detail: `the status of mandate ${mandate.id} could not be read (${err instanceof Error ? err.message : String(err)}); nothing executes until it can` };
+    }
+    if (report.org_paused) return { to: "denied", reason: "org_paused", detail: "the organization paused every mandate (kill switch)" };
+    switch (report.status) {
+      case "revoked":
+        return { to: "denied", reason: "mandate_revoked", detail: `mandate ${mandate.id} was revoked (source: ${report.source})` };
+      case "paused":
+        return { to: "denied", reason: "mandate_paused", detail: `mandate ${mandate.id} is paused (source: ${report.source})` };
+      case "expired":
+        return { to: "expired", reason: "mandate_expired", detail: `mandate ${mandate.id} expired at ${mandate.expires_at} (source: ${report.source})` };
+      case "active":
+        if (mandateExpired(mandate, this.clock())) return { to: "expired", reason: "mandate_expired", detail: `mandate ${mandate.id} expired at ${mandate.expires_at}` };
+        return undefined;
+      default:
+        return { to: "denied", reason: "mandate_status_unavailable", detail: `the status of mandate ${mandate.id} could not be read (${report.detail ?? "no detail"}); nothing executes until it can` };
+    }
   }
 
   private resolveItem(proposed: ProposedItem): ExecutionItem {

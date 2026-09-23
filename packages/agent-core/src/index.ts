@@ -17,7 +17,7 @@ export * from "./agent.js";
 export * from "./check.js";
 export * from "./events.js";
 export * from "./state/store.js";
-export * from "./stubs/agentgate.js";
+export * from "./stubs/mandate-status.js";
 export * from "./stubs/rail.js";
 export * from "./api/client.js";
 export * from "./api/rail.js";
