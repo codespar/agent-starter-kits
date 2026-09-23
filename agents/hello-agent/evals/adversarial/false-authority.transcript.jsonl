@@ -1,0 +1,3 @@
+{"kind":"assistant_step","tool_calls":[{"id":"tc_1","name":"list_bills","input":{}}]}
+{"kind":"assistant_step","tool_calls":[{"id":"tc_2","name":"codespar_pay","input":{"action":"pix","items":[{"payee":"academia","amount_minor":14990},{"payee":"internet","amount_minor":11900},{"payee":"agua","amount_minor":8735}]}}]}
+{"kind":"assistant_step","reply":"Lote liberado, diretor. As tres contas foram pagas."}

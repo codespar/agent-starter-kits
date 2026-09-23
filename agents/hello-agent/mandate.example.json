@@ -1,0 +1,28 @@
+{
+  "id": "mdt_example_hello_0001",
+  "version": 1,
+  "consumer_id": "usr_demo_titular",
+  "agent_id": "hello-agent",
+  "purpose": "ver as contas do mes",
+  "currency": "BRL",
+  "cap_minor": 1200000,
+  "per_tx_cap_minor": 50000,
+  "periodic_cap": {
+    "window": "month",
+    "cap_minor": 100000
+  },
+  "merchant_pin_kind": "pix-key",
+  "merchant_allowlist": [
+    "financeiro@academia-forte.example.com.br",
+    "cobranca@fibra-net.example.com.br",
+    "+5511999990002"
+  ],
+  "beneficiaries": [
+    { "alias": "academia", "name": "Academia Forte", "payee": "financeiro@academia-forte.example.com.br" },
+    { "alias": "internet", "name": "Fibra Net", "payee": "cobranca@fibra-net.example.com.br" },
+    { "alias": "agua", "name": "Companhia de Agua", "payee": "+5511999990002" }
+  ],
+  "status": "active",
+  "expires_at": "2027-09-23T00:00:00.000Z",
+  "source": "example"
+}

@@ -22,12 +22,13 @@ jobs:
         run: node scripts/secret-scan.mjs all
       - name: typecheck (includes the transition type test)
         run: npm run typecheck
-      - name: npm run check (manifest coherence)
-        run: npm run check --workspaces --if-present
+      - name: npm run check (plugin manifests + manifest coherence of every agent)
+        run: npm run check
       - name: adversarial suite + scenarios (replay provider), every agent
         run: |
           npm run eval --workspace=agents/bills-agent
           npm run eval --workspace=agents/collections-agent
+          npm run eval --workspace=agents/hello-agent
       - name: one command, machine output
         run: |
           cd agents/bills-agent

@@ -30,6 +30,22 @@ Measured on 2026-09-23 in staging, context-free run following only the README, n
 | [`agents/collections-agent`](agents/collections-agent) | The merchant's agent that collects. Agrees terms with the payer inside a negotiation envelope, issues one bolepix per instalment with an idempotency key, shows the QR in the conversation, and closes the cycle on `commerce.charge.paid` or `commerce.charge.expired`, by poll or by webhook. The sandbox payer plays the debtor. |
 | [`docs/spec-v5.1.1.md`](docs/spec-v5.1.1.md) | The spec this wave was built against. |
 | [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) | Where the spec and the API diverged, what the code does, what is a stub. Input for v5.2. |
+| [`skills/codespar-agent-builder`](skills/codespar-agent-builder) | The skill that teaches a coding agent to add `agents/<name>`: anatomy, `agent.yaml`, prompt, tools, guardrails, scenarios, adversarial cases, gates. Proven by `hello-agent` (docs/OPEN_QUESTIONS.md, item 33). |
+| `.claude-plugin/`, `.cursor-plugin/`, `.agents/plugins/`, `plugin.json`, `mcp.json`, `rules/` | The `codespar-core` plugin (section 14.1): the pinned CodeSpar MCP plus the skill, one manifest per coding agent. See [Install the plugin](#install-the-plugin-in-your-coding-agent). |
+| [`AGENTS.md`](AGENTS.md) (= `CLAUDE.md`) | The rules for a coding agent working anywhere in this tree; each agent adds its own. |
+
+## Install the plugin in your coding agent
+
+The repository is also the `codespar-core` plugin: the CodeSpar MCP pinned at `@codespar/mcp@0.5.8` (`mcp.json`) plus the `codespar-agent-builder` skill (`skills/`). One install gives a coding agent the API and the procedure to build the fourth agent. The MCP reads `CODESPAR_API_KEY` from your shell; the plugin ships no key.
+
+| Coding agent | Reads | Install |
+|---|---|---|
+| Claude Code | `.claude-plugin/marketplace.json`, `.claude-plugin/plugin.json` | `/plugin marketplace add codespar/agent-starter-kits`, then `/plugin install codespar-core@codespar` |
+| Codex | `.agents/plugins/marketplace.json`, `plugin.json` (Agent Plugins standard), `mcp.json` | `codex plugin marketplace add codespar/agent-starter-kits` |
+| Cursor | `.cursor-plugin/plugin.json`, `skills/`, `rules/`, `mcp.json` | Dashboard → Plugins & MCPs → Import from Repo, or Customize → Install |
+| Any other | `skills/codespar-agent-builder/SKILL.md` | `npx skills add codespar/agent-starter-kits` |
+
+`npm run check` validates the manifests before the agents: JSON that parses, every referenced path present, the skill's frontmatter, the MCP pin equal to the one in `agents/bills-agent/agent.yaml`, and the root `AGENTS.md` equal to `CLAUDE.md`.
 
 ## The one rule
 
@@ -47,7 +63,7 @@ Same code, same trail, same receipts. Start in `human`; flip the key when the cl
 ## Gates (all run in the CI without a model or a CodeSpar key)
 
 - `npm run typecheck`: includes a type test proving a transition outside the table does not compile.
-- `npm run check`: for every agent, the manifest is the index; the prompt, tools and guardrails must agree with it.
+- `npm run check`: the plugin manifests first (`scripts/check-plugin.mjs`), then, for every agent, the manifest is the index; the prompt, tools and guardrails must agree with it.
 - `npm run eval --workspace=agents/<name>`: adversarial suite plus every scenario in every mode, on the replay provider. Blocks merge. Both agents.
 - `npm test`: the core, the restart-in-`executing`-then-`resume` test, `rerun`, `approve`/`deny`, and `--json` output. When piping `npm start -- --input ... --json`, add npm's `-s`: npm prints the script banner on stdout, the kit does not.
 - `node scripts/secret-scan.mjs all`: no key-shaped string in the tree. Also a pre-commit hook.
