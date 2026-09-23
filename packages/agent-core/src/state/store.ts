@@ -267,9 +267,21 @@ export class StateStore {
     return row ? { request: JSON.parse(row.request), outcome: JSON.parse(row.outcome), at: row.at } : undefined;
   }
 
+  stubRailFindByTransaction(transactionId: string): { request: unknown; outcome: unknown; at: string } | undefined {
+    const row = this.db.prepare("SELECT request, outcome, at FROM stub_rail_attempts WHERE json_extract(outcome, '$.transaction_id') = ?").get(transactionId) as { request: string; outcome: string; at: string } | undefined;
+    return row ? { request: JSON.parse(row.request), outcome: JSON.parse(row.outcome), at: row.at } : undefined;
+  }
+
   stubRailPut(attemptId: string, request: unknown, outcome: unknown, at: string): boolean {
     const result = this.db.prepare("INSERT OR IGNORE INTO stub_rail_attempts (attempt_id, request, outcome, at) VALUES (?, ?, ?, ?)").run(attemptId, JSON.stringify(request), JSON.stringify(outcome), at);
     return result.changes === 1;
+  }
+
+  /** The stub receivable rail: an issued charge changes state as its payer acts, under the same attempt id. */
+  stubRailReplace(attemptId: string, request: unknown, outcome: unknown, at: string): void {
+    this.db
+      .prepare("INSERT INTO stub_rail_attempts (attempt_id, request, outcome, at) VALUES (?, ?, ?, ?) ON CONFLICT(attempt_id) DO UPDATE SET outcome = excluded.outcome, at = excluded.at")
+      .run(attemptId, JSON.stringify(request), JSON.stringify(outcome), at);
   }
 
   // stub mandate status / org pause (the local stand-in of stubs/mandate-status.ts, for runs without a key)

@@ -69,6 +69,10 @@ export function checkAgent(agentDir: string): CheckReport {
       const declaresPixOut = manifest.maturity["pix-out"] !== undefined;
       if (declaresPixOut && !hasPayment) error("tools_contradict_manifest", "agent.yaml declares pix-out maturity but tools.json has no payment meta-tool");
       if (!declaresPixOut && hasPayment) error("tools_contradict_manifest", "tools.json has a payment meta-tool but agent.yaml declares no pix-out maturity");
+      const hasCharge = parsed.data.meta_tools.some((t) => t.effect === "charge");
+      const declaresReceivables = manifest.maturity["bolepix-receivables"] !== undefined;
+      if (declaresReceivables && !hasCharge) error("tools_contradict_manifest", "agent.yaml declares bolepix-receivables maturity but tools.json has no charge meta-tool");
+      if (!declaresReceivables && hasCharge) error("tools_contradict_manifest", "tools.json has a charge meta-tool but agent.yaml declares no bolepix-receivables maturity");
     }
   }
 

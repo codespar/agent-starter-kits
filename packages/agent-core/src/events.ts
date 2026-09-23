@@ -30,6 +30,10 @@ export type PublishedEvent = (typeof PUBLISHED_EVENTS)[number];
 /** The rail's answer to one attempt, as the core records it locally and as the API publishes it. */
 export const PAYMENT_SUCCEEDED: PublishedEvent = "commerce.payment.succeeded";
 export const PAYMENT_FAILED: PublishedEvent = "commerce.payment.failed";
+/** The payer's answer to a receivable, as the API publishes it: paid settles, expired and cancelled fail. */
+export const CHARGE_PAID: PublishedEvent = "commerce.charge.paid";
+export const CHARGE_EXPIRED: PublishedEvent = "commerce.charge.expired";
+export const CHARGE_CANCELLED: PublishedEvent = "commerce.charge.cancelled";
 
 export function isPublishedEvent(name: string): name is PublishedEvent {
   return (PUBLISHED_EVENTS as readonly string[]).includes(name);

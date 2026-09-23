@@ -28,6 +28,13 @@ export const GuardrailsSchema = z
     approval_ttl_minutes: z.number().int().positive().default(15),
     /** IANA zone the `outside_hours` window is read in. */
     timezone: z.string().default("America/Sao_Paulo"),
+    /**
+     * The agent-specific envelope the kit's own deterministic policy reads
+     * (a collections agent: discount ceiling, instalments, due-date window).
+     * The core carries it and runs the kit's `policyExtension` at every gate;
+     * it does not interpret the keys.
+     */
+    envelope: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 

@@ -30,7 +30,8 @@ export const MandateSchema = z
     cap_minor: z.number().int().positive(),
     per_tx_cap_minor: z.number().int().positive(),
     periodic_cap: z.object({ window: z.enum(["day", "month"]), cap_minor: z.number().int().positive() }).strict().optional(),
-    merchant_pin_kind: z.enum(["pix-key", "merchant-id", "mcc"]),
+    /** `document` is the receivable side: the list names the debtors (CPF/CNPJ) with an open agreement, and a charge may only be issued against one of them. */
+    merchant_pin_kind: z.enum(["pix-key", "merchant-id", "mcc", "document"]),
     /** Concrete keys. The kit never treats `"*"` as authorizing a payee. */
     merchant_allowlist: z.array(z.string().min(1)).nonempty(),
     beneficiaries: z.array(BeneficiarySchema),

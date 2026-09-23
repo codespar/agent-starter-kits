@@ -25,14 +25,16 @@ export function sha256Hex(input: string | Buffer): string {
 
 /**
  * Section 4.2: the hash of the canonical list. Only the fields that decide
- * where money goes take part: payee, amount, currency. Aliases, names and
- * descriptions are presentation and may differ without changing the hash.
+ * where money goes take part: payee, amount, currency, and the due date of a
+ * receivable when it has one. Aliases, names and descriptions are
+ * presentation and may differ without changing the hash.
  */
 export function itemsHash(items: readonly ExecutionItem[]): string {
   const canonical = items.map((item) => ({
     payee: item.payee,
     amount: item.amount,
     currency: item.currency,
+    ...(item.due_date ? { due_date: item.due_date } : {}),
   }));
   return `sha256:${sha256Hex(canonicalJson(canonical))}`;
 }
