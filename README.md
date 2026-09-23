@@ -10,13 +10,15 @@ npm start                                                    # or one turn: npm 
 > pague a escola de outubro
 ```
 
+Instead of `git clone`, the CLI scaffolds the same agent: `npx -y @codespar/cli@0.14.0 init my-agent --template bills-agent` (or `--template collections-agent`), then the same `.env`, `npm install` and consent inside it.
+
 The consent comes first: `npm start -- --input ...` refuses to run without a signed mandate (`no signed mandate yet`), and the interactive `npm start` offers the consent itself when a test key is present. A staging test key also needs `CODESPAR_API_URL=https://api.staging.codespar.dev` in that `.env` before the consent (the line is there, commented). A production key needs nothing else. `ANTHROPIC_API_KEY` may stay empty: without a real key the kit replays the recorded happy path, and the old placeholder `sk-ant-your_key_here` counts as empty.
 
 The run prints the receipt as `recibo: runs/<run-id>/receipts/rcpt_....json`. To confirm it against the API, with the key from `.env` and never on the screen (a staging key also needs `--base-url "$CODESPAR_API_URL"`):
 
 ```
 set -a; . agents/bills-agent/.env; set +a
-npx -y @codespar/cli@0.13.0 consumers get-receipts rcpt_...   # GET /v1/consumers/receipts/{id}; expect sandbox: true, money_moved: false
+npx -y @codespar/cli@0.14.0 consumers get-receipts rcpt_...   # GET /v1/consumers/receipts/{id}; expect sandbox: true, money_moved: false
 ```
 
 Measured on 2026-09-23 in staging, context-free run following only the README, no retry: 77 s from `git clone` to a receipt the API answered with 200. 27 of those seconds were a first `npm start -- --input` refused for lack of a mandate, which is why the consent is a line of the path above; the path as now written has not been re-timed.
@@ -72,15 +74,15 @@ Requires Node 22 or newer (`engines` says 22.13, the `node:sqlite` floor, no nat
 
 ## The same, through the CLI
 
-`agent.yaml` pins `cli: "@codespar/cli@0.13.0"`, the version whose help these lines match. The `npm` scripts stay as shortcuts.
+`agent.yaml` pins `cli: "@codespar/cli@0.14.0"`, the version whose help these lines match. The `npm` scripts stay as shortcuts.
 
 ```
-npx -y @codespar/cli@0.13.0 agent run agents/bills-agent --input "pague a escola de outubro" --approve
-npx -y @codespar/cli@0.13.0 eval agents/bills-agent
-npx -y @codespar/cli@0.13.0 mandate revoke <mandate-id> --reason "cancelled by the titular"
+npx -y @codespar/cli@0.14.0 agent run agents/bills-agent --input "pague a escola de outubro" --approve
+npx -y @codespar/cli@0.14.0 eval agents/bills-agent
+npx -y @codespar/cli@0.14.0 mandate revoke <mandate-id> --reason "cancelled by the titular"
 ```
 
-`agent run` drives the agent's own `npm start` (without `--input`, the interactive terminal); `eval` runs `npm run check` plus the adversarial suite and the scenarios; `mandate revoke` is the section 4.7 kill switch for one mandate, against the API.
+`agent run agents/bills-agent --input ...` is `npm start -- --input ...` through the agent's own `npm start` (without `--input`, the interactive terminal); `eval` runs `npm run check` plus the adversarial suite and the scenarios; `mandate revoke` is the section 4.7 kill switch for one mandate, against the API; `init --template bills-agent|collections-agent` scaffolds one of these agents into a new directory.
 
 ## What is sandbox, what is a stub
 

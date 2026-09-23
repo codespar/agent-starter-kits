@@ -285,14 +285,14 @@ describe("CodeSparChargeRail: what crosses the wire on a create", () => {
   });
 });
 
-describe("paySandboxCharge: a plain fetch to the payer route", () => {
+describe("paySandboxCharge: the SDK's typed call to the payer route", () => {
   it("posts to /v1/test/charges/{id}/pay with the key, the project header and the amount; refuses a live key before any request", async () => {
     const { paySandboxCharge } = await import("../src/api/sandbox-payer.js");
     const seen: Array<{ url: string; init: RequestInit }> = [];
     const realFetch = globalThis.fetch;
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       seen.push({ url: String(url), init: init ?? {} });
-      return new Response(JSON.stringify({ charge_id: "chg_1", status: "paid", local_status: "settled", simulated: true, settled_against: "sandbox_fixture", money_moved: false, quoted_minor: 1000, paid_minor: 1000, payment: "full", idempotent_replay: false }), { status: 200 });
+      return new Response(JSON.stringify({ charge_id: "chg_1", status: "paid", local_status: "settled", simulated: true, settled_against: "sandbox_fixture", money_moved: false, quoted_minor: 1000, paid_minor: 1000, payment: "full", idempotent_replay: false }), { status: 200, headers: { "content-type": "application/json" } });
     }) as typeof fetch;
     try {
       const live = await paySandboxCharge({ apiKey: ["csk", "live", "0000000000"].join("_") }, "chg_1").catch((e: Error) => e);
@@ -301,10 +301,14 @@ describe("paySandboxCharge: a plain fetch to the payer route", () => {
       const out = await paySandboxCharge({ apiKey: "csk_test_unit_0000", baseUrl: "https://api.example.test/", projectId: "prj_1" }, "chg_1", 1000);
       expect(out).toMatchObject({ ok: true, state: { charge_id: "chg_1", status: "paid", simulated: true, money_moved: false } });
       expect(seen[0]?.url).toBe("https://api.example.test/v1/test/charges/chg_1/pay");
-      const headers = seen[0]?.init.headers as Record<string, string>;
-      expect(headers["authorization"]).toBe("Bearer csk_test_unit_0000");
-      expect(headers["x-codespar-project"]).toBe("prj_1");
+      const headers = new Headers(seen[0]?.init.headers);
+      expect(headers.get("authorization")).toBe("Bearer csk_test_unit_0000");
+      expect(headers.get("x-codespar-project")).toBe("prj_1");
+      expect(headers.get("content-type")).toBe("application/json");
       expect(seen[0]?.init.body).toBe(JSON.stringify({ amount_minor: 1000 }));
+      const bare = await paySandboxCharge({ apiKey: "csk_test_unit_0000", baseUrl: "https://api.example.test/", projectId: "prj_1" }, "chg_1");
+      expect(bare).toMatchObject({ ok: true });
+      expect(seen[1]?.init.body).toBe("{}");
     } finally {
       globalThis.fetch = realFetch;
     }

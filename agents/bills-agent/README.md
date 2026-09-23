@@ -10,13 +10,15 @@ npm start                                                    # or one turn: npm 
 > pague a escola de outubro
 ```
 
+Instead of `git clone`, `npx -y @codespar/cli@0.14.0 init my-agent --template bills-agent` scaffolds this agent into `my-agent/`; the `.env`, the install and the consent are the same from there.
+
 `npm install` runs at the repository root (it is an npm workspace; installing inside `agents/bills-agent` does not bring the root toolchain). `npm run consent` and `npm start` at the root drive this agent; inside `agents/bills-agent`, the same scripts work once the root is installed. The consent comes first: with a test key and no `.codespar/mandate.json`, `npm start -- --input ...` stops at `no signed mandate yet`, and only the interactive `npm start` runs the consent on its own. A staging test key also needs `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` before the consent (commented in `.env.example`); a production key needs nothing else. `ANTHROPIC_API_KEY` may stay empty: without a real key the kit replays the recorded happy path, and the old placeholder `sk-ant-your_key_here` counts as empty. Node 22 or newer (`engines` says 22.13; measured on 25.5).
 
 The run prints the receipt as `recibo: runs/<run-id>/receipts/rcpt_....json`. To confirm it against the API, with the key from `.env` and never on the screen (a staging key also needs `--base-url "$CODESPAR_API_URL"`):
 
 ```
 set -a; . agents/bills-agent/.env; set +a
-npx -y @codespar/cli@0.13.0 consumers get-receipts rcpt_...   # GET /v1/consumers/receipts/{id}; expect sandbox: true, money_moved: false
+npx -y @codespar/cli@0.14.0 consumers get-receipts rcpt_...   # GET /v1/consumers/receipts/{id}; expect sandbox: true, money_moved: false
 ```
 
 Measured on 2026-09-23 in staging, context-free run following only the README, no retry: 77 s from `git clone` to a receipt the API answered with 200. 27 of those seconds were a first `npm start -- --input` refused for lack of a mandate, which is why the consent is a line of the path above; the path as now written has not been re-timed.
@@ -44,7 +46,7 @@ Read from `agent.yaml`, field `maturity`:
 
 What the agent applies on its own, before the mandate (`guardrails.json`): the escalation thresholds (R$ 1.500,00 per payment, first payment to each payee, 22:00–07:00), a 24-hour velocity window per payee against fractioning, and "the core's total wins" when the model states another.
 
-Out of this delivery: WhatsApp, batch payouts, `npm run inspect`, and a kit template for `codespar init --template` (0.13.0 ships `init`, but its templates are not these agents yet).
+Out of this delivery: WhatsApp, batch payouts and `npm run inspect`. `codespar init --template bills-agent` (CLI 0.14.0) scaffolds this agent.
 
 ## Commands
 
@@ -61,13 +63,13 @@ Out of this delivery: WhatsApp, batch payouts, `npm run inspect`, and a kit temp
 | `npm run reconcile` | Compares local state with the rail. Closes an `executing` execution only from a recorded rail outcome; what the rail has not answered yet stays `executing` with an `execution.uncertain` event, for a human. Never dispatches. |
 | `npm run consent -- --yes` | Runs a new consent for a mandate (test key, partner surface); without `--yes` it asks at the keyboard. The signed envelope is stored in `.codespar/mandate.json`, mode 0600. The first thing to run after `.env`: `npm start -- --input` needs it. |
 
-The same through the CLI `agent.yaml` pins (`cli: "@codespar/cli@0.13.0"`; the lines match its `--help`):
+The same through the CLI `agent.yaml` pins (`cli: "@codespar/cli@0.14.0"`; the lines match its `--help`):
 
 | Command | Does |
 |---|---|
-| `npx -y @codespar/cli@0.13.0 agent run agents/bills-agent --input "pague a escola de outubro" [--approve\|--deny]` | One turn through the agent's own `npm start`; without `--input`, the interactive terminal. |
-| `npx -y @codespar/cli@0.13.0 eval agents/bills-agent` | `npm run check` plus the eval suite; exit 1 on any failing case. |
-| `npx -y @codespar/cli@0.13.0 mandate revoke <mandate-id> [--reason <text>]` | Revokes a mandate against the API (`active` or `paused` → `revoked`, terminal). The next gate of every open execution answers `mandate_revoked`. |
+| `npx -y @codespar/cli@0.14.0 agent run agents/bills-agent --input "pague a escola de outubro" [--approve\|--deny]` | The same as `npm start -- --input ...`, through the agent's own `npm start`; without `--input`, the interactive terminal. |
+| `npx -y @codespar/cli@0.14.0 eval agents/bills-agent` | `npm run check` plus the eval suite; exit 1 on any failing case. |
+| `npx -y @codespar/cli@0.14.0 mandate revoke <mandate-id> [--reason <text>]` | Revokes a mandate against the API (`active` or `paused` → `revoked`, terminal). The next gate of every open execution answers `mandate_revoked`. |
 
 ## The proof bundle
 
@@ -88,7 +90,7 @@ No key and no secret is written there. Payee keys are masked.
 
 - The receipt is signed by HMAC with the consumer's secret held by CodeSpar. The chain verifies without network; the signature proves it to whoever runs this agent, and to nobody else until Ed25519.
 - The approval artifact is signed by HMAC with a **local development key** (`.codespar/approval.key`). This is a stub: the CodeSpar API does not sign approval lists today. It proves what was approved to whoever runs the agent.
-- Revocation is checked against the API. With a test key, the core reads `GET /v1/mandates/{id}` before every `executing` and executes on `status: active` only: `paused` → `denied` (`mandate_paused`), `revoked` → `denied` (`mandate_revoked`), `expired` → `expired`, and a read that does not answer (timeout, 5xx, 404, an unreadable body) → `denied` (`mandate_status_unavailable`), never "assume active". `npx -y @codespar/cli@0.13.0 mandate revoke <id>` is the switch. Without a key (the CI, the scenarios, `rerun`) the same check answers from a **local stub** (`packages/agent-core/src/stubs/mandate-status.ts`), which is also where the organization kill switch (`org pauseAll`) lives, since the API does not expose one yet.
+- Revocation is checked against the API. With a test key, the core reads `GET /v1/mandates/{id}` before every `executing` and executes on `status: active` only: `paused` → `denied` (`mandate_paused`), `revoked` → `denied` (`mandate_revoked`), `expired` → `expired`, and a read that does not answer (timeout, 5xx, 404, an unreadable body) → `denied` (`mandate_status_unavailable`), never "assume active". `npx -y @codespar/cli@0.14.0 mandate revoke <id>` is the switch. Without a key (the CI, the scenarios, `rerun`) the same check answers from a **local stub** (`packages/agent-core/src/stubs/mandate-status.ts`), which is also where the organization kill switch (`org pauseAll`) lives, since the API does not expose one yet.
 - The `actor` of every call is carried locally on every event, approval and receipt copy. The API has no `actor` field on the wire today; the spend carries `agent_id`, which the mandate binds.
 - A `consumer_id` with an approved account does not leave the registry. Synthetic onboarding stops at document verification, which is the correct behaviour.
 - CodeSpar does not host or run this agent. The repository delivers it; whoever runs it, runs it.
