@@ -1,105 +1,115 @@
 # CodeSpar Agent Starter Kits
 
-Agents that pay under a mandate, with approval and a receipt. Clone, add one key, sign the mandate once, talk to an agent in the terminal.
+[![ci](https://github.com/codespar/agent-starter-kits/actions/workflows/ci.yml/badge.svg)](https://github.com/codespar/agent-starter-kits/actions/workflows/ci.yml) [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![node ≥ 22](https://img.shields.io/badge/node-%E2%89%A5%2022-339933?logo=node.js&logoColor=white)](package.json) [![@codespar/cli](https://img.shields.io/npm/v/@codespar/cli?label=%40codespar%2Fcli&color=cb3837&logo=npm)](https://www.npmjs.com/package/@codespar/cli) [![@codespar/mcp](https://img.shields.io/npm/v/@codespar/mcp?label=%40codespar%2Fmcp&color=cb3837&logo=npm)](https://www.npmjs.com/package/@codespar/mcp) [![clone → receipt: 77 s](https://img.shields.io/badge/clone_%E2%86%92_receipt-77_s-8A2BE2)](#quickstart-clone-to-first-receipt)
 
-```
+Agents that move money under a mandate. The person signs the limits once (cap per payment, cap per month, named payees, expiry), the agent proposes payments, and deterministic code decides what actually runs. Every payment ends in an approval record and a receipt.
+
+Two agents ship today, both in TypeScript, both running against the CodeSpar sandbox:
+
+- **[`bills-agent`](agents/bills-agent)** pays a household's monthly bills (school, cleaner, utilities) over Pix.
+- **[`collections-agent`](agents/collections-agent)** is the merchant side: it agrees payment terms with a customer, issues a bolepix per instalment and closes the loop when the charge is paid.
+
+## Quickstart: clone to first receipt
+
+You need Node 22.13+ and a sandbox key (`csk_test_...`). Get one at [codespar.dev/auth/signup](https://codespar.dev/auth/signup). No money moves.
+
+```sh
 git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits
-cp agents/bills-agent/.env.example agents/bills-agent/.env   # set CODESPAR_API_KEY (csk_test_...); leave ANTHROPIC_API_KEY empty to replay
-npm install && npm run consent -- --yes                      # at the repository root (npm workspace); signs the mandate once
-npm start                                                    # or one turn: npm start -- --input "pague a escola de outubro" --approve
+cp agents/bills-agent/.env.example agents/bills-agent/.env   # paste your csk_test_ key
+npm install                                                  # at the repo root (npm workspace)
+npm run consent -- --yes                                     # sign the mandate once
+npm start                                                    # talk to the agent
 > pague a escola de outubro
 ```
 
-Instead of `git clone`, the CLI scaffolds the same agent: `npx -y @codespar/cli@0.14.0 init my-agent --template bills-agent` (or `--template collections-agent`), then the same `.env`, `npm install` and consent inside it.
+The agent drafts the payment, asks you to approve it, pays in the sandbox and prints the receipt path: `recibo: runs/<run-id>/receipts/rcpt_....json`. Our last timed run (staging, 2026-09-23) took 77 seconds from `git clone` to a receipt the API confirmed.
 
-The consent comes first: `npm start -- --input ...` refuses to run without a signed mandate (`no signed mandate yet`), and the interactive `npm start` offers the consent itself when a test key is present. A staging test key also needs `CODESPAR_API_URL=https://api.staging.codespar.dev` in that `.env` before the consent (the line is there, commented). A production key needs nothing else. `ANTHROPIC_API_KEY` may stay empty: without a real key the kit replays the recorded happy path, and the old placeholder `sk-ant-your_key_here` counts as empty.
+Notes:
 
-The run prints the receipt as `recibo: runs/<run-id>/receipts/rcpt_....json`. To confirm it against the API, with the key from `.env` and never on the screen (a staging key also needs `--base-url "$CODESPAR_API_URL"`):
+- `ANTHROPIC_API_KEY` is optional. Leave it empty and the agent replays a recorded conversation, so you can see the whole flow without a model key.
+- Run the consent before `npm start -- --input ...`. The one-shot form refuses to run without a signed mandate; the interactive `npm start` offers the consent on its own.
+- Using a staging key? Uncomment `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` first.
 
-```
+Check the receipt against the API (key read from `.env`, never printed):
+
+```sh
 set -a; . agents/bills-agent/.env; set +a
-npx -y @codespar/cli@0.14.0 consumers get-receipts rcpt_...   # GET /v1/consumers/receipts/{id}; expect sandbox: true, money_moved: false
+npx -y @codespar/cli@0.14.0 consumers get-receipts rcpt_...   # expect sandbox: true, money_moved: false
 ```
 
-Measured on 2026-09-23 in staging, context-free run following only the README, no retry: 77 s from `git clone` to a receipt the API answered with 200. 27 of those seconds were a first `npm start -- --input` refused for lack of a mandate, which is why the consent is a line of the path above; the path as now written has not been re-timed.
+Prefer a fresh directory over a clone? `npx -y @codespar/cli@0.14.0 init my-agent --template bills-agent` (or `collections-agent`) scaffolds the same agent.
 
-## What is here
+## How it works
+
+**The model proposes, the code executes.** Model output can only create an execution in `drafted`. Mandate status, payee allowlist, caps, `escalate_above` and the hash of the approved item list are checked in plain code in [`@codespar/agent-core`](packages/agent-core), and only that code moves an execution to `executing`. The adversarial suite plays a model that obeys every attack (prompt injection, payee swap, split payments to dodge a cap) and still passes, because the core refuses.
+
+**One key picks who approves:**
+
+```yaml
+approval: human     # the agent assembles, a person approves each payment
+approval: mandate   # the agent pays inside the signed limits; escalate_above sends the rest to a person
+```
+
+Same code, same states, same receipts. Start with `human`, switch when you trust it.
+
+**Every run leaves a proof bundle** in `runs/<run-id>/`: transcript, approval artifacts, mandate snapshot, every state transition with who acted, and the receipts. Keys and payee details are masked.
+
+## What runs today
+
+| | Status |
+|---|---|
+| Pix payments out (`bills-agent`) | Sandbox |
+| Bolepix charges with a sandbox payer (`collections-agent`) | Sandbox |
+| Mandate revocation checked against the API before every payment (`bills-agent`) | Live in the sandbox |
+| Receipts sealed with HMAC | Proves the payment to whoever runs the agent |
+| Approval artifacts signed with a local dev key | Stub: the API does not sign approval lists yet |
+
+Not here yet: WhatsApp as a channel (terminal only for now), batch payouts, Ed25519-signed receipts. Each agent's README lists its own stubs. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) tracks every place the code and the spec diverge.
+
+The kits use Pix and bolepix. The CodeSpar API also settles USDC over x402; see the [docs](https://codespar.dev/docs).
+
+## Build your own agent
+
+The repo is also the `codespar-core` plugin: the CodeSpar MCP server (pinned at `@codespar/mcp@0.5.8`) plus the [`codespar-agent-builder`](skills/codespar-agent-builder) skill, which teaches a coding agent to add a new `agents/<name>` with manifest, prompt, tools, guardrails, scenarios and adversarial tests. The MCP reads `CODESPAR_API_KEY` from your shell; the plugin ships no key.
+
+### Install the plugin in your coding agent
+
+| Coding agent | Install |
+|---|---|
+| Claude Code | `/plugin marketplace add codespar/agent-starter-kits`, then `/plugin install codespar-core@codespar` |
+| Codex | `codex plugin marketplace add codespar/agent-starter-kits` |
+| Cursor | Dashboard → Plugins & MCPs → Import from Repo |
+| Anything else | `npx skills add codespar/agent-starter-kits` |
+
+## Repo layout
 
 | Path | What |
 |---|---|
-| [`packages/agent-core`](packages/agent-core) | `@codespar/agent-core`: the execution state machine, the approval artifact, the `agent.yaml` schema, `escalate_above`, `actor`, local state (SQLite), the proof bundle, the providers. Every agent inherits it. |
-| [`agents/bills-agent`](agents/bills-agent) | The anchor agent. The titular delegates the month's bills under a mandate: cap per payment, cap per month, named payees, expiry. Every payment returns a receipt. |
-| [`agents/collections-agent`](agents/collections-agent) | The merchant's agent that collects. Agrees terms with the payer inside a negotiation envelope, issues one bolepix per instalment with an idempotency key, shows the QR in the conversation, and closes the cycle on `commerce.charge.paid` or `commerce.charge.expired`, by poll or by webhook. The sandbox payer plays the debtor. |
-| [`docs/spec-v5.1.1.md`](docs/spec-v5.1.1.md) | The spec this wave was built against. |
-| [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) | Where the spec and the API diverged, what the code does, what is a stub. Input for v5.2. |
-| [`skills/codespar-agent-builder`](skills/codespar-agent-builder) | The skill that teaches a coding agent to add `agents/<name>`: anatomy, `agent.yaml`, prompt, tools, guardrails, scenarios, adversarial cases, gates. Proven by `hello-agent` (docs/OPEN_QUESTIONS.md, item 33). |
-| `.claude-plugin/`, `.cursor-plugin/`, `.agents/plugins/`, `plugin.json`, `mcp.json` (= `.mcp.json`), `rules/` | The `codespar-core` plugin (section 14.1): the pinned CodeSpar MCP plus the skill, one manifest per coding agent. See [Install the plugin](#install-the-plugin-in-your-coding-agent). |
-| [`AGENTS.md`](AGENTS.md) (= `CLAUDE.md`) | The rules for a coding agent working anywhere in this tree; each agent adds its own. |
+| [`packages/agent-core`](packages/agent-core) | State machine, approval artifact, `agent.yaml` schema, `escalate_above`, local SQLite state, proof bundle, model providers. Every agent builds on it. |
+| [`agents/bills-agent`](agents/bills-agent) | Pays bills under a mandate. |
+| [`agents/collections-agent`](agents/collections-agent) | Collects from customers inside a negotiation envelope. |
+| [`skills/codespar-agent-builder`](skills/codespar-agent-builder) | The skill for adding a new agent. |
+| [`docs/spec-v5.1.1.md`](docs/spec-v5.1.1.md) | The spec this code was built against. |
+| [`AGENTS.md`](AGENTS.md) | Rules for coding agents working in this repo (same file as `CLAUDE.md`). |
 
-## Install the plugin in your coding agent
+## Checks
 
-The repository is also the `codespar-core` plugin: the CodeSpar MCP pinned at `@codespar/mcp@0.5.8` (`mcp.json`) plus the `codespar-agent-builder` skill (`skills/`). One install gives a coding agent the API and the procedure to build the fourth agent. The MCP reads `CODESPAR_API_KEY` from your shell; the plugin ships no key.
+All run in CI without a model key or a CodeSpar key:
 
-| Coding agent | Reads | Install |
-|---|---|---|
-| Claude Code | `.claude-plugin/marketplace.json`, `.claude-plugin/plugin.json`, `.mcp.json`, `skills/` | `/plugin marketplace add codespar/agent-starter-kits`, then `/plugin install codespar-core@codespar` |
-| Codex | `.agents/plugins/marketplace.json`, `plugin.json` (Agent Plugins standard), `mcp.json` | `codex plugin marketplace add codespar/agent-starter-kits` |
-| Cursor | `.cursor-plugin/plugin.json`, `skills/`, `rules/`, `mcp.json` | Dashboard → Plugins & MCPs → Import from Repo, or Customize → Install |
-| Any other | `skills/codespar-agent-builder/SKILL.md` | `npx skills add codespar/agent-starter-kits` |
-
-`npm run check` validates the manifests before the agents: JSON that parses, every referenced path present, the skill's frontmatter, the MCP pin equal to the one in `agents/bills-agent/agent.yaml`, `mcp.json` equal to `.mcp.json` (the same file, spelled for two loaders), and the root `AGENTS.md` equal to `CLAUDE.md`.
-
-## The one rule
-
-The model proposes, the code executes. A model output can create an execution in `drafted` and nothing else. Mandate, allowlist, caps, `escalate_above` and the `items_hash` of the approved list are checked in deterministic code, and only that code reaches `executing`. The adversarial suite in `agents/bills-agent/evals/adversarial/` plays a model that complies with every attack, and passes because the core does not.
-
-## The `approval` key
-
-```
-approval: human     the agent assembles; the titular approves each one; the approved list is attested
-approval: mandate   the agent executes inside the signed allowance; escalate_above sends the rest to a human
+```sh
+npm run typecheck                                   # includes a type test: illegal state transitions don't compile
+npm run check                                       # plugin manifests, then each agent's prompt/tools/guardrails vs agent.yaml
+npm run eval --workspace=agents/bills-agent         # adversarial suite + every scenario in both modes (blocks merge)
+npm test
+node scripts/secret-scan.mjs all                    # also a pre-commit hook
 ```
 
-Same code, same trail, same receipts. Start in `human`; flip the key when the client trusts it.
+## Docs
 
-## Gates (all run in the CI without a model or a CodeSpar key)
-
-- `npm run typecheck`: includes a type test proving a transition outside the table does not compile.
-- `npm run check`: the plugin manifests first (`scripts/check-plugin.mjs`), then, for every agent, the manifest is the index; the prompt, tools and guardrails must agree with it.
-- `npm run eval --workspace=agents/<name>`: adversarial suite plus every scenario in every mode, on the replay provider. Blocks merge. Both agents.
-- `npm test`: the core, the restart-in-`executing`-then-`resume` test, `rerun`, `approve`/`deny`, and `--json` output. When piping `npm start -- --input ... --json`, add npm's `-s`: npm prints the script banner on stdout, the kit does not.
-- `node scripts/secret-scan.mjs all`: no key-shaped string in the tree. Also a pre-commit hook.
-
-Requires Node 22 or newer (`engines` says 22.13, the `node:sqlite` floor, no native build; the measured run used 25.5).
-
-## The same, through the CLI
-
-`agent.yaml` pins `cli: "@codespar/cli@0.14.0"`, the version whose help these lines match. The `npm` scripts stay as shortcuts.
-
-```
-npx -y @codespar/cli@0.14.0 agent run agents/bills-agent --input "pague a escola de outubro" --approve
-npx -y @codespar/cli@0.14.0 eval agents/bills-agent
-npx -y @codespar/cli@0.14.0 mandate revoke <mandate-id> --reason "cancelled by the titular"
-```
-
-`agent run agents/bills-agent --input ...` is `npm start -- --input ...` through the agent's own `npm start` (without `--input`, the interactive terminal); `eval` runs `npm run check` plus the adversarial suite and the scenarios; `mandate revoke` is the section 4.7 kill switch for one mandate, against the API; `init --template bills-agent|collections-agent` scaffolds one of these agents into a new directory.
-
-## What is sandbox, what is a stub
-
-Everything runs in the CodeSpar sandbox with a `csk_test_` key; any other key is refused before a network call. With a test key, the revocation check of section 4.7 is real: before `executing` the core reads the mandate's status from the API (`GET /v1/mandates/{id}`) and executes on `active` only; `paused`, `revoked` and `expired` refuse, and a read that does not answer refuses too (`mandate_status_unavailable`), never "assume active". Two pieces are local stubs, marked in code and in the READMEs: the signature of the approval artifact (a local dev key; the API does not sign approval lists) and, for runs without a key (the CI, the scenarios), the status source over the local state.db, which also carries the organization kill switch (`org pauseAll`) the API does not expose yet. The receipt seal is HMAC; it proves the payment to whoever runs the agent, and to nobody else until Ed25519. On the receiving side (`collections-agent`) the collection policy has no API-side status to read, so its revocation source is the local stub in both rails; the payer is the sandbox route `POST /v1/test/charges/{id}/pay`, test environment only, and the API seals no record for a paid charge; the webhook receiver is a documented stub and the poll is the default.
-
-## Protocols
-
-| Protocol | Whose | Relation to CodeSpar today |
-|---|---|---|
-| x402 | x402 Foundation, from Coinbase | In use: USDC over x402. |
-| AP2 | Google | Not supported. Candidate to map the CodeSpar mandate onto. |
-| Visa Intelligent Commerce | Visa | Not supported. Cards are outside CodeSpar's rails today. |
-| ACP | OpenAI, in ChatGPT | Not supported. |
-| UCP | Google, in AI Mode and Gemini | Not supported. |
-
-None of these lines promises Pix on those protocols.
+- [CodeSpar docs](https://codespar.dev/docs)
+- [Connect an agent over MCP](https://codespar.dev/docs/mcp)
+- [Quickstart](https://codespar.dev/docs/quickstart)
 
 ## License
 
-MIT.
+MIT
