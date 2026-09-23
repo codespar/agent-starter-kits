@@ -17,8 +17,8 @@ const ToolDefinitionSchema = z
     name: z.string().regex(/^[a-z][a-z0-9_]*$/),
     description: z.string().min(1),
     input_schema: z.record(z.string(), z.unknown()),
-    /** `payment` tools create a `drafted` execution and nothing else; `read` tools never touch money. */
-    effect: z.enum(["payment", "read"]),
+    /** `payment` and `charge` tools create a `drafted` execution and nothing else; `read` tools never touch money. `charge` is the receivable side: the counterparty pays us. */
+    effect: z.enum(["payment", "charge", "read"]),
   })
   .strict();
 

@@ -22,6 +22,8 @@ export interface ExecutionItem {
   amount: number;
   currency: string;
   description?: string;
+  /** A receivable's due date (`YYYY-MM-DD`). Part of the `items_hash` when present: moving it after approval is a different charge. */
+  due_date?: string;
 }
 
 /** The trigger of section 4.4 that sent a `mandate` execution to a human. */
@@ -46,7 +48,13 @@ export type ExecutionReason =
   | "tool_not_allowed"
   | "model_total_mismatch"
   | "outside_hours"
-  | "escalated";
+  | "escalated"
+  /** The agent's own envelope (guardrails) refused what the model proposed: a discount, an instalment count or a due date outside it. */
+  | "outside_envelope"
+  /** A receivable was issued and the rail is waiting for the payer; the execution stays `executing` until `commerce.charge.*` closes it. */
+  | "awaiting_settlement"
+  | "charge_expired"
+  | "charge_cancelled";
 
 export interface MandateRef {
   id: string;
@@ -75,8 +83,24 @@ export interface ApprovalArtifact {
 export interface ItemOutcome {
   index: number;
   attempt_id: string;
-  status: "settled" | "failed";
+  /** `accepted`: the rail took the attempt and the outcome comes later (a receivable waiting for its payer). Not terminal. */
+  status: "settled" | "failed" | "accepted";
   receipt_id?: string;
   transaction_id?: string;
+  /** The rail's code on a failed outcome (`charge_expired`, `charge_cancelled`, a provider code). */
+  code?: string;
   error?: string;
+  /** What the payer is shown for an accepted receivable, as the rail handed it back. Presentation only; nothing here decides money. */
+  instrument?: ChargeInstrument;
+}
+
+/** The payable legs of a receivable. Null until the issuer registers the instrument (a cobranca com vencimento answers PROCESSING first). */
+export interface ChargeInstrument {
+  payable: boolean;
+  pix_copy_paste: string | null;
+  boleto_bank_line: string | null;
+  boleto_bar_code: string | null;
+  due_date: string | null;
+  /** The issuer's normalized state as last read: PROCESSING, PENDING, CONFIRMED, EXPIRED, CANCELLED. */
+  status: string;
 }

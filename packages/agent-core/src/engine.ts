@@ -14,7 +14,7 @@
 import { checkApprovalArtifact, createApprovalArtifact, type ApprovalSigner } from "./approval.js";
 import type { ProofBundle } from "./bundle.js";
 import { evaluateEscalation, type Escalation } from "./escalate.js";
-import { PAYMENT_FAILED, PAYMENT_SUCCEEDED } from "./events.js";
+import { CHARGE_CANCELLED, CHARGE_EXPIRED, CHARGE_PAID, PAYMENT_FAILED, PAYMENT_SUCCEEDED, type PublishedEvent } from "./events.js";
 import type { Guardrails } from "./guardrails.js";
 import { itemsHash, sha256Hex } from "./hash.js";
 import { newId } from "./ids.js";
@@ -31,7 +31,24 @@ export interface ProposedItem {
   payee: string;
   amount: number;
   description?: string;
+  /** A receivable's due date, `YYYY-MM-DD`. */
+  due_date?: string;
 }
+
+export interface PolicyExtensionContext {
+  gate: "draft" | "approve" | "execute";
+  now: Date;
+  mode: ApprovalMode;
+  mandate: Mandate;
+  guardrails: Guardrails;
+}
+
+/**
+ * The kit's own deterministic check, run by the core at every gate after
+ * the mandate's (allowlist, caps, window). It can only refuse; it cannot
+ * widen anything. A collections agent uses it for its negotiation envelope.
+ */
+export type PolicyExtension = (execution: Execution, ctx: PolicyExtensionContext) => { reason: ExecutionReason; detail: string } | undefined;
 
 export interface Proposal {
   items: ProposedItem[];
@@ -57,6 +74,8 @@ export interface EngineDeps {
   /** The person the agent acts for. */
   onBehalfOf: string;
   clock?: () => Date;
+  /** The kit's own envelope check, run at every gate after the mandate's. */
+  policyExtension?: PolicyExtension | undefined;
 }
 
 /** What the deterministic policy says about an execution at one of its three gates. */
@@ -162,6 +181,10 @@ export class ExecutionEngine {
         detail: `${committed} already committed this ${mandate.periodic_cap?.window ?? "month"} (settled, in flight and awaiting a decision) plus ${execution.total} exceeds the cap ${windowCap(mandate)}`,
       };
     }
+
+    // The kit's envelope, at every gate: a person's yes does not widen it either.
+    const outside = this.deps.policyExtension?.(execution, { gate, now, mode: this.deps.mode, mandate, guardrails });
+    if (outside) return { kind: "deny", reason: outside.reason, detail: outside.detail };
 
     if (this.deps.mode === "mandate" && !humanApproved) {
       const escalation = evaluateEscalation(manifest.escalate_above, guardrails, execution.items, {
@@ -316,29 +339,44 @@ export class ExecutionEngine {
       if (outcomes.some((o) => o.index === index)) continue;
       this.record("rail.dispatch", execution.id, { attempt_id: payment.attempt_id, payee: payment.payee, amount: payment.amount_minor, rail: this.deps.rail.name });
       const outcome = await this.deps.rail.pay(payment);
-      this.record("rail.outcome", execution.id, { attempt_id: payment.attempt_id, status: outcome.status, ...(outcome.status !== "settled" ? { code: outcome.code } : {}) });
+      this.record("rail.outcome", execution.id, { attempt_id: payment.attempt_id, status: outcome.status, ...(outcome.status === "failed" || outcome.status === "uncertain" ? { code: outcome.code } : {}) });
       if (outcome.status === "uncertain") {
         this.record("rail.uncertain", execution.id, { attempt_id: payment.attempt_id, code: outcome.code, message: outcome.message });
         return this.leaveUnresolved({ ...execution, outcomes }, `attempt ${payment.attempt_id}: ${outcome.code} — outcome unknown, kept for reconciliation`);
       }
       if (outcome.status === "failed") {
-        outcomes.push({ index, attempt_id: payment.attempt_id, status: "failed", error: `${outcome.code}: ${outcome.message}` });
+        outcomes.push({ index, attempt_id: payment.attempt_id, status: "failed", code: outcome.code, error: `${outcome.code}: ${outcome.message}` });
         break;
       }
+      if (outcome.status === "accepted") {
+        // A receivable was issued; the payer decides the rest. Nothing settles here.
+        outcomes.push({ index, attempt_id: payment.attempt_id, status: "accepted", transaction_id: outcome.transaction_id, instrument: outcome.instrument });
+        this.recordInstrument(execution.id, payment.attempt_id, outcome.transaction_id, outcome.instrument);
+        continue;
+      }
       outcomes.push({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: outcome.transaction_id, ...(outcome.receipt_id ? { receipt_id: outcome.receipt_id } : {}) });
-      await this.ingestSettlement(execution, index, payment, outcome.receipt_id);
+      await this.ingestSettlement(execution, index, payment, outcome.receipt_id, PAYMENT_SUCCEEDED);
     }
     return this.close({ ...execution, outcomes }, payments.length);
   }
 
-  /** Closes an `executing` execution from its recorded outcomes: failed if any failed, settled when every attempt settled, otherwise stays. */
+  /**
+   * Closes an `executing` execution from its recorded outcomes: stays while a
+   * receivable is accepted and unpaid, failed if any attempt failed, settled
+   * when every attempt settled, otherwise unresolved.
+   */
   private close(execution: Execution<"executing">, attempts: number): Execution {
     const at = this.clock().toISOString();
     const updated: Execution<"executing"> = { ...execution, updated_at: at };
+    const accepted = execution.outcomes.filter((o) => o.status === "accepted");
+    if (accepted.length > 0) {
+      return this.leaveAwaiting(updated, `${accepted.length} receivable(s) issued and unpaid: ${accepted.map((o) => o.transaction_id ?? o.attempt_id).join(", ")}`);
+    }
     const failed = execution.outcomes.find((o) => o.status === "failed");
     if (failed) {
       this.deps.store.updateOutbox(execution.idempotency_key, "failed", execution.outcomes, at);
-      return this.persist(transition(updated, "failed", { at, actor: this.agentActor, reason: "rail_failed", detail: failed.error ?? "rail refused" }));
+      const reason: ExecutionReason = failed.code === "charge_expired" || failed.code === "charge_cancelled" ? failed.code : "rail_failed";
+      return this.persist(transition(updated, "failed", { at, actor: this.agentActor, reason, detail: failed.error ?? "rail refused" }));
     }
     if (execution.outcomes.filter((o) => o.status === "settled").length === attempts) {
       this.deps.store.updateOutbox(execution.idempotency_key, "done", execution.outcomes, at);
@@ -354,24 +392,67 @@ export class ExecutionEngine {
     return kept;
   }
 
-  private async ingestSettlement(execution: Execution, index: number, payment: RailPayment, receiptId: string | null): Promise<void> {
-    // The rail's answer is the `commerce.payment.succeeded` event the API publishes (section 4.3), keyed by attempt so a replay is a no-op.
+  /** A receivable is out and its payer has not acted. Not uncertain: the rail knows the attempt; the outcome is simply not yet decided. */
+  private leaveAwaiting(execution: Execution<"executing">, detail: string): Execution {
+    const kept: Execution<"executing"> = { ...execution, reason: "awaiting_settlement", detail, updated_at: this.clock().toISOString() };
+    this.deps.store.saveExecution(kept);
+    // Deduplicated on what was observed, so a poll every few seconds does not fill the log with the same line.
+    const stored = this.deps.store.appendEvent({ run_id: this.deps.runId, execution_id: execution.id, event_id: `awaiting:${execution.id}:${sha256Hex(detail).slice(0, 16)}`, type: "execution.awaiting_settlement", payload: { detail }, at: kept.updated_at });
+    if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
+    return kept;
+  }
+
+  /** The instrument the payer is shown, logged once per observed state (registration flips `payable`; the log says when). */
+  private recordInstrument(executionId: string, attemptId: string, transactionId: string, instrument: ItemOutcome["instrument"]): void {
+    if (!instrument) return;
+    const stored = this.deps.store.appendEvent({
+      run_id: this.deps.runId,
+      execution_id: executionId,
+      event_id: `instrument:${attemptId}:${instrument.status}:${instrument.payable ? "payable" : "not-payable"}`,
+      type: "charge.instrument",
+      payload: { attempt_id: attemptId, charge_id: transactionId, status: instrument.status, payable: instrument.payable, has_pix: instrument.pix_copy_paste !== null, has_boleto: instrument.boleto_bank_line !== null, due_date: instrument.due_date },
+      at: this.clock().toISOString(),
+    });
+    if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
+  }
+
+  private async ingestSettlement(execution: Execution, index: number, payment: RailPayment, receiptId: string | null, eventType: PublishedEvent): Promise<void> {
+    // The rail's answer is the settlement event the API publishes (section 4.3): `commerce.payment.succeeded` for a payout, `commerce.charge.paid` for a receivable. Keyed by attempt so a replay is a no-op.
     const appended = this.deps.store.appendEvent({
       run_id: this.deps.runId,
       execution_id: execution.id,
       event_id: `succeeded:${payment.attempt_id}`,
-      type: PAYMENT_SUCCEEDED,
+      type: eventType,
       payload: { attempt_id: payment.attempt_id, amount: payment.amount_minor, payee: payment.payee, receipt_id: receiptId, actor: this.agentActor },
       at: this.clock().toISOString(),
     });
     if (appended) this.deps.bundle.event({ ...appended, actor: this.agentActor, item_index: index });
-    if (receiptId) {
-      const receipt = await this.deps.rail.receipt(receiptId, this.agentActor);
-      if (receipt) {
-        const path = this.deps.bundle.receipt(receipt);
-        this.record("receipt.saved", execution.id, { receipt_id: receiptId, path });
-      }
+    if (receiptId) await this.saveReceipt(execution.id, receiptId);
+  }
+
+  private async saveReceipt(executionId: string, receiptId: string): Promise<void> {
+    const receipt = await this.deps.rail.receipt(receiptId, this.agentActor);
+    if (receipt) {
+      const path = this.deps.bundle.receipt(receipt);
+      this.record("receipt.saved", executionId, { receipt_id: receiptId, path });
     }
+  }
+
+  /**
+   * Fetches into the bundle the receipts of settled attempts the bundle does
+   * not hold yet (a settlement that arrived by event names a receipt id and
+   * nothing else). Read-only on the rail; never dispatches.
+   */
+  async collectReceipts(executionId: string): Promise<string[]> {
+    const execution = this.mustGet(executionId);
+    const held = new Set(this.deps.bundle.listReceipts().map((f) => f.replace(/\.json$/, "")));
+    const fetched: string[] = [];
+    for (const outcome of execution.outcomes) {
+      if (outcome.status !== "settled" || !outcome.receipt_id || held.has(outcome.receipt_id)) continue;
+      await this.saveReceipt(execution.id, outcome.receipt_id);
+      fetched.push(outcome.receipt_id);
+    }
+    return fetched;
   }
 
   // ---- section 10: resume and reconcile ---------------------------------
@@ -396,19 +477,43 @@ export class ExecutionEngine {
     const outcomes: ItemOutcome[] = [...execution.outcomes];
     let unresolved: string | undefined;
     for (const [index, payment] of payments.entries()) {
-      if (outcomes.some((o) => o.index === index)) continue;
+      const prior = outcomes.find((o) => o.index === index);
+      // Settled and failed are final. An accepted receivable is looked at again: its payer may have acted.
+      if (prior && prior.status !== "accepted") continue;
       const seen = await this.deps.rail.lookup(payment.attempt_id, payment);
-      this.record("rail.reconcile", execution.id, { attempt_id: payment.attempt_id, found: seen ? seen.status : "absent" });
+      const found = seen ? seen.status : "absent";
+      const stored = this.deps.store.appendEvent({
+        run_id: this.deps.runId,
+        execution_id: execution.id,
+        // A poll that sees the same thing twice logs it once; a change in what it sees is a new line.
+        ...(prior ? { event_id: `reconcile:${payment.attempt_id}:${found}:${seen && seen.status === "accepted" ? `${seen.instrument.status}:${seen.instrument.payable}` : ""}` } : {}),
+        type: "rail.reconcile",
+        payload: { attempt_id: payment.attempt_id, found },
+        at: this.clock().toISOString(),
+      });
+      if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
       if (!seen || seen.status === "uncertain" || seen.status === "in_flight") {
+        if (prior) continue; // the receivable is known to exist; the rail just did not answer this time
         unresolved = `attempt ${payment.attempt_id}: ${seen ? seen.status : "unknown to the rail"}; a human decides, nothing is re-sent`;
         break;
       }
-      if (seen.status === "failed") {
-        outcomes.push({ index, attempt_id: payment.attempt_id, status: "failed", error: `${seen.code}: ${seen.message}` });
-        break;
+      const replace = (outcome: ItemOutcome) => {
+        const at = outcomes.findIndex((o) => o.index === index);
+        if (at >= 0) outcomes[at] = outcome;
+        else outcomes.push(outcome);
+      };
+      if (seen.status === "accepted") {
+        replace({ index, attempt_id: payment.attempt_id, status: "accepted", transaction_id: seen.transaction_id, instrument: seen.instrument });
+        this.recordInstrument(execution.id, payment.attempt_id, seen.transaction_id, seen.instrument);
+        continue;
       }
-      outcomes.push({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: seen.transaction_id, ...(seen.receipt_id ? { receipt_id: seen.receipt_id } : {}) });
-      await this.ingestSettlement(execution, index, payment, seen.receipt_id);
+      if (seen.status === "failed") {
+        replace({ index, attempt_id: payment.attempt_id, status: "failed", code: seen.code, error: `${seen.code}: ${seen.message}` });
+        if (!prior) break;
+        continue;
+      }
+      replace({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: seen.transaction_id, ...(seen.receipt_id ? { receipt_id: seen.receipt_id } : {}) });
+      await this.ingestSettlement(execution, index, payment, seen.receipt_id, prior ? CHARGE_PAID : PAYMENT_SUCCEEDED);
     }
     const updated: Execution<"executing"> = { ...(execution as Execution<"executing">), outcomes };
     if (unresolved) return this.leaveUnresolved(updated, unresolved);
@@ -449,26 +554,93 @@ export class ExecutionEngine {
    * when every attempt has its outcome. `paid` before `created` is fine;
    * `paid` twice settles once.
    */
-  ingestExternalEvent(event: { event_id: string; type: string; attempt_id: string; at?: string }): { applied: boolean; reason: string } {
-    const row = this.deps.store.listOutbox().find((o) => ((o.payload as { attempts?: string[] }).attempts ?? []).includes(event.attempt_id));
-    if (!row) return { applied: false, reason: "unknown attempt" };
-    const stored = this.deps.store.appendEvent({ run_id: this.deps.runId, execution_id: row.execution_id, event_id: event.event_id, type: event.type, payload: event, at: event.at ?? this.clock().toISOString() });
+  ingestExternalEvent(event: { event_id: string; type: string; attempt_id?: string; transaction_id?: string; at?: string }): { applied: boolean; reason: string } {
+    const located = this.locateAttempt(event);
+    if (!located) return { applied: false, reason: event.attempt_id || event.transaction_id ? "unknown attempt" : "event names no attempt_id and no transaction_id" };
+    const { row, attemptId } = located;
+    const stored = this.deps.store.appendEvent({ run_id: this.deps.runId, execution_id: row.execution_id, event_id: event.event_id, type: event.type, payload: { ...event, attempt_id: attemptId }, at: event.at ?? this.clock().toISOString() });
     if (!stored) return { applied: false, reason: "duplicate event id" };
     this.deps.bundle.event({ ...stored, actor: this.agentActor });
     const execution = this.mustGet(row.execution_id);
     if (isTerminal(execution.state)) return { applied: false, reason: `execution already ${execution.state}` };
     if (execution.state !== "executing") return { applied: false, reason: `execution is ${execution.state}; the rail event cannot move it` };
     const attempts = (row.payload as { attempts: string[] }).attempts;
-    const index = attempts.indexOf(event.attempt_id);
-    if (execution.outcomes.some((o) => o.index === index)) return { applied: false, reason: "attempt already has an outcome" };
+    const index = attempts.indexOf(attemptId);
+    const prior = execution.outcomes.find((o) => o.index === index);
+    // Settled and failed are final. An accepted receivable is exactly what a `commerce.charge.*` event decides.
+    if (prior && prior.status !== "accepted") return { applied: false, reason: "attempt already has an outcome" };
 
+    const carry = prior ? { ...(prior.transaction_id ? { transaction_id: prior.transaction_id } : {}) } : {};
     let outcome: ItemOutcome;
-    if (event.type === PAYMENT_SUCCEEDED) outcome = { index, attempt_id: event.attempt_id, status: "settled" };
-    else if (event.type === PAYMENT_FAILED) outcome = { index, attempt_id: event.attempt_id, status: "failed", error: `event ${event.event_id}` };
-    else return { applied: false, reason: `event type ${event.type} moves nothing` };
+    switch (event.type) {
+      case PAYMENT_SUCCEEDED:
+        outcome = { index, attempt_id: attemptId, status: "settled", ...carry };
+        break;
+      case CHARGE_PAID:
+        // The paid receivable is its own record on the API; `collectReceipts()` fetches it into the bundle.
+        outcome = { index, attempt_id: attemptId, status: "settled", ...carry, ...(prior?.transaction_id ? { receipt_id: prior.transaction_id } : {}) };
+        break;
+      case PAYMENT_FAILED:
+        outcome = { index, attempt_id: attemptId, status: "failed", code: "rail_failed", error: `event ${event.event_id}` };
+        break;
+      case CHARGE_EXPIRED:
+        outcome = { index, attempt_id: attemptId, status: "failed", code: "charge_expired", error: `charge_expired: event ${event.event_id}`, ...carry };
+        break;
+      case CHARGE_CANCELLED:
+        outcome = { index, attempt_id: attemptId, status: "failed", code: "charge_cancelled", error: `charge_cancelled: event ${event.event_id}`, ...carry };
+        break;
+      default:
+        return { applied: false, reason: `event type ${event.type} moves nothing` };
+    }
 
-    const closed = this.close({ ...(execution as Execution<"executing">), outcomes: [...execution.outcomes, outcome] }, attempts.length);
+    const outcomes = execution.outcomes.filter((o) => o.index !== index).concat(outcome).sort((a, b) => a.index - b.index);
+    const closed = this.close({ ...(execution as Execution<"executing">), outcomes }, attempts.length);
     return { applied: true, reason: closed.state === "executing" ? `attempt recorded; ${closed.detail}` : closed.state };
+  }
+
+  /** An event names our attempt id, or the rail's transaction id we recorded when the attempt was accepted. */
+  private locateAttempt(event: { attempt_id?: string; transaction_id?: string }): { row: ReturnType<StateStore["listOutbox"]>[number]; attemptId: string } | undefined {
+    const rows = this.deps.store.listOutbox();
+    if (event.attempt_id) {
+      const attemptId = event.attempt_id;
+      const row = rows.find((o) => ((o.payload as { attempts?: string[] }).attempts ?? []).includes(attemptId));
+      return row ? { row, attemptId } : undefined;
+    }
+    if (event.transaction_id) {
+      for (const row of rows) {
+        const execution = this.deps.store.getExecution(row.execution_id);
+        const hit = execution?.outcomes.find((o) => o.transaction_id === event.transaction_id);
+        if (hit) return { row, attemptId: hit.attempt_id };
+      }
+    }
+    return undefined;
+  }
+
+  // ---- the channel's small writes -----------------------------------------
+
+  /** A line in the event log written by the channel (a message to the person, a sandbox payer call). Never a transition. */
+  note(type: string, executionId: string | null, payload: Record<string, unknown>): void {
+    this.record(type, executionId, payload);
+  }
+
+  /**
+   * Once-only presentation: true the first time a given attempt's instrument
+   * is marked shown, false afterwards, across restarts (it is a cursor in
+   * state.db, not memory). The debtor sees each QR once.
+   */
+  markShown(executionId: string, attemptId: string): boolean {
+    const key = `shown:${executionId}:${attemptId}`;
+    if (this.deps.store.getCursor(key)) return false;
+    this.deps.store.setCursor(key, this.clock().toISOString());
+    return true;
+  }
+
+  /** Once-only message per execution outcome, same mechanism. */
+  markTold(executionId: string, outcome: string): boolean {
+    const key = `told:${executionId}:${outcome}`;
+    if (this.deps.store.getCursor(key)) return false;
+    this.deps.store.setCursor(key, this.clock().toISOString());
+    return true;
   }
 
   // ---- reads --------------------------------------------------------------
@@ -518,6 +690,7 @@ export class ExecutionEngine {
     const known = resolveBeneficiary(this.deps.mandate, proposed.payee);
     const amount = Math.trunc(proposed.amount);
     if (!Number.isFinite(amount) || amount <= 0) throw new Error(`amount must be a positive integer in minor units, got ${proposed.amount}`);
+    if (proposed.due_date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(proposed.due_date)) throw new Error(`due_date must be YYYY-MM-DD, got ${proposed.due_date}`);
     return {
       ...(known ? { alias: known.alias } : {}),
       beneficiary: known?.name ?? proposed.payee,
@@ -525,6 +698,7 @@ export class ExecutionEngine {
       amount,
       currency: this.deps.mandate.currency,
       ...(proposed.description ? { description: proposed.description } : {}),
+      ...(proposed.due_date ? { due_date: proposed.due_date } : {}),
     };
   }
 
@@ -535,9 +709,11 @@ export class ExecutionEngine {
       amount_minor: item.amount,
       currency: item.currency,
       payee: item.payee,
+      beneficiary: item.beneficiary,
       purpose: this.deps.mandate.purpose,
       agent_id: this.deps.mandate.agent_id,
       ...(item.description ? { description: item.description } : {}),
+      ...(item.due_date ? { due_date: item.due_date } : {}),
       actor: this.agentActor,
     }));
   }
