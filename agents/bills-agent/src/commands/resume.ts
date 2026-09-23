@@ -12,8 +12,9 @@ readDotEnv();
 const s = setup({ say, runId: `run_resume_${Date.now().toString(36)}` });
 try {
   const resumed = [];
+  // Only resume dispatches, and only what the outbox proves was never sent; everything else is reconciled from the rail.
   for (const stuck of s.engine.list({ state: "executing" })) {
-    const closed = await s.engine.reconcile(stuck.id);
+    const closed = await s.engine.resumePending(stuck.id);
     resumed.push({ id: closed.id, state: closed.state, detail: closed.detail ?? null, receipt_ids: closed.outcomes.filter((o) => o.receipt_id).map((o) => o.receipt_id) });
     say(closed.state === "executing" ? `${closed.id}: still executing — ${closed.detail}; nothing was re-sent` : `${closed.id}: executing -> ${closed.state}`);
   }
