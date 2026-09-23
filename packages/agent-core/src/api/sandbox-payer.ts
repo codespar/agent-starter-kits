@@ -6,14 +6,15 @@
  * project's triggers, and every record it leaves carries `simulated: true`
  * plus `settled_against: "sandbox_fixture"`. No money moves anywhere. A
  * live-environment key is refused with `sandbox_pay_not_permitted` before
- * anything is read. The route is not in the SDK's OpenAPI document (0.16.4),
- * and `ApiClient.request` refuses an unknown path, so this is a plain
- * `fetch` against the same base URL, key and project header; the key is
- * checked for the `csk_test_` prefix first, like every other call.
+ * anything is read. Since `@codespar/sdk@0.16.5` the route is in the SDK's
+ * OpenAPI document, so this is the client's own typed call (same base URL,
+ * key and project header as every other call); until 0.16.4 it was a plain
+ * `fetch`, see docs/OPEN_QUESTIONS.md section 31c. The key is checked for
+ * the `csk_test_` prefix before a client exists, like every other call.
  */
-import { assertTestKey } from "../secrets.js";
+import { ApiClient } from "@codespar/sdk";
 import type { ApiFailure } from "./client.js";
-import { DEFAULT_BASE_URL } from "./client.js";
+import { createCodeSparClient, describeApiError } from "./client.js";
 
 export interface SandboxPaidState {
   charge_id: string;
@@ -35,7 +36,7 @@ export interface SandboxPaidState {
 
 export type SandboxPayResult = { ok: true; state: SandboxPaidState } | { ok: false; failure: ApiFailure };
 
-/** Where the payer route lives. The SDK client refuses a path outside its OpenAPI document, so this call is a plain fetch with the same three things. */
+/** Where the payer route lives when no client exists yet: the same three things `createCodeSparClient` takes. */
 export interface SandboxPayerTarget {
   apiKey: string | undefined;
   baseUrl?: string | undefined;
@@ -43,38 +44,15 @@ export interface SandboxPayerTarget {
   timeoutMs?: number;
 }
 
-export async function paySandboxCharge(target: SandboxPayerTarget, chargeRef: string, amountMinor?: number): Promise<SandboxPayResult> {
-  const apiKey = assertTestKey(target.apiKey);
-  const base = (target.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), target.timeoutMs ?? 30_000);
+export async function paySandboxCharge(target: ApiClient | SandboxPayerTarget, chargeRef: string, amountMinor?: number): Promise<SandboxPayResult> {
+  const api = target instanceof ApiClient ? target : createCodeSparClient(target);
   try {
-    const res = await fetch(`${base}/v1/test/charges/${encodeURIComponent(chargeRef)}/pay`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-        ...(target.projectId ? { "x-codespar-project": target.projectId } : {}),
-      },
-      body: JSON.stringify(amountMinor !== undefined ? { amount_minor: amountMinor } : {}),
-      signal: controller.signal,
+    const state = await api.post("/v1/test/charges/{chargeId}/pay", {
+      path: { chargeId: chargeRef },
+      body: amountMinor !== undefined ? { amount_minor: amountMinor } : {},
     });
-    const text = await res.text();
-    let body: unknown;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = undefined;
-    }
-    if (!res.ok) {
-      const err = (body as { error?: { code?: string; message?: string } } | undefined)?.error;
-      return { ok: false, failure: { status: res.status, code: err?.code ?? `http_${res.status}`, message: err?.message ?? text.slice(0, 200), body } };
-    }
-    return { ok: true, state: body as SandboxPaidState };
+    return { ok: true, state };
   } catch (err) {
-    const aborted = err instanceof Error && err.name === "AbortError";
-    return { ok: false, failure: { status: 0, code: aborted ? "timeout" : "network", message: err instanceof Error ? err.message : String(err) } };
-  } finally {
-    clearTimeout(timer);
+    return { ok: false, failure: describeApiError(err) };
   }
 }

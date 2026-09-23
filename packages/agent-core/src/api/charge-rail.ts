@@ -82,7 +82,7 @@ export class CodeSparChargeRail implements PaymentRail {
     if (!payment.consumer_id) return { status: "failed", code: "consumer_id_required", message: "a receivable settles into the principal's account; the policy names no consumer_id" };
     let view: ChargeView;
     try {
-      // The SDK's typed body (0.16.4) does not name `consumer_id`; the route reads it. Widened here, not invented: see the header.
+      // The SDK's typed body (still in 0.16.5) does not name `consumer_id`; the route reads it. Widened here, not invented: see the header.
       view = (await this.api.post("/v1/charges", {
         body: {
           consumer_id: payment.consumer_id,
