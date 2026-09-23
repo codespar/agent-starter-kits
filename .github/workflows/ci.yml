@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Everything here runs without ANTHROPIC_API_KEY and without CODESPAR_API_KEY:
+# the replay provider and the stub rail stand in. A failing adversarial case
+# or scenario blocks the merge.
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: secret scan (whole tree)
+        run: node scripts/secret-scan.mjs all
+      - name: typecheck (includes the transition type test)
+        run: npm run typecheck
+      - name: npm run check (manifest coherence)
+        run: npm run check --workspace=agents/bills-agent
+      - name: adversarial suite + scenarios (replay provider)
+        run: npm run eval --workspace=agents/bills-agent
+      - name: one command, machine output
+        run: |
+          cd agents/bills-agent
+          npm start -- --input "pague a escola de outubro" --approve --json > /tmp/out.json
+          node -e 'const o=JSON.parse(require("fs").readFileSync("/tmp/out.json","utf8")); if(o.executions[0].state!=="settled"||o.receipts.length!==1||!o.actor) process.exit(1)'
+      - name: tests (core + agent, including restart and rerun)
+        run: npm test
