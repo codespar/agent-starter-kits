@@ -1,18 +1,22 @@
 /**
- * STUB. Stands in for the AgentGate preview surfaces the spec depends on
- * (section 14.6): `codespar mandates revoke`, `codespar org pauseAll`,
- * `mandates list`, `audit replay`. It answers from the local state.db, so a
- * scenario can revoke a mandate mid-run and the core reacts the way section
- * 4.7 says, with no network and no AgentGate. No gate in this delivery
- * waits for the real thing; when it ships, this file is replaced by an
- * implementation of the same `MandateStatusSource` interface.
+ * STUB, for runs without a key: the CI, the scenarios and `rerun`, where
+ * there is no network. Answers the section 4.7 status check from the local
+ * state.db, so a scenario can revoke or pause a mandate mid-run
+ * (`before_decision`, `before_execute` in the scenario packs) and the core
+ * reacts exactly as it does against the API. Behind the same
+ * `MandateStatusSource` interface as `api/mandate-status.ts`, which is what
+ * a run with a test key gets instead; this file is never consulted on that
+ * path.
+ *
+ * It also holds the organization kill switch (`pauseAll`), which the API
+ * does not expose yet, so `org_paused` can be exercised locally.
  */
 import type { MandateStatusSource, MandateStatus, MandateStatusReport } from "../revocation.js";
 import type { StateStore } from "../state/store.js";
 
 export const STUB_ORG_ID = "org_local_stub";
 
-export class AgentGateStub implements MandateStatusSource {
+export class LocalMandateStatusStub implements MandateStatusSource {
   constructor(
     private readonly store: StateStore,
     private readonly clock: () => Date = () => new Date(),
@@ -29,7 +33,7 @@ export class AgentGateStub implements MandateStatusSource {
     };
   }
 
-  /** `codespar mandates revoke <id>`, locally. */
+  /** `codespar mandate revoke <id>`, locally. */
   revoke(mandateId: string, reason = "revoked by operator"): void {
     this.store.stubSetMandateStatus(mandateId, "revoked", reason, this.clock().toISOString());
   }
@@ -42,7 +46,7 @@ export class AgentGateStub implements MandateStatusSource {
     this.store.stubSetMandateStatus(mandateId, "active", null, this.clock().toISOString());
   }
 
-  /** `codespar org pauseAll`, locally. */
+  /** The organization kill switch, locally: the API has no `org pauseAll` yet. */
   pauseAll(): void {
     this.store.stubSetOrgPaused(STUB_ORG_ID, true, this.clock().toISOString());
   }

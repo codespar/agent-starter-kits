@@ -16,4 +16,4 @@ An execution left in `executing` is looked up on the rail, attempt by attempt. A
 
 ## Stubs
 
-`stubs/agentgate.ts` (revocation, kill switch) and `stubs/rail.ts` (the sandbox rail) are stand-ins for CI and scenarios, marked as such. The approval artifact is signed with a local development key (`approval.ts`); the API does not sign approval lists.
+`stubs/mandate-status.ts` (the section 4.7 status source for runs without a key: revocation, pause and the organization kill switch, over the local state.db) and `stubs/rail.ts` (the sandbox rail) are stand-ins for the CI, the scenarios and `rerun`, marked as such. With a test key the engine reads the mandate status from the API instead (`api/mandate-status.ts`, `GET /v1/mandates/{id}`), fail-closed: anything but `active` refuses `executing`, and a read that does not answer is `mandate_status_unavailable`, never "assume active". The approval artifact is signed with a local development key (`approval.ts`); the API does not sign approval lists.
