@@ -480,7 +480,7 @@ export class ExecutionEngine {
       const prior = outcomes.find((o) => o.index === index);
       // Settled and failed are final. An accepted receivable is looked at again: its payer may have acted.
       if (prior && prior.status !== "accepted") continue;
-      const seen = await this.deps.rail.lookup(payment.attempt_id, payment);
+      const seen = await this.deps.rail.lookup(payment.attempt_id, payment, prior?.transaction_id);
       const found = seen ? seen.status : "absent";
       const stored = this.deps.store.appendEvent({
         run_id: this.deps.runId,
@@ -712,6 +712,7 @@ export class ExecutionEngine {
       beneficiary: item.beneficiary,
       purpose: this.deps.mandate.purpose,
       agent_id: this.deps.mandate.agent_id,
+      consumer_id: this.deps.mandate.consumer_id,
       ...(item.description ? { description: item.description } : {}),
       ...(item.due_date ? { due_date: item.due_date } : {}),
       actor: this.agentActor,

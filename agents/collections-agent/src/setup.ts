@@ -164,7 +164,7 @@ export function setup(options: SetupOptions = {}): Setup {
     payer = {
       kind: "api",
       async pay(chargeId) {
-        const result = await paySandboxCharge(client, chargeId);
+        const result = await paySandboxCharge({ apiKey: env["CODESPAR_API_KEY"], baseUrl: env["CODESPAR_API_URL"], projectId: env["CODESPAR_PROJECT_ID"] }, chargeId);
         if (!result.ok) return { ok: false, detail: `${result.failure.code}: ${result.failure.message}` };
         const s = result.state;
         return { ok: true, detail: `sandbox payer: ${s.charge_id} ${s.status} (${s.payment}, ${s.paid_minor} of ${s.quoted_minor}), simulated=${s.simulated}, settled_against=${s.settled_against}, money_moved=${s.money_moved}${s.idempotent_replay ? ", replay" : ""}` };

@@ -20,7 +20,7 @@ Without a key: `npm start --workspace=agents/collections-agent -- --scenario hap
 
 ## Measured
 
-First real attempt on staging, 2026-09-23 15:10:49Z, `org_demo`: the conversation, the approval and the dispatch were real; `POST /v1/charges` answered `no_eligible_providers (eligibility_empty)` in 1.15 s because the demo org has no Celcoin connection, the only issuer of the bolepix the sandbox payer can pay. The forty seconds are proven on the stub rail and the fixture payer, not on staging. Details, request ids and the three probes in `docs/OPEN_QUESTIONS.md` section 22.
+Second real run on staging, 2026-09-23 18:03:16Z, `org_demo`, replay provider, `--scenario happy-path --mode human --rail api`: **10 s from the issuance to `settled`** (create answered in 4.1 s, the instrument registered on the second look, the sandbox payer paid, the next look found `settlement: confirmed`), 15 s for the whole scenario. Charge `9fa7974e-9d1c-452e-aa01-64e9272f4f52`, execution `exe_624615ee1de452c5`. The first run of the day stopped at the issuance (no Celcoin on the demo org until ent#1613). Details, request ids and the three walls in `docs/OPEN_QUESTIONS.md` sections 22 and 31.
 
 ## Going to production
 

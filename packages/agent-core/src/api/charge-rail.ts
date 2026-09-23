@@ -79,10 +79,13 @@ export class CodeSparChargeRail implements PaymentRail {
 
   async pay(payment: RailPayment): Promise<RailOutcome> {
     if (!payment.due_date) return { status: "failed", code: "due_date_required", message: "a receivable needs a due_date; the immediate Pix charge cannot be read back or replayed" };
+    if (!payment.consumer_id) return { status: "failed", code: "consumer_id_required", message: "a receivable settles into the principal's account; the policy names no consumer_id" };
     let view: ChargeView;
     try {
+      // The SDK's typed body (0.16.4) does not name `consumer_id`; the route reads it. Widened here, not invented: see the header.
       view = (await this.api.post("/v1/charges", {
         body: {
+          consumer_id: payment.consumer_id,
           amount: payment.amount_minor / 100,
           currency: payment.currency,
           method: "boleto",
@@ -90,7 +93,7 @@ export class CodeSparChargeRail implements PaymentRail {
           buyer: { name: payment.beneficiary ?? payment.payee, document: payment.payee },
           due_date: payment.due_date,
           idempotency_key: payment.attempt_id,
-        },
+        } as unknown as { amount: number; currency: string; method: string },
       })) as ChargeView;
     } catch (err) {
       const failure = describeApiError(err);
@@ -108,15 +111,32 @@ export class CodeSparChargeRail implements PaymentRail {
     return outcome.status === "in_flight" ? { status: "uncertain", code: "issuance_unconfirmed", message: "the create answered no readable state" } : outcome;
   }
 
-  async lookup(attemptId: string, _payment: RailPayment): Promise<RailLookup> {
+  /**
+   * By the charge id when the create handed one back; by our idempotency key only when it did not (the create's answer was lost).
+   * The route's doc says the read accepts the caller's key as the id; on staging (2026-09-23) it answered `charge_not_found` for
+   * the key and the charge for the id, so the id comes first and the key is the fallback, not the other way round.
+   */
+  async lookup(attemptId: string, _payment: RailPayment, transactionId?: string): Promise<RailLookup> {
+    const byId = transactionId ? await this.read(transactionId) : { kind: "missing" as const };
+    if (byId.kind === "view") return outcomeOf(byId.view);
+    if (byId.kind === "in_flight") return { status: "in_flight" };
+    if (byId.kind === "uncertain") return byId.outcome;
+    const byKey = await this.read(attemptId);
+    if (byKey.kind === "view") return outcomeOf(byKey.view);
+    if (byKey.kind === "in_flight") return { status: "in_flight" };
+    if (byKey.kind === "uncertain") return byKey.outcome;
+    return undefined;
+  }
+
+  private async read(chargeRef: string): Promise<{ kind: "view"; view: ChargeView } | { kind: "missing" } | { kind: "in_flight" } | { kind: "uncertain"; outcome: Extract<RailOutcome, { status: "uncertain" }> }> {
     try {
-      const view = (await this.api.get("/v1/charges/{chargeId}", { path: { chargeId: attemptId } })) as ChargeView;
-      return outcomeOf(view);
+      const view = (await this.api.get("/v1/charges/{chargeId}", { path: { chargeId: chargeRef } })) as ChargeView;
+      return { kind: "view", view };
     } catch (err) {
       const failure = describeApiError(err);
-      if (failure.status === 404) return undefined;
-      if (failure.status === 409) return { status: "in_flight" };
-      return { status: "uncertain", code: failure.code, message: failure.message };
+      if (failure.status === 404) return { kind: "missing" };
+      if (failure.status === 409) return { kind: "in_flight" };
+      return { kind: "uncertain", outcome: { status: "uncertain", code: failure.code, message: failure.message } };
     }
   }
 
