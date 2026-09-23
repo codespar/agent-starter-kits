@@ -15,6 +15,8 @@ export interface RailPayment {
   payee: string;
   purpose: string;
   agent_id: string;
+  /** The principal the agent acts for (the mandate's `consumer_id`). A receivable settles into THIS identity's account; `POST /v1/charges` needs it on the wire. */
+  consumer_id?: string;
   description?: string;
   /** Display name of the counterparty (a receivable's debtor). The rail that issues a charge needs it; a payout rail ignores it. */
   beneficiary?: string;
@@ -81,7 +83,11 @@ export type RailLookup = RailOutcome | { status: "in_flight" } | undefined;
 export interface PaymentRail {
   readonly name: "stub" | "codespar" | "stub-charge" | "codespar-charge";
   pay(payment: RailPayment): Promise<RailOutcome>;
-  /** Answers the outcome of an attempt already presented, `in_flight` while the rail is still on it, or `undefined` when the rail never saw it. */
-  lookup(attemptId: string, payment: RailPayment): Promise<RailLookup>;
+  /**
+   * Answers the outcome of an attempt already presented, `in_flight` while the rail is still on it, or `undefined` when the rail
+   * never saw it. `transactionId` is the rail's own id for the attempt when the core recorded one (an accepted receivable): a rail
+   * whose read is keyed on its id and not on the caller's key looks it up by that.
+   */
+  lookup(attemptId: string, payment: RailPayment, transactionId?: string): Promise<RailLookup>;
   receipt(receiptId: string, actor: Actor): Promise<RailReceipt | undefined>;
 }
