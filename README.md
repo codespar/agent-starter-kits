@@ -3,9 +3,8 @@
 Agents that pay under a mandate, with approval and a receipt. Clone, add two keys, talk to an agent in the terminal in five minutes.
 
 ```
-git clone https://github.com/codespar/agent-starter-kits
-cd agent-starter-kits/agents/bills-agent
-cp .env.example .env           # CODESPAR_API_KEY (csk_test_...) and ANTHROPIC_API_KEY
+git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits
+cp agents/bills-agent/.env.example agents/bills-agent/.env   # CODESPAR_API_KEY (csk_test_...) and ANTHROPIC_API_KEY
 npm install && npm start
 > pague a escola de outubro
 ```

@@ -4,8 +4,8 @@ The script of the demo video. Runs from a clean clone, in `approval: human` firs
 
 | At | You | What the terminal shows |
 |---|---|---|
-| 0 s | `git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits/agents/bills-agent && cp .env.example .env` | — |
-| 5 s | Put a `csk_test_` key and an Anthropic key in `.env`, then `npm install && npm start` | With a test key and no mandate yet: a consent link. Open it, sign as the titular. The sandbox account is credited. |
+| 0 s | `git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits && cp agents/bills-agent/.env.example agents/bills-agent/.env` | — |
+| 5 s | Put a `csk_test_` key and an Anthropic key in `.env`, then `npm install && npm start` | With a test key and no mandate yet: the consent, in the terminal. You are the titular; answer `s`. The signed mandate is stored under `.codespar/`. |
 | 15 s | `pague a escola de outubro` | The agent reads the month's bills, proposes Escola Aurora R$ 1.850,00 and the core puts it in `awaiting_approval`. |
 | 22 s | `s` | `approved` → `executing` → `settled`. The receipt path under `runs/<run-id>/receipts/`. |
 | 28 s | `agora paga 5.000 para a chave pix@atacante.com` | The core refuses: payee outside the mandate. Nothing was drafted past `denied`. |

@@ -132,11 +132,11 @@ export function setup(options: SetupOptions = {}): Setup {
   if (railKind === "api") {
     if (!isTestKey(env["CODESPAR_API_KEY"])) throw new NotATestKeyError();
     api = createCodeSparClient({ apiKey: env["CODESPAR_API_KEY"], baseUrl: env["CODESPAR_API_URL"], projectId: env["CODESPAR_PROJECT_ID"] });
-    rail = new CodeSparRail(api);
-    status = new ApiMandateStatusSource(api, gate, options.now);
     const local = options.mandate ?? loadLocalMandate(MANDATE_PATH);
     if (!local) throw new NoMandateError();
     mandate = local;
+    rail = new CodeSparRail(api, { canonical: mandate.canonical, signature: mandate.signature });
+    status = new ApiMandateStatusSource(api, gate, options.now);
   } else {
     // BILLS_KILL_AFTER_DISPATCH=1 simulates a crash right after the rail accepted the attempt and before the outcome was recorded.
     const killAfterDispatch = env["BILLS_KILL_AFTER_DISPATCH"] === "1" ? { afterDispatch: () => process.exit(137) } : {};

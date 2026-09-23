@@ -9,7 +9,7 @@
 import { stderr, stdout } from "node:process";
 import { relative, resolve } from "node:path";
 import { NotATestKeyError, isTestKey } from "@codespar/agent-core";
-import { closeTerminal, handleExecution, interactive } from "../channels/terminal/index.js";
+import { closeTerminal, defaultAsk, handleExecution, interactive } from "../channels/terminal/index.js";
 import { runEmbeddedConsent, loadLocalMandate } from "./modules/embedded-consent.js";
 import { checkScenario, listScenarios, loadScenario, runScenario, scenariosDir } from "./scenarios.js";
 import { AGENT_DIR, MANDATE_PATH, NoMandateError, readDotEnv, resolveRailKind, setup, type RailKind } from "./setup.js";
@@ -101,7 +101,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     }
     const api = createCodeSparClient({ apiKey: process.env["CODESPAR_API_KEY"], baseUrl: process.env["CODESPAR_API_URL"], projectId: process.env["CODESPAR_PROJECT_ID"] });
     const example = loadMandate(resolve(AGENT_DIR, "mandate.example.json"));
-    await runEmbeddedConsent({ api, example, mandatePath: MANDATE_PATH, say });
+    await runEmbeddedConsent({ api, example, mandatePath: MANDATE_PATH, say, confirm: async (q: string) => /^(s|sim|y|yes)$/i.test((await defaultAsk(q)).trim()) });
   }
 
   // One-shot without a model: replay the recorded happy-path when the input is its first turn.

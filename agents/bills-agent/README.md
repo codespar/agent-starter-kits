@@ -3,12 +3,13 @@
 The titular delegates the month's bills (school, groceries, the cleaner, utilities) to an agent, under a mandate signed once: a cap per payment, a cap per month, named payees, one year of validity. Every payment returns a receipt. Terminal first; WhatsApp later.
 
 ```
-git clone https://github.com/codespar/agent-starter-kits
-cd agent-starter-kits/agents/bills-agent
-cp .env.example .env        # CODESPAR_API_KEY (csk_test_...) and ANTHROPIC_API_KEY
+git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits
+cp agents/bills-agent/.env.example agents/bills-agent/.env   # CODESPAR_API_KEY (csk_test_...) and ANTHROPIC_API_KEY
 npm install && npm start
 > pague a escola de outubro
 ```
+
+`npm install` runs at the repository root (it is an npm workspace; installing inside `agents/bills-agent` does not bring the root toolchain). `npm start` at the root opens this agent; inside `agents/bills-agent`, the same scripts work once the root is installed.
 
 ## What it proves
 
@@ -28,7 +29,7 @@ Read from `agent.yaml`, field `maturity`:
 | Capability | Maturity | Meaning |
 |---|---|---|
 | `pix-out` | sandbox | Pix payments through the CodeSpar sandbox. No real money. |
-| `embedded-consent` | sandbox | The mandate is born at the hosted consent page the titular signs. |
+| `embedded-consent` | sandbox | The mandate is born at a consent the titular authorizes; in the sandbox the kit runs the partner surface in the terminal. |
 | `receipt-verification` | blocked | Waits for Ed25519. The receipt seal is HMAC today. |
 
 What the agent applies on its own, before the mandate (`guardrails.json`): the escalation thresholds (R$ 1.500,00 per payment, first payment to each payee, 22:00–07:00), a 24-hour velocity window per payee against fractioning, and "the core's total wins" when the model states another.
@@ -39,7 +40,7 @@ Out of this delivery: WhatsApp, batch payouts, `npm run inspect`, the `codespar 
 
 | Command | Does |
 |---|---|
-| `npm start` | Interactive terminal. With a test key and no mandate yet, starts the consent first. |
+| `npm start` | Interactive terminal. With a test key and no mandate yet, runs the consent first (partner surface: you are the titular at the keyboard). |
 | `npm start -- --input "pague a escola de outubro" [--approve] [--json]` | One turn, no prompt. `--json`: machine data on stdout, people on stderr. Without `ANTHROPIC_API_KEY` it replays the recorded happy-path. To pipe the JSON, add npm's `--silent` (`npm start -s -- --input ... --json \| jq .`): npm itself prints the script banner on stdout. |
 | `npm start -- --scenario <name> [--mode human\|mandate]` | A scenario pack from `scenarios/`. |
 | `npm run check` | The manifest gate: fails if the prompt, tools or guardrails contradict `agent.yaml`, if `AGENTS.md` and `CLAUDE.md` differ, or if `mcp`, `cli` or `schema` are missing. |
@@ -47,7 +48,7 @@ Out of this delivery: WhatsApp, batch payouts, `npm run inspect`, the `codespar 
 | `npm run resume` | After a crash: reconciles what was `executing`, expires what went stale. Never pays twice. |
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches. |
 | `npm run reconcile` | Compares local state with the rail. |
-| `npm run consent` | Starts a new hosted consent for a mandate (test key). |
+| `npm run consent [--yes]` | Runs a new consent for a mandate (test key, partner surface). The signed envelope is stored in `.codespar/mandate.json`, mode 0600. |
 
 ## The proof bundle
 
