@@ -81,3 +81,67 @@ It is an npm workspace; `npm install` inside `agents/bills-agent` installed 13 p
 ## 20. `commerce.payment.settled` does not exist; the API publishes `commerce.payment.succeeded`
 
 The manifest example of section 4.3 declares `events: [commerce.payment.settled, commerce.payment.failed]`, and the first delivery keyed the core's local settlement event the same way. The API publishes no `settled` event. Its families are `commerce.payment.succeeded | failed | pending | refunded | updated`, `commerce.pix_out.succeeded | failed`, `commerce.charge.created | paid | expired | cancelled` and `commerce.mandate.granted | paused | resumed | revoked` (codespar-enterprise `packages/api/src`, measured 2026-09-23). The manifest and the core now say `commerce.payment.succeeded`; the list lives in one place, `packages/agent-core/src/events.ts`, and `npm run check` refuses an `events:` entry outside it (`events_unknown`). No recorded transcript carried the old name, so `rerun` is unaffected. The execution STATE is still `settled` (section 4.1): the state names what the core concluded, the event names what the rail said. Decision taken 2026-09-23 (#3). **v5.2:** fix the example in 4.3 and name the list.
+
+# The collections-agent (plan item 2.2), against spec v5.2
+
+Same rule. Entries 21 to 30 come from building `agents/collections-agent` over `kits/bolepix-receivables` on 2026-09-23, against the API on `main` (ent#1600 merged, `POST /v1/test/charges/{id}/pay` deployed on staging). Input for v5.3.
+
+## 21. How the cycle closes: the poll is the default, the webhook is a stub
+
+Section 7 step 6 says `commerce.charge.paid` "dispara". The API delivers it through a trigger to a URL; a terminal kit has no URL the API can reach, and the five-minute contract cannot include exposing one. What the code does: the kit LOOKS. `GET /v1/charges/{id}` (which accepts the kit's own `idempotency_key` as the id) every three seconds through the core's `reconcile`, read-only on the rail, until `local_status` says `settled` or `expired`; the instrument is shown the first time a look finds it `payable`, the payer is told once, both marks in `state.db`. `channels/webhook/` is the other closer and is a STUB: the receiving contract (`X-CodeSpar-Signature: t=..,v1=hex(HMAC-SHA256(secret, "t.body"))`, body `{ id, type, source, occurred_at, data: { payment_id } }`), signature verification, dedup by event id, `npm run webhook` on localhost. Registering the trigger and exposing the URL are the developer's steps. Both paths are the same `ingestExternalEvent`/`reconcile` on the core, so the section 9 replay case holds for either. **v5.3:** say in 5 and 7 that the terminal closes by poll, and what `channels/webhook` is until WhatsApp.
+
+## 22. First real charge cycle on staging: STOPPED at the issuance, and why
+
+Run on 2026-09-23 15:10:49Z with the staging test key (`https://api.staging.codespar.dev`, `org_demo`, project `prj_f1622489344f39fe`), replay provider, `npm start -- --scenario happy-path --mode human --rail api --wait 90`. The conversation, the approval (`awaiting_approval → approved`, artifact `apr_...` in the bundle) and the dispatch were real; `POST /v1/charges` with `method: boleto`, `due_date: 2026-09-30`, `idempotency_key: att_68e1b787383ed0d1131e8a2d2dacfb98_0` answered in 1.15 s:
+
+```
+502 no_eligible_providers: router error: eligibility_empty (meta_tool=codespar_charge)   dispatch: unsent
+```
+
+The execution closed `failed (rail_failed)`, nothing was issued, the payer was told once; bundle `runs/run_20260923151049_human_00c6ca`. Three probes with the same key, same minute, say why and what IS live:
+
+- `POST /v1/test/charges/chg_does_not_exist/pay` → `404 charge_not_found` (request `req_5OwGqMnPGKLmOeV2`). The sandbox payer route is deployed and this key reaches it as a test-environment project (a live key would get `403 sandbox_pay_not_permitted` before any read).
+- `GET /v1/connections` for the org: `z-api, unblockpay, stripe-acp, nfe-io, mercado-pago, melhor-envio, asaas`, all connected. **No `celcoin`.** The cobranca com vencimento is issued by Celcoin only (meta-tool doc: "issued by Celcoin only and never falls over to another issuer"), and eligibility is `META_TOOL_CATALOG ∩ connected_accounts` (`refreshTenantEligibility`; the 0241 backfill writes the bolepix line only for orgs with `server_id = 'celcoin'` connected). So the demo org cannot issue the one instrument the sandbox payer can pay.
+- `POST /v1/charges` with `method: pix` (immediate) → `200 { id: "pay_bor7b5ya822abgv9", status: "PENDING", method: "pix", amount: 10.5, charge_url, raw }` from the Asaas mock; then `GET /v1/charges/kits-staging-probe-pix-a` → `404 charge_not_found: "an immediate Pix charge is not readable back here"`. The immediate Pix is what the test org CAN mint, and it cannot close a loop: not readable, not replayed on a key, not payable by the sandbox route (which resolves `celcoin_pix_charges` rows with `instrument = 'bolepix'` only), and its response carries `charge_url` and no `pix_copy_paste`, `amount_minor`, `payable` or `local_status` (the SDK's typed response is the bolepix shape).
+
+What it would take: a Celcoin sandbox connection on `org_demo` (operator credentials; not a kit-side change and not something a lane should do to the shared demo org on its own), OR the shared-sandbox templates seeding `celcoin` for test projects the way the "pre-connected" prose in `codespar_get_started` promises for "codespar_charge (receive Pix)". Until one of them, the forty-second cycle is proven on the stub rail and the fixture payer (`npm run eval`: 8 adversarial cases, 15 scenario runs, `cycle_seconds` 3 on the fake clock) and NOT on staging; no number is claimed for the real cycle. Enterprise: open an issue on the shared sandbox templates. **v5.3:** section 17 line "2 — o ciclo fecha sozinho em quarenta segundos" gets a precondition: the test org must have the bolepix issuer connected.
+
+## 23. The charge call, as it really is
+
+The spec names `codespar_charge` (7, step 4). What the kit calls is the REST twin `POST /v1/charges`, an adapter over the same strategy (`routes/charges.ts`), because the kit runs no MCP session: `{ amount, currency: "BRL", method: "boleto", description, buyer: { name, document }, due_date, idempotency_key }`. Four facts the spec does not state:
+
+a. **`method: "pix"` cannot close a loop.** The meta-tool doc says it: an immediate Pix "is not readable or cancellable here" and "retrying an immediate Pix ... issues a new charge". Idempotency and a status read exist only for the cobranca com vencimento (`method: boleto` + `due_date`). So "bolepix-receivables" is the ONLY receivable the kit issues, à vista included: a payment in full is one bolepix with one due date, settled by Pix or by boleto. **v5.3:** 2 and 7 say "Pix à vista ou bolepix por parcela"; it is bolepix in both cases, paid by Pix.
+
+b. **`amount` is in MAJOR units** (`coerceMetaChargeArgs`: `Number(input.amount)`, "R$ 125.00 → 125"), while the SDK's generated type for `POST /v1/charges` documents `amount` as "In minor units". The kit sends `amount_minor / 100` and compares the answer's `amount_minor` with what was approved; a mismatch withdraws the charge and fails the attempt (`amount_mismatch`) rather than leave a debt nobody approved. Core issue: the SDK doc string.
+
+c. **`buyer.document` is required and validated** (check digit) for the due-dated charge. The kit's fixture debtors carry valid CPFs; the model never sees or passes one — the code takes it from the agreement.
+
+d. **The create answers `PROCESSING` with `payable: false` and no document**; the instrument arrives on a later read (~30 s, up to an hour) or on `commerce.charge.created`. Step 5 of section 7 ("o QR chega") is a state the kit polls into, not the create's answer.
+
+## 24. `charge.expired` closes as `failed`, not `expired`
+
+Sections 8 and 12 say `charge.expired` → `expired`. The table of 4.1 has no `executing → expired` edge, and the type test keeps it closed. The kit closes `failed` with reason `charge_expired` (and `charge_cancelled` for `commerce.charge.cancelled`), which keeps `expired` meaning what 4.1 says: an OPEN execution that timed out before executing. **v5.3:** either add `executing → expired` to 4.1 or change 8 and 12 to `failed (charge_expired)`.
+
+## 25. The receiving side has no signed policy; the mandate shape is reused
+
+Section 16 already says the organization's collection policy "não existe e é candidata a produto". What the code does: `mandate.example.json` in the consumer-mandate shape, read by the same `MandateSchema`: `consumer_id` is the MERCHANT (the principal the agent acts for, `actor.on_behalf_of`), `merchant_pin_kind: "document"` (added to the enum), `merchant_allowlist` and `beneficiaries` are the DEBTORS with an open agreement, `per_tx_cap_minor` is the cap per receivable, `periodic_cap` the cap on what may be issued per month. The envelope (discount ceiling, instalments, due-date window, collection hours) is `guardrails.envelope`, run by the core as the kit's `policyExtension` at every gate (a person's yes does not widen it). There is no consent step and no API-side status to read, so revocation is the local stub only. **v5.3:** name the receiving-side policy fields in 4.3 or say the mandate shape is reused with these meanings.
+
+## 26. Fractioning on the receiving side is refused, not escalated
+
+Section 9 asks `must_escalate` by the velocity window. A receivable execution covers ONE agreement in full (its total must be at or above the principal minus the maximum discount), so "the agreement in five parts, one after the other" is five executions each below the floor: every one is `denied (outside_envelope)` before any window counts. The window and `escalate_above.amount` still apply to the whole (instalments inside one execution add up to the execution's total, and an agreement above R$ 3.000,00 asks the operator in `mandate`). The adversarial case expects `must_refuse` with `max_auto_settled_minor: 0`. **v5.3:** 9, row "Fracionamento": `must_escalate` on the paying side, `must_refuse` on the receiving side.
+
+## 27. `new_beneficiary` and `outside_hours` are not escalation triggers here
+
+`escalate_above` carries only `amount`. A receivable is issued against a debtor already in the book and the money comes TO the merchant, so "first charge to this debtor" is the normal case, not a risk (and with `new_beneficiary: true` mandate mode would never issue alone, section 6 again). Collection hours are a LEGAL rule (08:00–20:00 in `guardrails.timezone`), refused in BOTH modes by the envelope with reason `outside_hours`, not escalated. **v5.3:** say in 4.4 which triggers apply per side.
+
+## 28. Events declared: the API's names, four of them
+
+`events: [commerce.charge.created, commerce.charge.paid, commerce.charge.expired, commerce.charge.cancelled]` (plan §1: the API also publishes `payment_notified` and `expiry_notified`, which the kit does not consume: a notification is explicitly not a payment). The core's `ingestExternalEvent` maps `paid` → settled, `expired`/`cancelled` → failed, and the payout side's `commerce.payment.succeeded` / `failed` (section 20); the four charge names are constants in `packages/agent-core/src/events.ts`, the one list `npm run check` validates `events:` against.
+
+## 29. Three receivables, one execution, one message
+
+An agreement in N instalments is N `POST /v1/charges`, one per parcela, each with its own `due_date` and key (the API's own rule). The core keeps them as N attempts of ONE execution: `accepted` per attempt, `settled` when every attempt is paid, `failed` if any expired, `outcomes` naming each. The payer gets one message per outcome, deduplicated in `state.db`, whatever the number of looks or events. `due_date` is part of the `items_hash` when present: moving a due date after approval is another charge and goes back to `awaiting_approval`.
+
+## 30. Things reality showed the spec got wrong (summary for v5.3)
+
+- The terminal closes the cycle by poll; the webhook is a stub until there is a URL (21). The staging cycle stops at `eligibility_empty`: no Celcoin on the demo org, and the immediate Pix cannot close a loop (22, 23a). `amount` in major units on `POST /v1/charges`, against the SDK doc (23b). The QR is polled into, not returned by the create (23d). `charge.expired` is `failed (charge_expired)` under 4.1 (24). The receiving side reuses the mandate shape and the envelope is code (25). Fractioning is refused, not escalated (26). Only `amount` escalates here; hours are law (27). Four charge events, the API's names (28). N bolepix, one execution, one message (29).

@@ -20,7 +20,7 @@ Without a key: `npm start --workspace=agents/collections-agent -- --scenario hap
 
 ## Measured
 
-First real cycle on staging (2026-09-23): see `docs/OPEN_QUESTIONS.md` section 21 for the charge id, the timings and what the API answered.
+First real attempt on staging, 2026-09-23 15:10:49Z, `org_demo`: the conversation, the approval and the dispatch were real; `POST /v1/charges` answered `no_eligible_providers (eligibility_empty)` in 1.15 s because the demo org has no Celcoin connection, the only issuer of the bolepix the sandbox payer can pay. The forty seconds are proven on the stub rail and the fixture payer, not on staging. Details, request ids and the three probes in `docs/OPEN_QUESTIONS.md` section 21.
 
 ## Going to production
 
