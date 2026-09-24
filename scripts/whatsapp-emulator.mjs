@@ -39,16 +39,19 @@ export const EMULATOR_WEBHOOK_PORT = 4399;
 
 const CACHE = process.env["WHATSAPP_SIM_DIR"] ?? join(process.env["XDG_CACHE_HOME"] ?? join(homedir(), ".cache"), "codespar-whatsapp-simulator");
 
+/** Corepack asks before downloading a package manager, which hangs a CI step forever. */
+const ENV = { ...process.env, COREPACK_ENABLE_DOWNLOAD_PROMPT: "0" };
+
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, { stdio: "inherit", encoding: "utf8", ...options });
+  const result = spawnSync(command, args, { stdio: "inherit", encoding: "utf8", env: ENV, ...options });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} exited ${result.status}`);
 }
 
 /** pnpm, because the emulator is a pnpm workspace. Corepack first, then whatever is on PATH. */
 function pnpm() {
-  if (spawnSync("pnpm", ["--version"], { encoding: "utf8" }).status === 0) return ["pnpm"];
-  if (spawnSync("corepack", ["--version"], { encoding: "utf8" }).status === 0) return ["corepack", "pnpm"];
+  if (spawnSync("pnpm", ["--version"], { encoding: "utf8", env: ENV }).status === 0) return ["pnpm"];
+  if (spawnSync("corepack", ["--version"], { encoding: "utf8", env: ENV }).status === 0) return ["corepack", "pnpm"];
   throw new Error("the emulator needs pnpm (it is a pnpm workspace). Install it with `corepack enable` or `npm i -g pnpm@9.12.3`.");
 }
 
@@ -75,6 +78,7 @@ function serve(sha, webhookUrl) {
   const child = spawn(bin, [...rest, "cli", "--", "serve", "--webhook", webhookUrl, "--app-secret", EMULATOR_APP_SECRET], {
     cwd: CACHE,
     stdio: "inherit",
+    env: ENV,
   });
   const stop = () => child.kill("SIGTERM");
   process.once("SIGINT", stop);
