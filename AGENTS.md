@@ -34,8 +34,14 @@ the whole tree; each agent under `agents/` adds its own `AGENTS.md`.
 10. **Use the CodeSpar MCP and skills** (`mcp.json`, `@codespar/mcp@0.5.8`)
     to learn the real API. When `docs/spec-v5.1.1.md` and the API diverge,
     follow the API and log it in `docs/OPEN_QUESTIONS.md`.
-11. **Do not write "verifiable by a third party"** anywhere. The receipt seal
-    and the approval artifact are HMAC today.
+11. **Say which signature you mean.** A receipt sealed since the API added
+    Ed25519 carries a signature anybody can check against the published key
+    set, with no credential — that is what `npm run verify -- <receipt-file>`
+    does. "Verifiable by a third party" is true of THAT and of nothing else
+    here: a receipt sealed before the change carries no Ed25519 signature and
+    never will, and the approval artifact is still HMAC with a local
+    development key. Write the phrase only where `Ed25519` is written too;
+    `npm run check` fails otherwise.
 12. **No telemetry.** Nothing in this repository phones home.
 
 `AGENTS.md` and `CLAUDE.md` are the same file, here and in every agent; `npm

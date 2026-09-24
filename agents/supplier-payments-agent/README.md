@@ -57,7 +57,7 @@ Read from `agent.yaml`, field `maturity`:
 |---|---|---|
 | `pix-out` | sandbox | Pix payouts through the CodeSpar sandbox. No real money. |
 | `batch-payout` | sandbox | The loop of executions, the per-line claim and the partial-failure report. |
-| `receipt-verification` | blocked | Waits for Ed25519. The receipt seal is HMAC today. |
+| `receipt-verification` | sandbox | Every receipt sealed since the API added Ed25519 carries a signature anybody can check against the published key set: `npm run verify -- runs/<run-id>/receipts/<id>.json`. Receipts sealed before that carry none and never will. |
 
 What the agent applies on its own, before the mandate (`guardrails.json`): the escalation thresholds (R$ 1.500,00 per payout, first payout to each payee, 22:00–07:00), a 24-hour velocity window per payee against fractioning, and "the core's total wins" when the model states another.
 
@@ -76,6 +76,7 @@ Not in this kit: WhatsApp, `embedded-consent` (see above), scheduling a batch fo
 | `npm run resume` | After a crash: dispatches only what the outbox proves was never sent, reconciles the rest from the rail, expires what went stale. Never pays twice. |
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches. |
 | `npm run inspect <run-id> [--json] [--html <file>]` | Reads a run's proof bundle back as a timeline. On a batch it prints the header once — the `batch_hash`, how many lines the approved list held, how many are attested here — and then one timeline per line. `2 of 4 line(s) attested · 3 with an execution · no execution for line(s) 3` is what a batch that did not all run looks like when you read it back. |
+| `npm run verify -- <receipt-file> [--json] [--keys <file>] [--url <url>]` | Checks a receipt's Ed25519 signature against CodeSpar's published key set. No key and no agent needed: it runs on a receipt file copied to another machine. The exit code is the verdict — 0 verified, 1 tampered, 3 unsigned, 4 unknown key, 5 the key set could not be read, 6 not a receipt. |
 | `npm run reconcile` | Compares local state with the rail. Closes an `executing` execution only from a recorded rail outcome; what the rail has not answered stays `executing` with an `execution.uncertain` event, for a human. Never dispatches. |
 
 ## The proof bundle
@@ -93,9 +94,17 @@ run.json                mode, rail, mandate id
 
 No key and no secret is written there. Payee keys are masked.
 
+The receipt copies carry both of the API's seals. `receipt_sig` is the HMAC, which proves the payment to whoever runs this agent; `receipt_sig_ed25519` and `receipt_sig_kid` are the asymmetric half, which proves it to anybody:
+
+```sh
+npm run verify -- runs/<run-id>/receipts/<receipt-id>.json
+```
+
+That reads the public key set from `/.well-known/codespar-receipt-keys.json`, picks the key the receipt names, rebuilds `codespar-receipt:v1:<receipt_id>:<chain>` and checks it with stock `node:crypto` — no key, no API key, no CodeSpar call that could be refused. `--keys <file>` uses a saved copy of the key set instead and touches no network at all; `--json` puts the verdict on stdout. The signature covers the receipt id and the chain, so the masking above does not disturb it, and the file verifies on a machine that has never seen this repository. A receipt sealed before the API had the capability answers `unsigned`, which is not a failure: it has no Ed25519 signature and never will, and its HMAC seal is unaffected.
+
 ## Limits and stubs
 
-- The receipt is signed by HMAC. The chain verifies without network; the signature proves it to whoever runs this agent, and to nobody else until Ed25519.
+- The receipt carries two signatures. The HMAC one proves the payout to whoever runs this agent, because verifying it means holding the secret that also mints it. The Ed25519 one, sealed by CodeSpar's platform issuer key since the API added it, proves it to anybody with `npm run verify`. A receipt sealed before that carries no Ed25519 signature and never will — there is no backfill, and signing an old receipt with today's key would attest to what the database says now, not to what happened then.
 - The approval artifact is signed by HMAC with a **local development key** (`.codespar/approval.key`). This is a stub: the CodeSpar API does not sign approval lists today. It proves what was approved to whoever runs the agent.
 - The claim that makes a re-run safe is **local**, in `.codespar/state.db`. Delete that file and the agent has no memory that a batch already ran. The rail's own idempotence still covers a re-sent `attempt_id`, but the executions would be new ones with new attempt ids, so it would not catch them. This is the honest limit of a kit that runs on one machine; see `docs/OPEN_QUESTIONS.md`.
 - The batch is not atomic and does not try to be. Lines settle independently, so a batch can end part paid. That is the point, and the report says which lines those are.

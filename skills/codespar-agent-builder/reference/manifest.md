@@ -22,7 +22,7 @@ promises stability: a field is removed or changes meaning only under a new
 | `mandate_schema` | path | `./mandate.example.json`. |
 | `events` | string[] | Each `^commerce\.[a-z_.]+$` AND a member of `PUBLISHED_EVENTS` (`packages/agent-core/src/events.ts`); otherwise `events_unknown`. `[]` is valid. |
 | `channels` | `[terminal \| whatsapp]` | Non-empty, and `terminal` is required: `npm start` opens it and it needs no account. Checked against what the agent SHIPS, both ways — declare `whatsapp` and you must ship at least one conversation under `channels/whatsapp/` (`channels_not_shipped`), and shipping one without declaring it fails too (`channels_undeclared`). A conversation names the contact it is bound to, the subject it may be about and the person's turns; the schema is `ConversationScriptSchema` in `packages/agent-core/src/channels.ts`. `templates.json` is the reserved name in that directory and is NOT a conversation — it is the registry of the templates the agent sends outside the 24-hour session window (`TemplateRegistrySchema`), which is what `poll --channel whatsapp` needs to close a cycle days later. A new agent declares `[terminal]` unless it has a conversation to ship. |
-| `maturity` | map string → `live \| sandbox \| blocked` | Any capability names. `pix-out` present ⇔ `tools.json` has a `payment` meta-tool; `bolepix-receivables` present ⇔ a `charge` meta-tool. `receipt-verification: live` is a warning (Ed25519 is not there yet). `{}` is valid. |
+| `maturity` | map string → `live \| sandbox \| blocked` | Any capability names. `pix-out` present ⇔ `tools.json` has a `payment` meta-tool; `bolepix-receivables` present ⇔ a `charge` meta-tool. `receipt-verification` beyond `blocked` ⇒ a `payment` meta-tool, since only a payment seals a receipt. `{}` is valid. |
 | `scenarios` | path | `./scenarios/`. Must exist. |
 | `evals` | path | `./evals/`. Must exist and hold `eval.yaml`. |
 | `agents_md` | path | Must resolve to `./AGENTS.md`. |
@@ -133,6 +133,6 @@ From `packages/agent-core/src/check.ts`, in order:
 - `prompt_missing`, `prompt_contradicts_manifest` (does not name the agent; mentions an unsupported `approval:` mode), `prompt_contradicts_tools` (names a `codespar_*` outside `tools.json`).
 - `agents_md_missing`, `claude_md_missing`, `agents_md_diverges`, `manifest_agents_md`.
 - `scenarios_missing`, `evals_missing`, `eval_missing`, `eval_extends`, `eval_redeclares_manifest`.
-- `doc_missing` (`README.md`, `runbook.md`), `doc_overclaims` ("verificável por terceiro", "verifiable by a third party", "third-party verifiable" in README, runbook or prompt).
+- `doc_missing` (`README.md`, `runbook.md`), `doc_overclaims` ("verificável por terceiro", "verifiable by a third party", "third-party verifiable" in README, runbook or prompt, with no `Ed25519` anywhere in the same file).
 - `env_example_missing`, `env_example_extra`, `env_example_incomplete`.
-- Warning only: `maturity_overclaims`.
+- `maturity_overclaims`: `receipt-verification` at `live` or `sandbox` while `tools.json` has no `payment` meta-tool.

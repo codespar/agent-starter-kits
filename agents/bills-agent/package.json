@@ -9,6 +9,7 @@
     "start": "codespar-agent start",
     "check": "codespar-agent check",
     "inspect": "codespar-agent inspect",
+    "verify": "codespar-agent verify",
     "eval": "codespar-agent eval",
     "resume": "codespar-agent resume",
     "rerun": "codespar-agent rerun",

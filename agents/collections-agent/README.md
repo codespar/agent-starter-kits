@@ -196,7 +196,7 @@ Read from `agent.yaml`, field `maturity`:
 | Capability | Maturity | Meaning |
 |---|---|---|
 | `bolepix-receivables` | sandbox | Cobranca com vencimento through the CodeSpar sandbox, paid by the sandbox payer. No real money. |
-| `receipt-verification` | blocked | Waits for Ed25519; and the API seals no record for a paid charge today (the paid charge as the API reports it is what the bundle keeps, marked `kind: "charge"`, unsealed). |
+| `receipt-verification` | blocked | Ed25519 landed on the API's payment receipts, and this agent mints none: the API still seals no record for a paid charge, so what the bundle keeps is the paid charge as the API reports it, marked `kind: "charge"`, with no chain and no signature to check. |
 
 What the agent applies on its own (`guardrails.json`): the envelope (15% maximum discount, up to 3 instalments, due dates within 90 days, R$ 50,00 minimum instalment, collection hours 08:00–20:00 in America/Sao_Paulo), the escalation threshold (R$ 3.000,00 per agreement in `mandate`), and "the core's total wins" when the model states another.
 

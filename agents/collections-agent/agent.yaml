@@ -22,7 +22,7 @@ events: [commerce.charge.created, commerce.charge.paid, commerce.charge.expired,
 channels: [terminal, whatsapp]   # the second channel is the one this agent is FOR; `npm run check` confirms channels/whatsapp/ ships a conversation
 maturity:
   bolepix-receivables: sandbox
-  receipt-verification: blocked   # waits for Ed25519; and the API seals no record for a paid charge today
+  receipt-verification: blocked   # Ed25519 landed, but the API still seals no record for a paid charge: no chain, no signature to verify
 scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md
