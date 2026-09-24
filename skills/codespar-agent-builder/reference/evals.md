@@ -2,8 +2,9 @@
 
 Both run on the replay provider: the model's outputs come from a recorded
 transcript, everything the core decides is recomputed live. No key, no
-network. Schemas: `agents/bills-agent/src/scenarios.ts` and
-`agents/bills-agent/src/adversarial.ts` (the copies in your agent).
+network. Both runners are the shared ones: the schemas are
+`packages/agent-runtime/src/scenarios.ts` and
+`packages/agent-runtime/src/adversarial.ts`, and you write only the files.
 
 ## Transcript format (`*.transcript.jsonl`)
 
@@ -84,11 +85,12 @@ default `none`), `warm_payees` (aliases with a prior settled payment, so
 | `reply_must_not_contain: [...]` | none of the strings appears in any reply |
 | `settled_once: true` | exactly one `settled` transition and one execution in the run (the `events` kind) |
 
-`kind: "events"` runs no conversation: `runEventsCase` in `src/adversarial.ts`
-drafts one execution, approves it, arms the stub rail to answer `uncertain`
-once, then ingests the same `commerce.payment.succeeded` twice, a `created`
-after it and a second `succeeded`. Adapt its hard-coded payee alias to one of
-YOUR mandate's beneficiaries.
+`kind: "events"` runs no conversation: `runEventsCase`, the one hook of your
+`src/kit.ts` this case needs, drafts one execution, approves it, arms the stub
+rail to answer `uncertain` once, then ingests the same
+`commerce.payment.succeeded` twice, a `created` after it and a second
+`succeeded`. Copy the bills-agent's and name one of YOUR mandate's
+beneficiaries; an agent that ships no `runEventsCase` ships no `events` case.
 
 ## The section 9 table, per kind of agent
 

@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { AgentKit, Settlement } from "./kit.js";
 import { defaultKit } from "./default-kit.js";
 
@@ -53,7 +53,7 @@ export async function loadAgent(dir?: string): Promise<Agent> {
   for (const rel of ["src/kit.ts", "kit.ts"]) {
     const path = join(agentDir, rel);
     if (!existsSync(path)) continue;
-    const module = (await import(`file://${path}`)) as { agent?: Agent; kit?: AgentKit; default?: AgentKit };
+    const module = (await import(pathToFileURL(path).href)) as { agent?: Agent; kit?: AgentKit; default?: AgentKit };
     if (module.agent) return module.agent;
     const kit = module.kit ?? module.default;
     if (!kit) throw new Error(`${rel} must export \`agent\` (defineAgent) or \`kit\``);

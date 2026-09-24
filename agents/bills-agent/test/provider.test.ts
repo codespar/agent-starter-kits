@@ -5,7 +5,7 @@
  * Anthropic with a fake key (issue #8).
  */
 import { describe, expect, it } from "vitest";
-import { ANTHROPIC_KEY_PLACEHOLDER, resolveProvider } from "../src/setup.js";
+import { ANTHROPIC_KEY_PLACEHOLDER, resolveProvider } from "@codespar/agent-runtime";
 
 const REAL_LOOKING_KEY = ["sk", "ant", "x".repeat(24)].join("-");
 
