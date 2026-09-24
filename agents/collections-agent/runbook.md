@@ -39,17 +39,35 @@ run the emulator's own web app and point it at `http://127.0.0.1:4290`. In
 `approval: human` the operator's question is still on the console, labelled
 `[operador]`, and never in the conversation.
 
+The scene above closes inside one run, which is the demo and not the ordinary
+week. The ordinary week is that Joana agrees today and pays on Friday, and by
+then WhatsApp carries only an approved template. That take is two commands:
+
+```sh
+npm run start:collections -- --channel whatsapp --conversation acordo-1042    # she agrees; nobody pays yet
+npm run poll:collections -- --channel whatsapp --conversation acordo-1042     # days later: the payment landed
+```
+
+The poll comes back to the conversation from the bundle plus `state.db` and
+sends the confirmation as a template from
+`channels/whatsapp/templates.json` — because the 24-hour window has shut. Run
+it while the window is still open and it writes freely instead; which of the
+two is the window's decision, not the command's. Run it twice and nothing is
+sent the second time.
+
 For a take with no typing at all, and for the CI:
 
 ```sh
-npm run whatsapp:gate     # three runs from a clean state, no intervention
+npm run whatsapp:gate     # three runs from a clean state, plus the one across a shut window
 ```
 
 Measured 2026-09-24, against the emulator: three runs, `settled` each time,
 one receivable, one record, two messages in and eight out, the same shape
 every run. That is the
 wave-4 gate — "três execuções do zero sem intervenção" — and it runs on every
-pull request.
+pull request. The fourth run is the week above, compressed: agree, move the
+conversation's clock 26 hours, pay, poll, `settled` with the confirmation
+carried by the `acordo_quitado` template.
 
 ## Measured
 

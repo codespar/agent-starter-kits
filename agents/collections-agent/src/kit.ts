@@ -53,6 +53,8 @@ const kit: AgentKit = {
   npm start -- --scenario <name>                               run a scenario pack (see scenarios/)
   npm start -- --channel whatsapp --conversation <name>        the conversation channel (needs npm run whatsapp:emulator at the repo root)
   npm start -- --channel whatsapp --conversation <name> --scripted   the same, with the debtor's turns replayed from channels/whatsapp/
+  npm run poll -- --channel whatsapp --conversation <name>     back to a conversation whose payment landed after the run ended:
+                                                               mensagem livre com a janela de 24h aberta, template aprovado depois dela
 options: --mode human|mandate  --provider anthropic|replay  --transcript <file>  --rail stub|api  --user <id>
          --wait <seconds>  --simulate-payer  --payer pays|expires|never (stub only)  --json
          --now <ISO 8601>  pin the run to that instant (collection hours, due dates, timestamps); env CODESPAR_AGENT_NOW is the same thing
