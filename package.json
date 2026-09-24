@@ -18,9 +18,10 @@
     "check": "node scripts/check-plugin.mjs && npm run check --workspaces --if-present --",
     "test": "vitest run --pool=forks --maxWorkers=1",
     "scenarios": "node scripts/scenario-matrix.mjs",
-    "typecheck": "tsc --noEmit -p packages/agent-core/tsconfig.json && tsc --noEmit -p packages/agent-runtime/tsconfig.json && tsc --noEmit -p agents/bills-agent/tsconfig.json && tsc --noEmit -p agents/collections-agent/tsconfig.json && tsc --noEmit -p agents/hello-agent/tsconfig.json",
+    "typecheck": "tsc --noEmit -p packages/agent-core/tsconfig.json && tsc --noEmit -p packages/agent-runtime/tsconfig.json && tsc --noEmit -p agents/bills-agent/tsconfig.json && tsc --noEmit -p agents/collections-agent/tsconfig.json && tsc --noEmit -p agents/hello-agent/tsconfig.json && tsc --noEmit -p agents/supplier-payments-agent/tsconfig.json",
     "secret-scan": "node scripts/secret-scan.mjs",
-    "start:collections": "npm start --workspace=agents/collections-agent --"
+    "start:collections": "npm start --workspace=agents/collections-agent --",
+    "start:supplier": "npm start --workspace=agents/supplier-payments-agent --"
   },
   "devDependencies": {
     "@types/node": "22.20.4",
