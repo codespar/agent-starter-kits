@@ -21,6 +21,7 @@ import {
   paySandboxCharge,
   type Execution,
   type StubChargeRailOptions,
+  type StubPayerBehaviour,
 } from "@codespar/agent-core";
 import { defineAgent, type AgentKit } from "@codespar/agent-runtime";
 import { formatBRL, formatDate } from "./agreements.js";
@@ -90,6 +91,13 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
     const fixture: Pick<StubChargeRailOptions, "payer"> = behaviour === "pays" || behaviour === "expires" || behaviour === "never" ? { payer: behaviour } : {};
     const refuse = ctx.envVar("STUB_REFUSE") ? { refusePayees: ctx.envVar("STUB_REFUSE")!.split(",").map((p) => p.trim()).filter(Boolean) } : {};
     const stub = new StubChargeRail(ctx.store, { ...(ctx.now ? { clock: ctx.now } : {}), ...killAfterDispatch, ...fixture, ...refuse, ...(ctx.stubRail ?? {}) });
+    // What the fixture does when it is asked to act. It is kept here rather
+    // than read back from the rail because the rail's own field is the
+    // DEFAULT for receivables not yet looked at, and by the time a poll asks
+    // the payer to act the receivable has been looked at — its fate is a row
+    // in state.db, and `decide` is what rewrites one. Hardcoding "pays" here
+    // made `--payer expires` unreachable from any command that resumes.
+    let fate: StubPayerBehaviour = (fixture.payer ?? (ctx.stubRail as StubChargeRailOptions | undefined)?.payer) ?? "pays";
     return {
       rail: stub,
       mandate,
@@ -97,10 +105,13 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
       payer: {
         kind: "stub" as const,
         async pay(_chargeId: string, attemptId: string) {
-          stub.decide(attemptId, "pays");
-          return { ok: true as const, detail: "stub payer: will pay at the next look" };
+          stub.decide(attemptId, fate);
+          return { ok: true as const, detail: `stub payer: the receivable will ${fate === "pays" ? "be paid" : fate === "expires" ? "expire" : "sit unpaid"} at the next look` };
         },
-        behave: (b) => stub.setPayer(b),
+        behave: (b) => {
+          fate = b;
+          stub.setPayer(b);
+        },
       },
     };
   },
@@ -183,6 +194,29 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
     tell(text);
     setup.engine.note("message.debtor", execution.id, { state: execution.state, reason: execution.reason ?? null, text });
     return true;
+  },
+
+  /**
+   * The same outcome as `announceOutcome`, as one of the templates this agent
+   * declares in `channels/whatsapp/templates.json`. It is what a poll sends
+   * when the 24-hour window has shut, which for a collection is the ordinary
+   * case and not the edge one: agreed Tuesday, paid Friday.
+   *
+   * Three outcomes have approved copy and the rest return undefined on
+   * purpose. A charge that failed on the rail, a proposal that was denied or
+   * one that expired without a decision are not things this agent has ever
+   * had to say to a debtor days later — the first two are answered inside the
+   * turn that produced them, and inventing a template for them would mean
+   * asking Meta to approve copy nobody has written. The poll REPORTS an
+   * outcome it cannot carry rather than sending an approximate one.
+   */
+  outcomeTemplate: (execution) => {
+    const agreement = execution.items[0]?.alias ?? execution.items[0]?.beneficiary;
+    if (!agreement) return undefined;
+    if (execution.state === "settled") return { template: "acordo_quitado", variables: [agreement] };
+    if (execution.reason === "charge_expired") return { template: "acordo_cobranca_vencida", variables: [agreement] };
+    if (execution.reason === "charge_cancelled") return { template: "acordo_cobranca_cancelada", variables: [agreement] };
+    return undefined;
   },
 
   /** Agreements with a prior settled receivable under this policy, so the velocity window has history. */

@@ -13,11 +13,11 @@
  * caller and have no path to this object at all — not a check, a shape: there
  * is no method here that an operator line could be handed to.
  */
-import type { ProofBundle } from "@codespar/agent-core";
+import type { ProofBundle, WhatsAppTemplate } from "@codespar/agent-core";
 import { checkOutbound, type HoursRule, type RuleContext } from "../rules.js";
 import type { Channel, ChannelBackend, ChannelLogLine, Conversation, InboundMessage, OutboundBody, SentMessage } from "../types.js";
 import { maskContact } from "../contact.js";
-import { SessionWindow } from "./session.js";
+import { SessionWindow, type SessionState } from "./session.js";
 
 export interface WhatsAppChannelOptions {
   backend: ChannelBackend;
@@ -27,8 +27,15 @@ export interface WhatsAppChannelOptions {
   knownSubjects?: readonly string[] | undefined;
   /** The run's bundle, so the conversation is part of the proof. */
   bundle?: ProofBundle | undefined;
-  /** Templates the agent declares it uses. Meta's approval of them is not knowable from here. */
-  templates?: readonly string[] | undefined;
+  /** Templates the agent declares it uses, from `channels/whatsapp/templates.json`. Meta's approval of them is not knowable from here. */
+  templates?: readonly WhatsAppTemplate[] | undefined;
+  /**
+   * Where the window stood when an earlier run left this conversation. A run
+   * that JOINS a conversation — a poll looking at a charge agreed yesterday —
+   * has no inbound message of its own to open it from, and without this it
+   * would read every conversation as shut.
+   */
+  session?: SessionState | undefined;
   /** The operator's console. Refusals are reported here, never to the conversation. */
   say?: ((line: string) => void) | undefined;
   /**
@@ -48,7 +55,7 @@ export class WhatsAppChannel implements Channel {
 
   constructor(private readonly options: WhatsAppChannelOptions) {
     this.conversation = options.conversation;
-    this.session = new SessionWindow(new Set(options.templates ?? []));
+    this.session = new SessionWindow(options.templates ?? [], options.session);
   }
 
   get backend(): string {
@@ -63,6 +70,26 @@ export class WhatsAppChannel implements Channel {
   /** The message the person last sent, for the caller that needs to attest to an act. */
   get lastInboundMessage(): InboundMessage | undefined {
     return this.lastInbound;
+  }
+
+  /**
+   * Whether a free-form message may go out right now. A caller that has one
+   * thing to say and two ways to say it asks HERE which one the provider
+   * would carry — the alternative is composing a message, watching the
+   * channel refuse it, and calling that a decision.
+   */
+  get sessionOpen(): boolean {
+    return this.session.open(this.options.now());
+  }
+
+  /** Seconds of free-form left, for the console line that explains the choice. */
+  get sessionRemainingSeconds(): number {
+    return this.session.remainingSeconds(this.options.now());
+  }
+
+  /** What the agent declared about a template it is about to send. The language is the registry's, never the sender's guess. */
+  declaredTemplate(name: string): WhatsAppTemplate | undefined {
+    return this.session.declared(name);
   }
 
   async open(): Promise<void> {
@@ -82,6 +109,9 @@ export class WhatsAppChannel implements Channel {
       message_id: message.id,
       state: "delivered",
       text: message.text,
+      // The provider's clock, which is the only one the 24-hour window is
+      // counted on. A later run reads the window back from here.
+      provider_timestamp: message.timestamp,
     });
     return message;
   }
@@ -144,12 +174,7 @@ export class WhatsAppChannel implements Channel {
    */
   private providerRefusal(body: OutboundBody): { rule: string; detail: string } | undefined {
     const open = this.session.open(this.options.now());
-    if (body.kind === "template") {
-      if (!this.session.knows(body.template)) {
-        return { rule: "template_unknown", detail: `the agent declares no template named ${body.template}; Meta only delivers templates it approved, and this one was never registered here` };
-      }
-      return undefined;
-    }
+    if (body.kind === "template") return this.session.refuse(body);
     if (!open) {
       return {
         rule: "session_window_closed",

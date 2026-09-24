@@ -46,7 +46,7 @@ function channelAt(now: Date, backend = new Recorder(), openSession = true) {
     now: () => now,
     hours: HOURS,
     knownSubjects: ["acordo-1042", "acordo-1077", "acordo-1103"],
-    templates: ["cobranca_lembrete"],
+    templates: [{ name: "cobranca_lembrete", language: "pt_BR", description: "a reminder", body: "Oi {{1}}, sobre o acordo." }],
   });
   // A session is open because the person wrote; the window is WhatsApp's rule, not ours, and has its own test below.
   if (openSession) {
