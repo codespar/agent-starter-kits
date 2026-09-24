@@ -21,7 +21,6 @@ import {
   paySandboxCharge,
   type Execution,
   type StubChargeRailOptions,
-  type StubPayerBehaviour,
 } from "@codespar/agent-core";
 import { defineAgent, type AgentKit } from "@codespar/agent-runtime";
 import { formatBRL, formatDate } from "./agreements.js";
@@ -93,13 +92,6 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
     const fixture: Pick<StubChargeRailOptions, "payer"> = behaviour === "pays" || behaviour === "expires" || behaviour === "never" ? { payer: behaviour } : {};
     const refuse = ctx.envVar("STUB_REFUSE") ? { refusePayees: ctx.envVar("STUB_REFUSE")!.split(",").map((p) => p.trim()).filter(Boolean) } : {};
     const stub = new StubChargeRail(ctx.store, { ...(ctx.now ? { clock: ctx.now } : {}), ...killAfterDispatch, ...fixture, ...refuse, ...(ctx.stubRail ?? {}) });
-    // What the fixture does when it is asked to act. It is kept here rather
-    // than read back from the rail because the rail's own field is the
-    // DEFAULT for receivables not yet looked at, and by the time a poll asks
-    // the payer to act the receivable has been looked at — its fate is a row
-    // in state.db, and `decide` is what rewrites one. Hardcoding "pays" here
-    // made `--payer expires` unreachable from any command that resumes.
-    let fate: StubPayerBehaviour = (fixture.payer ?? (ctx.stubRail as StubChargeRailOptions | undefined)?.payer) ?? "pays";
     return {
       rail: stub,
       mandate,
@@ -107,13 +99,15 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
       payer: {
         kind: "stub" as const,
         async pay(_chargeId: string, attemptId: string) {
-          stub.decide(attemptId, fate);
-          return { ok: true as const, detail: `stub payer: the receivable will ${fate === "pays" ? "be paid" : fate === "expires" ? "expire" : "sit unpaid"} at the next look` };
+          stub.decide(attemptId, "pays");
+          return { ok: true as const, detail: "stub payer: will pay at the next look" };
         },
-        behave: (b) => {
-          fate = b;
-          stub.setPayer(b);
-        },
+        behave: (b) => stub.setPayer(b),
+        // A receivable the rail has already looked at carries its fate in
+        // state.db, and `setPayer` only changes the default for the ones it
+        // has not. This is what lets a poll ask "and if nobody pays?" — the
+        // due date passes between two runs, never inside one.
+        decideFor: (attemptId, b) => stub.decide(attemptId, b),
       },
     };
   },

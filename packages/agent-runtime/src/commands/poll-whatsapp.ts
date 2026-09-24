@@ -49,6 +49,8 @@ export interface PollWhatsAppOptions {
   json: boolean;
   waitSeconds?: number | undefined;
   simulatePayer?: boolean | undefined;
+  /** Stub only: what the fixture payer does with the receivables THIS conversation is waiting on. */
+  payer?: "pays" | "expires" | "never" | undefined;
   now: () => Date;
   say: (line: string) => void;
 }
@@ -89,7 +91,10 @@ export async function pollWhatsApp(options: PollWhatsAppOptions): Promise<number
   // every open execution and hoping.
   const open = s.engine.list({ state: "executing" }).filter((e) => e.reason === "awaiting_settlement");
   const subject = script.subject;
-  const mine = subject ? open.filter((e) => e.items.some((i) => i.alias === subject || i.payee === subject)) : [];
+  // EVERY item, not some: an execution that mixes this conversation's
+  // agreement with another's belongs to neither, and confirming it here would
+  // put somebody else's debt in front of this person.
+  const mine = subject ? open.filter((e) => e.items.length > 0 && e.items.every((i) => i.alias === subject || i.payee === subject)) : [];
 
   if (!subject && open.length) {
     say(`a conversa ${script.name} nao declara subject: nao da para dizer quais execucoes sao dela, e mandar o desfecho de outra pessoa nesta conversa e exatamente o que a regra de sigilo proibe`);
@@ -130,6 +135,15 @@ export async function pollWhatsApp(options: PollWhatsAppOptions): Promise<number
     return 1;
   }
   const { channel, driver, sessionKey } = built;
+
+  // Scoped to the receivables of THIS conversation: `behave` set the default
+  // for new ones, and this rewrites the fate of the ones already issued —
+  // another conversation's charge is none of this command's business.
+  if (options.payer) {
+    for (const execution of mine) {
+      for (const outcome of execution.outcomes) if (outcome.status === "accepted") s.payer?.decideFor?.(outcome.attempt_id, options.payer);
+    }
+  }
 
   try {
     await channel.open();

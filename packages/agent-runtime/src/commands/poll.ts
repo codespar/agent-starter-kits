@@ -98,10 +98,9 @@ export async function poll(agent: Agent, argv: string[]): Promise<number> {
   }
 
   const s = setup(agent, { say, runId: `run_poll_${Date.now().toString(36)}`, ...(now ? { now } : {}) });
-  // The same flag `start` has, for the same reason and with more use here: a
-  // receivable nobody paid reaches its due date between two runs, never
-  // inside one, so "what happens when it expires" is a question only a poll
-  // can be asked.
+  // The same flag `start` has, and it means more here: a receivable nobody
+  // paid reaches its due date BETWEEN two runs, never inside one, so "what
+  // happens when it expires" is a question only a poll can be asked.
   if (args.payer) s.payer?.behave(args.payer);
   try {
     if (args.channel === "whatsapp") {
@@ -113,9 +112,18 @@ export async function poll(agent: Agent, argv: string[]): Promise<number> {
         json: args.json,
         waitSeconds: args.wait,
         simulatePayer: args.simulatePayer,
+        ...(args.payer ? { payer: args.payer } : {}),
         now: now ?? (() => new Date()),
         say,
       });
+    }
+    // `behave` only changes the default for receivables the rail has not
+    // looked at, and by now it has looked at these; `decideFor` is what
+    // rewrites the fate of one that already exists.
+    if (args.payer) {
+      for (const open of s.engine.list({ state: "executing" })) {
+        for (const outcome of open.outcomes) if (outcome.status === "accepted") s.payer?.decideFor?.(outcome.attempt_id, args.payer);
+      }
     }
     const tell = (l: string) => void (args.json ? stderr : stdout).write(l + "\n");
     const results = [];

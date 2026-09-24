@@ -50,6 +50,21 @@ export interface SandboxPayer {
   pay(chargeId: string, attemptId: string): Promise<{ ok: true; detail: string } | { ok: false; detail: string }>;
   /** Stub only: what the fixture does with receivables issued from now on. */
   behave(behaviour: StubPayerBehaviour): void;
+  /**
+   * Stub only: what the fixture does with ONE receivable that was already
+   * issued and looked at.
+   *
+   * It is separate from `behave` because they answer different questions, and
+   * a poll needs the second one. `behave` sets the default for receivables
+   * the rail has not seen yet; by the time a poll resumes a conversation the
+   * rail HAS seen this one, and its fate is a row in state.db that only this
+   * rewrites. It is separate from `pay` because `pay` means pay — the
+   * scenario runner's late payer calls it after telling the fixture to sit on
+   * everything, and it has to pay anyway.
+   *
+   * The API's payer is a route and has no equivalent, so this is optional.
+   */
+  decideFor?(attemptId: string, behaviour: StubPayerBehaviour): void;
 }
 
 export interface RailContext {

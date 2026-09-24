@@ -228,7 +228,9 @@ describe.skipIf(!emulatorUp)("a charge paid after the 24-hour window closed", ()
     expect(agree(env).code).toBe(3);
     await advanceConversationClock(ADVANCE_HOURS);
 
-    const polled = poll(env, ["--simulate-payer", "--payer", "expires", "--now", AFTER_WINDOW]);
+    // No `--simulate-payer`: nobody paid, and that is the point. `--payer
+    // expires` rewrites the fate of the receivable this state already holds.
+    const polled = poll(env, ["--payer", "expires", "--now", AFTER_WINDOW]);
     expect(polled.payload.polled[0]).toMatchObject({
       state: "failed",
       reason: "charge_expired",
