@@ -112,17 +112,31 @@ executions when each line is independently approvable and the batch can be
 large (a payroll, a supplier run): line 57 with a wrong key is fixed and re-run
 alone, without sending the other 199 back through approval.
 
-What N executions cost: nothing binds the SET. Each line carries its own
-`items_hash`, but a bundle where the agent ran three of four approved lines
-does not say a fourth existed. Until issue #21's `batch_hash` lands, an agent
-of that shape claims "each line is attested" and not more. See
-`docs/OPEN_QUESTIONS.md` § 40.
+What N executions used to cost: nothing bound the SET, so a bundle where the
+agent ran three of four approved lines did not say a fourth existed. Closed by
+issue #21, and an agent of that shape now has to do one more thing. Hash the
+ordered list ONCE, before any line is drafted, with `batchHash` from
+`@codespar/agent-core` — it is `itemsHash` over the whole list, so do not
+write a second canonicalisation — and pass `batch: { ref, batch_hash, index,
+count }` to every `engine.draft` of that list. The core stamps it on the
+execution and every approval artifact carries it, so `inspect` reads the
+bundle back as "2 of 4 line(s) attested" instead of two payments. Resolve the
+list with `engine.preview`, which does not throw: a line the core would refuse
+still occupies its position, or a batch holding a broken line hashes as the
+shorter batch without it. See `docs/OPEN_QUESTIONS.md` § 40.
 
 Looping costs you two things you must then handle yourself:
 
 - **Nothing stops the loop.** Every exit from one line — a refusal, a bad
   input — is a `continue`, never a `break` and never a throw past the line it
   is on. A handler that throws on line 2 has silently cancelled lines 3 and 4.
+- **A list that changed after it was approved is yours to refuse.** A held
+  `batch_hash` that differs from the one in front of you means a person
+  decided on a different list, and the surviving lines will each answer
+  "already settled" without noticing. Refuse the run before drafting
+  anything. Keep that binding under a claim of its own — the claim of a
+  DROPPED line is never read again, so it cannot be the thing that remembers
+  the set.
 - **Re-running is yours to make safe.** Execution ids are random, so a second
   call drafts new executions with new `attempt_id`s that the rail's own
   idempotence cannot recognise. `ctx.engine.claim(key, executionId)` and
@@ -138,4 +152,7 @@ In `approval: human` the channel asks once per execution, which is what
 section 3 of the spec asks for ("o humano aprova cada um") and what lets a
 person approve four lines and deny the fifth. The approved list stays
 attested either way: `approval.json` holds one artifact per execution, each
-with its own `items_hash` bound to the mandate version.
+with its own `items_hash` bound to the mandate version and, on a batch, the
+`batch_hash` of the list it was one of. A denied line is a decision, not a
+changed set: it has an execution and no artifact, and the counts still add to
+the list that was presented.

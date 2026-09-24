@@ -2,7 +2,7 @@
 
 [![rail: pix-out](https://img.shields.io/badge/rail-pix--out-2E8B57)](agent.yaml) [![capability: batch-payout](https://img.shields.io/badge/capability-batch--payout-1E6FBA)](agent.yaml) [![maturity: sandbox](https://img.shields.io/badge/maturity-sandbox-orange)](agent.yaml) [![approval: human | mandate](https://img.shields.io/badge/approval-human_%7C_mandate-555)](agent.yaml)
 
-An agent that pays a company's suppliers, sales commissions and payroll over Pix, inside one mandate finance signs once: a cap per payout, a cap per month, named payees, one year of validity. It runs a batch as a **loop of executions, one per line** — so a refused payee is a fact about that payee, a wrong line is fixed and re-run alone, and running the same batch again pays nobody twice. It is born in `approval: human`, which is where most companies are, and what that mode leaves behind is the part a confirmation code never gives you: each line somebody approved, attested and bound to the mandate.
+An agent that pays a company's suppliers, sales commissions and payroll over Pix, inside one mandate finance signs once: a cap per payout, a cap per month, named payees, one year of validity. It runs a batch as a **loop of executions, one per line** — so a refused payee is a fact about that payee, a wrong line is fixed and re-run alone, and running the same batch again pays nobody twice. It is born in `approval: human`, which is where most companies are, and what that mode leaves behind is the part a confirmation code never gives you: each line somebody approved, attested and bound both to the mandate and to the list it was one of.
 
 ## Quickstart
 
@@ -33,7 +33,8 @@ Both shapes deliver it, now that the core dispatches every attempt and names eve
 | One refusal does not stop the others | The loop in `src/modules/batch-payout.ts` `continue`s and never breaks. Each line reaches its own terminal state. |
 | One `attempt_id` per call | The core derives it from each execution's own `idempotency_key`, so the rail's own idempotence covers each line separately. |
 | Repeating pays nobody twice | A durable claim pairs (mandate, batch, line) with the execution covering it. Settled is skipped, still-open is never re-opened, and only an execution that ended without moving money is retried. |
-| Each approved line stays attested | One approval artifact per line, each with its own `items_hash` bound to the mandate version. `runs/<run-id>/approval.json` holds them in approval order. What is NOT attested is the set: a bundle where three of four approved lines ran does not say a fourth existed. Issue #21 (`batch_hash` over the ordered lines) closes that; until then this agent claims the line and not the list. |
+| Each approved line stays attested | One approval artifact per line, each with its own `items_hash` bound to the mandate version. `runs/<run-id>/approval.json` holds them in approval order. |
+| The approved list is bound as a set | The list is hashed once, before any line is drafted, and every artifact of the batch carries that `batch_hash` with the line's own position and the list's length. So a bundle of three artifacts says "1, 2 and 4 of 4" and not "three payments". A line the human denied has an execution and no artifact; a line that left the list after it was approved has neither, and the run that would drop it is refused before it drafts anything. |
 
 The claim is taken **before** the channel can run the execution. Claiming afterwards would leave a settled payout unclaimed if the process died in between, and that is exactly the double payment. A crash the other way round leaves a claim on an open execution, which the next run reports as `in_progress` and refuses to duplicate — the operator closes it with `npm run approve`, `npm run resume` or `npm run reconcile`.
 
@@ -74,7 +75,7 @@ Not in this kit: WhatsApp, `embedded-consent` (see above), scheduling a batch fo
 | `npm run approve <execution-id>` / `npm run deny <execution-id>` | Decides one line left in `awaiting_approval`. A batch left undecided is decided line by line, which is the same granularity the terminal asks at. |
 | `npm run resume` | After a crash: dispatches only what the outbox proves was never sent, reconciles the rest from the rail, expires what went stale. Never pays twice. |
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches. |
-| `npm run inspect <run-id> [--json] [--html <file>]` | Reads a run's proof bundle back as a timeline. On a batch it is one timeline per line, each with its own approval artifact and `items_hash` — which is what "the approved list is attested" looks like when you read it back. |
+| `npm run inspect <run-id> [--json] [--html <file>]` | Reads a run's proof bundle back as a timeline. On a batch it prints the header once — the `batch_hash`, how many lines the approved list held, how many are attested here — and then one timeline per line. `2 of 4 line(s) attested · 3 with an execution · no execution for line(s) 3` is what a batch that did not all run looks like when you read it back. |
 | `npm run reconcile` | Compares local state with the rail. Closes an `executing` execution only from a recorded rail outcome; what the rail has not answered stays `executing` with an `execution.uncertain` event, for a human. Never dispatches. |
 
 ## The proof bundle
@@ -98,6 +99,7 @@ No key and no secret is written there. Payee keys are masked.
 - The approval artifact is signed by HMAC with a **local development key** (`.codespar/approval.key`). This is a stub: the CodeSpar API does not sign approval lists today. It proves what was approved to whoever runs the agent.
 - The claim that makes a re-run safe is **local**, in `.codespar/state.db`. Delete that file and the agent has no memory that a batch already ran. The rail's own idempotence still covers a re-sent `attempt_id`, but the executions would be new ones with new attempt ids, so it would not catch them. This is the honest limit of a kit that runs on one machine; see `docs/OPEN_QUESTIONS.md`.
 - The batch is not atomic and does not try to be. Lines settle independently, so a batch can end part paid. That is the point, and the report says which lines those are.
+- `batch_hash` binds the list; it does not bind the list to the payables file it came from. A batch whose lines changed is refused on the next run of the SAME `batch_ref`, because that is when there is an approved set to contradict. A list edited before it was ever presented is simply the list, and the mandate's allowlist and caps are what stand between it and a payment.
 - Revocation is checked before every `executing`. Without a key the same check answers from a local stub (`packages/agent-core/src/stubs/mandate-status.ts`), which is also where the organization kill switch lives.
 - CodeSpar does not host or run this agent. The repository delivers it; whoever runs it, runs it.
 
