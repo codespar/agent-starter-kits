@@ -15,7 +15,8 @@ nothing else.
   prints, the receipt path.
 - Every command: `start` (interactive, `--input`, `--scenario`, `--transcript`,
   `--json`, `--approve`/`--deny`, `--now`), `consent`, `approve`, `deny`,
-  `resume`, `rerun`, `reconcile`, `poll`, `webhook`, `check`, `eval`.
+  `resume`, `rerun`, `reconcile`, `inspect` (`--json`, `--html <file>`), `poll`,
+  `webhook`, `check`, `eval`.
 - Setup: the manifest, the guardrails, the tools file, the system prompt, the
   local state, the signer, the proof bundle, the provider (Anthropic with a
   real key, replay without one), and the pinned clock (`--now`,
