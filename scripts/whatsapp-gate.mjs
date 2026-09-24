@@ -175,7 +175,7 @@ async function main(argv) {
   if (!(await emulatorIsUp())) {
     say(`whatsapp gate FAILED: nothing is answering at ${EMULATOR}.`);
     say(`  Start the emulator first:  npm run whatsapp:emulator`);
-    say(`  It is dyvit-wa-sim (https://github.com/fabianocruz/whatsapp-simulator, MIT), cloned at a pinned sha. No Meta account, no credential.`);
+    say(`  It is dyvit-wa-sim (https://github.com/fabianocruz/whatsapp-simulator, MIT), run from npm at a pinned version. No Meta account, no credential.`);
     if (json) process.stdout.write(JSON.stringify({ ok: false, reason: "emulator_unreachable", emulator: EMULATOR }) + "\n");
     return 1;
   }

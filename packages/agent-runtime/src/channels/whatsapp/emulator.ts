@@ -20,9 +20,10 @@
  * emulator and have no counterpart at Meta. The sending and receiving are
  * `WhatsAppCloudApi`, unchanged.
  *
- * The emulator is a separate process and is not a dependency of this workspace
- * (it is a pnpm workspace, we are npm). `scripts/whatsapp-emulator.mjs` clones
- * it at a pinned sha and runs it; `npm run whatsapp:emulator` is the command.
+ * The emulator is a separate process and is not a dependency of this workspace:
+ * it is a development tool nothing here imports. `scripts/whatsapp-emulator.mjs`
+ * fetches `@dyvit/whatsapp-simulator-cli` at a pinned version and runs it;
+ * `npm run whatsapp:emulator` is the command.
  */
 import type { ConversationScript } from "@codespar/agent-core";
 import type { ChannelBackend, InboundMessage, OutboundBody, SentMessage } from "../types.js";
@@ -49,7 +50,7 @@ export class EmulatorUnreachableError extends Error {
     super(
       `the WhatsApp emulator is not answering at ${url} (${detail}).\n` +
         `  Start it in another terminal:  npm run whatsapp:emulator\n` +
-        `  It is dyvit-wa-sim, from https://github.com/fabianocruz/whatsapp-simulator — MIT, cloned at a pinned sha, no Meta account and no credential.`,
+        `  It is dyvit-wa-sim, from https://github.com/fabianocruz/whatsapp-simulator — MIT, run from npm at a pinned version, no Meta account and no credential.`,
     );
     this.name = "EmulatorUnreachableError";
   }
