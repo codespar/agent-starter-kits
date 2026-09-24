@@ -24,7 +24,7 @@ import type { PaymentRail, RailOutcome, RailPayment } from "./rail.js";
 import type { MandateStatusReport, MandateStatusSource } from "./revocation.js";
 import { isTerminal, transition, type Execution, type ExecutionState } from "./state-machine.js";
 import type { StateStore } from "./state/store.js";
-import type { Actor, ApprovalArtifact, ApprovalMode, ExecutionItem, ExecutionReason, ItemOutcome } from "./types.js";
+import type { Actor, ApprovalArtifact, ApprovalMode, ExecutionBatch, ExecutionItem, ExecutionReason, ItemOutcome } from "./types.js";
 
 export interface ProposedItem {
   /** An alias from the mandate's named payees, or a raw payee key. */
@@ -54,6 +54,13 @@ export interface Proposal {
   items: ProposedItem[];
   /** What the model said the total was. Recorded; never used to pay. */
   claimed_total?: number;
+  /**
+   * The batch this proposal is one line of, when it is one. The kit computes
+   * it once over the whole ordered list before drafting any of it; the core
+   * stamps it on the execution and every artifact of that execution carries
+   * it. The core never invents one and never fills one in.
+   */
+  batch?: ExecutionBatch;
 }
 
 export type DraftResult =
@@ -119,6 +126,7 @@ export class ExecutionEngine {
 
     const items = proposal.items.map((p) => this.resolveItem(p));
     const total = items.reduce((sum, i) => sum + i.amount, 0);
+    if (proposal.batch) assertBatchBinding(proposal.batch);
     const id = newId("exe");
     const execution: Execution<"drafted"> = {
       id,
@@ -131,6 +139,7 @@ export class ExecutionEngine {
       currency: this.deps.mandate.currency,
       ...(proposal.claimed_total !== undefined ? { model_claimed_total: proposal.claimed_total } : {}),
       items_hash: itemsHash(items),
+      ...(proposal.batch ? { batch: proposal.batch } : {}),
       mandate: { id: this.deps.mandate.id, version: this.deps.mandate.version },
       idempotency_key: `idk_${sha256Hex(`${this.deps.runId}:${id}`).slice(0, 32)}`,
       blocking_reasons: [],
@@ -140,7 +149,7 @@ export class ExecutionEngine {
       updated_at: now.toISOString(),
     };
     this.deps.store.saveExecution(execution);
-    this.record("execution.drafted", id, { items: execution.items, total, model_claimed_total: proposal.claimed_total ?? null, mode: this.deps.mode });
+    this.record("execution.drafted", id, { items: execution.items, total, model_claimed_total: proposal.claimed_total ?? null, mode: this.deps.mode, batch: execution.batch ?? null });
 
     return { ok: true, execution: await this.evaluateDraft(execution) };
   }
@@ -692,6 +701,22 @@ export class ExecutionEngine {
     return this.deps.store.listExecutions({ ...filter, mandate_id: this.deps.mandate.id });
   }
 
+  /**
+   * The items `draft()` would build from these proposals, resolved against
+   * the mandate and WITHOUT the validation that refuses one. It exists for a
+   * caller that must hash a whole list before it drafts any of it — a batch
+   * computing its `batch_hash` — and it does not throw on purpose: a line the
+   * core will refuse is still a line of the presented list, and dropping it
+   * from the hash would make a batch holding a broken line hash the same as
+   * the shorter batch without it, which is the hole `batch_hash` closes.
+   *
+   * It resolves nothing the draft will not resolve identically, which is what
+   * makes the hash computed here the hash the drafts below carry.
+   */
+  preview(items: readonly ProposedItem[]): ExecutionItem[] {
+    return items.map((p) => this.previewItem(p));
+  }
+
   // ---- helpers ------------------------------------------------------------
 
   /**
@@ -726,15 +751,19 @@ export class ExecutionEngine {
   }
 
   private resolveItem(proposed: ProposedItem): ExecutionItem {
-    const known = resolveBeneficiary(this.deps.mandate, proposed.payee);
     const amount = Math.trunc(proposed.amount);
     if (!Number.isFinite(amount) || amount <= 0) throw new Error(`amount must be a positive integer in minor units, got ${proposed.amount}`);
     if (proposed.due_date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(proposed.due_date)) throw new Error(`due_date must be YYYY-MM-DD, got ${proposed.due_date}`);
+    return this.previewItem(proposed);
+  }
+
+  private previewItem(proposed: ProposedItem): ExecutionItem {
+    const known = resolveBeneficiary(this.deps.mandate, proposed.payee);
     return {
       ...(known ? { alias: known.alias } : {}),
       beneficiary: known?.name ?? proposed.payee,
       payee: known?.payee ?? proposed.payee,
-      amount,
+      amount: Math.trunc(proposed.amount),
       currency: this.deps.mandate.currency,
       ...(proposed.description ? { description: proposed.description } : {}),
       ...(proposed.due_date ? { due_date: proposed.due_date } : {}),
@@ -798,7 +827,7 @@ export class ExecutionEngine {
   private storeApproval(artifact: ApprovalArtifact): void {
     this.deps.store.saveApproval(artifact);
     this.deps.bundle.approval(artifact);
-    this.record("approval.created", artifact.execution_id, { approval_id: artifact.approval_id, approver: artifact.approver, items_hash: artifact.items_hash, escalation: artifact.escalation ?? null });
+    this.record("approval.created", artifact.execution_id, { approval_id: artifact.approval_id, approver: artifact.approver, items_hash: artifact.items_hash, batch: artifact.batch ?? null, escalation: artifact.escalation ?? null });
   }
 
   private persist<S extends ExecutionState>(execution: Execution<S>): Execution<S> {
@@ -820,6 +849,22 @@ export class ExecutionEngine {
     const execution = this.deps.store.getExecution(executionId);
     if (!execution) throw new Error(`unknown execution ${executionId}`);
     return execution;
+  }
+}
+
+/**
+ * A batch binding is the kit's to compute and the core's to refuse when it
+ * cannot be true. `index` outside `count`, or a `count` of zero, would let a
+ * bundle say "line 5 of 3" and make the "N of M" an artifact reader sees
+ * meaningless, so it is rejected where the execution is minted rather than
+ * carried into the signature.
+ */
+function assertBatchBinding(batch: ExecutionBatch): void {
+  if (!batch.ref.trim()) throw new Error("batch.ref must name the batch");
+  if (!batch.batch_hash.trim()) throw new Error("batch.batch_hash must be the hash of the presented lines");
+  if (!Number.isInteger(batch.count) || batch.count < 1) throw new Error(`batch.count must be a positive integer, got ${batch.count}`);
+  if (!Number.isInteger(batch.index) || batch.index < 0 || batch.index >= batch.count) {
+    throw new Error(`batch.index must be a position inside the batch (0..${batch.count - 1}), got ${batch.index}`);
   }
 }
 
