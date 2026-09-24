@@ -71,6 +71,7 @@ Not in this kit yet: WhatsApp, a policy signed by the API for the receiving side
 | `npm run resume` | After a crash: dispatches only what the outbox proves was never sent, reconciles the rest from the rail. Never issues twice. |
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches; the payer's behaviour (paid, expired) is read from the recording. |
 | `npm run reconcile` | Compares local state with the rail. One look, read-only; names what is waiting for a payer, what is uncertain, what record is missing locally. |
+| `npm run inspect <run-id> [--json] [--html <file>]` | The proof bundle of that run read back as a timeline: who proposed what, who approved it and when (with the `items_hash` and the escalation trigger when one fired), under which version of the mandate, every state transition with its actor, which call went out under which idempotency key, what the rail answered, and which receipts came back. `--json` puts the whole report on stdout and nothing else; `--html` writes one self-contained page that opens from disk with nothing fetched. Payees are masked the way the bundle masks them, and the conversation is reported as counts, not text. |
 
 ## The proof bundle
 
@@ -82,10 +83,20 @@ approval.json           the approval artifacts of the run (section 4.2 of the sp
 mandate.snapshot.json   the collection policy as it was, debtors' documents masked
 events.jsonl            every transition, every look, every charge event, every message to the payer, each with its actor
 receipts/               the paid charges as the API reports them, each stamped with the actor (kind: charge, unsealed)
-run.json                mode, rail, policy id
+run.json                mode, rail, policy id and the version it ran under
 ```
 
 No key and no secret is written there. Documents are masked; the payer's document is never in a message.
+
+`verify.json` is the one file section 11 names and this repository does not
+write: it is the output of `codespar audit replay`, which is not a registered
+command of `@codespar/cli`, and the spec forbids a second implementation of
+the hash-chain check. `npm run inspect` says so in as many words instead of
+leaving the absence to be guessed at.
+
+Read the bundle back with `npm run inspect <run-id>`: the negotiated terms,
+who approved them, each receivable the rail accepted, the instrument the payer
+was shown as it became payable, and what closed the cycle.
 
 ## Limits and stubs
 

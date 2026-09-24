@@ -19,7 +19,15 @@ npm install                                     # at the repository root
 npm start --workspace=agents/hello-agent -- --input "quais contas vencem em outubro?" --json
 npm run check --workspace=agents/hello-agent
 npm run eval --workspace=agents/hello-agent
+npm run inspect --workspace=agents/hello-agent -- <run-id>
 ```
 
 No key is needed: with `ANTHROPIC_API_KEY` empty the run replays the
 recorded conversation, the agent reaches no rail, and `maturity` is empty.
+
+`npm run inspect <run-id>` reads the run's proof bundle back as a timeline,
+and an agent that cannot pay gets it for the same nothing every other command
+costs here: the command reads the bundle and nothing else, so on this agent
+the timeline is the conversation's counts, the tools that were refused before
+any handler ran, and no execution at all. `--json` for a machine, `--html
+<file>` for one self-contained page.

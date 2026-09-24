@@ -69,6 +69,7 @@ Not in this kit yet: WhatsApp, batch payouts, `npm run inspect`.
 | `npm run approve <execution-id>` / `npm run deny <execution-id>` | The human decision of `human` mode, as its own command: decides an execution left in `awaiting_approval` (a `--input` run without `--approve`, a restart), writes the section 4.2 artifact and runs it through the same last gate `npm start` uses. |
 | `npm run resume` | After a crash: dispatches only what the outbox proves was never sent, reconciles the rest from the rail, expires what went stale. Never pays twice. |
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches. |
+| `npm run inspect <run-id> [--json] [--html <file>]` | The proof bundle of that run read back as a timeline: who proposed what, who approved it and when (with the `items_hash` and the escalation trigger when one fired), under which version of the mandate, every state transition with its actor, which call went out under which idempotency key, what the rail answered, and which receipts came back. `--json` puts the whole report on stdout and nothing else; `--html` writes one self-contained page that opens from disk with nothing fetched. Payees are masked the way the bundle masks them, and the conversation is reported as counts, not text. |
 | `npm run reconcile` | Compares local state with the rail. Closes an `executing` execution only from a recorded rail outcome; what the rail has not answered yet stays `executing` with an `execution.uncertain` event, for a human. Never dispatches. |
 | `npm run consent -- --yes` | Runs a new consent for a mandate (test key, partner surface); without `--yes` it asks at the keyboard. The signed envelope is stored in `.codespar/mandate.json`, mode 0600. The first thing to run after `.env`: `npm start -- --input` needs it. |
 
@@ -90,10 +91,18 @@ approval.json           the approval artifacts of the run (section 4.2 of the sp
 mandate.snapshot.json   the mandate as it was, keys masked
 events.jsonl            every transition and every rail event, each with its actor
 receipts/               the receipts the rail returned, each stamped with the actor
-run.json                mode, rail, mandate id
+run.json                mode, rail, mandate id and the version it ran under
 ```
 
 No key and no secret is written there. Payee keys are masked.
+
+`verify.json` is the one file section 11 names and this repository does not
+write: it is the output of `codespar audit replay`, which is not a registered
+command of `@codespar/cli`, and the spec forbids a second implementation of
+the hash-chain check. `npm run inspect` says so in as many words instead of
+leaving the absence to be guessed at.
+
+Read the bundle back with `npm run inspect <run-id>`.
 
 ## Limits and stubs
 
