@@ -167,9 +167,14 @@ function dispatchOf(execution: Execution): BatchLineReport["dispatch"] {
 }
 
 /**
- * Runs the batch. Every exit from an individual line is a `continue`: a
- * refusal, a claim already held, even a malformed line is a fact recorded
- * about that line and about nothing else.
+ * Runs the batch. One gate stands before the loop and refuses the whole run:
+ * the set. Inside the loop nothing does — every exit from an individual line
+ * is a `continue`, so a refusal, a claim already held, even a malformed line
+ * is a fact recorded about that line and about nothing else.
+ *
+ * The two levels are the point. A line is refusable alone because a payroll
+ * line is one payee's business; a LIST that is not the list somebody approved
+ * is nobody's line to decide, so it never reaches the loop.
  */
 export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchReport> {
   const mandateId = ctx.engine.mandate.id;
@@ -277,6 +282,12 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
  * a different one is running a list that changed after a person decided on
  * it, and there is no reading of that a payroll should act on.
  *
+ * What it does NOT know is WHY the hash moved. A line left the list, an
+ * amount moved, or the mandate was re-signed and now pins a different key for
+ * one of these payees — all three change the same hash, because all three
+ * change where money goes. The refusal names what it measured, offers both
+ * ways out, and asserts no cause it cannot see.
+ *
  * `undefined` when nothing is held (a first run: there is no approved set to
  * contradict) or when the held execution is gone from the store (a claim
  * taken by a run that died before it drafted — it attested nothing).
@@ -288,9 +299,10 @@ function setRefusal(batch: Batch, presented: string, ctx: ToolContext, setKey: s
   return {
     reason: "batch_set_changed",
     detail:
-      `${batch.ref} was approved as a list of ${approved.count} line(s) under ${approved.batch_hash}; ` +
-      `it is now ${batch.lines.length} line(s) under ${presented}. The set a person decided on is not the set in front of us, ` +
-      `so no line of it runs. Restore the approved list, or run the new one under a batch_ref of its own.`,
+      `${batch.ref} was approved as a list of ${approved.count} line(s) hashing to ${approved.batch_hash}; ` +
+      `the list here is ${batch.lines.length} line(s) hashing to ${presented}. The set a person decided on is not the set in front of us, ` +
+      `so no line of it runs. A line left the list, an amount moved, or the mandate now pins a different key for one of these payees: ` +
+      `whichever it was, restore the approved list, or present the new one under a batch_ref of its own.`,
     approved_batch_hash: approved.batch_hash,
     presented_batch_hash: presented,
     approved_count: approved.count,
