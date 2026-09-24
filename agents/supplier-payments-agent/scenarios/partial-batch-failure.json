@@ -1,6 +1,6 @@
 {
   "name": "partial-batch-failure",
-  "description": "A batch with one refusal: the rail declines Insumos Atlantico and the other two suppliers settle anyway. The refused line is named, and the two lines after it are dispatched — which is exactly what a single multi-item execution could not do, since its dispatch loop stops at the first refusal and its whole total fails with it.",
+  "description": "A batch with one refusal: the rail declines Insumos Atlantico and the other two suppliers settle anyway. Each line is its own execution, so the refused one is `failed` on its own row while the other two reach `settled` on theirs — and the batch's total is what settled, not zero.",
   "modes": ["human", "mandate"],
   "transcript": "./partial-batch-failure.transcript.jsonl",
   "stub_refuse_payees": ["contas@insumos-atlantico.example.com.br"],

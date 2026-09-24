@@ -58,8 +58,8 @@ describe("section 12: scenario packs, on the replay provider", () => {
     const run = await runScenario(agent, scenario, { mode: "human", runsDir });
     expect(run.executions.map((e) => e.state)).toEqual(["settled", "failed", "settled"]);
     expect(run.settled_total).toBe(174000);
-    // The third line reached the rail even though the second did not settle,
-    // which a single multi-item execution cannot do: its dispatch loop breaks.
+    // Each line carries its own terminal state, so the refusal is `failed` on
+    // one row while the others are `settled` on theirs.
     expect(run.executions[2]?.trail).toContain("executing");
     expect(run.receipts).toBe(2);
   });

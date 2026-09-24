@@ -3,16 +3,18 @@
  * um laco de execucoes sob um mandato, com um `attempt_id` por chamada: uma
  * recusa nao derruba as outras, e repetir nao paga duas vezes."
  *
- * So a batch is N executions, not one execution of N items. The difference
- * is not stylistic. A multi-item execution settles only when EVERY attempt
- * settles, and its dispatch loop stops at the first refusal: measured on the
- * stub rail with a four-line payout whose second payee the rail declined,
- * the execution ended `failed`, one payee had been paid, and the two after
- * the refused one were never dispatched at all. That is the opposite of what
- * a payroll needs. One execution per line gives each line its own
- * `idempotency_key`, its own `attempt_id`, its own approval artifact with
- * its own `items_hash`, and its own terminal state, so a refusal is a fact
- * about ONE payee.
+ * So a batch here is N executions, one per line, rather than one execution of
+ * N items. Both shapes work — the core dispatches every attempt and names
+ * every one — and the trade is about what the LIST is, not about whether a
+ * refusal strands its siblings. See `docs/OPEN_QUESTIONS.md` § 40.
+ *
+ * A payroll wants this shape. One execution per line gives each line its own
+ * `idempotency_key`, `attempt_id`, approval artifact with its own
+ * `items_hash`, and terminal state, so a refusal is a fact about ONE payee
+ * and line 57 with a wrong key is fixed and re-run ALONE, without sending the
+ * other 199 back through approval. What it costs is that nothing binds the
+ * SET: each line is attested, the set is not, until issue #21's `batch_hash`
+ * lands. This module claims the first and not the second.
  *
  * The three properties this module owns, and where each one lives:
  *

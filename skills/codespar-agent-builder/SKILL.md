@@ -79,14 +79,14 @@ it rides on the payment tool `pix-out` already requires — so it is a claim
 about the agent that only your own tests hold up.
 
 A batch payer is a payer whose handler loops: one tool call becomes one
-execution PER LINE, so a refusal on one payee does not stop the others and a
-re-run pays nobody twice. Choose it when the lines must succeed or fail
-independently; choose a plain payer when they move together. The mechanism,
-and the two things the loop makes yours to handle, are in
-[reference/anatomy.md](reference/anatomy.md) § "One handler, several
-executions" — read it before writing the loop, because a multi-item execution
-stops dispatching at its first refusal and that is the failure a batch exists
-to not have.
+execution PER LINE, so each line is approved, refused and re-run on its own.
+Choose it when the lines are independently approvable and the batch can be
+large (a payroll); choose a plain payer, one execution with N items, when the
+list is approved as a unit and a person reads it in one go (the month's
+bills). Both shapes dispatch every attempt and name every one. The mechanism,
+the trade the two shapes make and the two things the loop makes yours to
+handle are in [reference/anatomy.md](reference/anatomy.md) § "One handler,
+several executions" — read it before writing the loop.
 
 ### 1. Create the five files and the packs
 
