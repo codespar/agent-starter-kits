@@ -4,7 +4,7 @@
  * and the HTML file that opens from disk with nothing fetched.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -102,6 +102,18 @@ describe("codespar-agent inspect", () => {
     expect(html).toContain(runId);
     expect(html).toContain("items_hash sha256:");
     expect(html).not.toContain("financeiro@escola-aurora.example.com.br");
+  });
+
+  it("a bundle a killed run left half-written is a message, not a stack trace", () => {
+    const broken = join(runs, "run_broken_bundle");
+    mkdirSync(join(broken, "receipts"), { recursive: true });
+    writeFileSync(join(broken, "approval.json"), "{ this is not json");
+    const out = run("inspect", ["run_broken_bundle"], env);
+    expect(out.code).toBe(1);
+    expect(out.stdout).toBe("");
+    expect(out.stderr).toContain("could not be read");
+    expect(out.stderr).not.toMatch(/at Object\.|at async |\.ts:\d+/);
+    rmSync(broken, { recursive: true, force: true });
   });
 
   it("works on any bundle in the runs folder, whatever produced it", () => {

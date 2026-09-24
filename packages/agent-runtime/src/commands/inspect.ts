@@ -62,9 +62,23 @@ export function inspect(agent: Agent, argv: string[]): number {
     return 1;
   }
 
-  const report = assembleTimeline(bundle);
+  // A bundle half-written by a run that was killed is exactly when somebody looks at it: say which file is unreadable, do not throw a stack at them.
+  let report;
+  try {
+    report = assembleTimeline(bundle);
+  } catch (err) {
+    say(`the bundle at ${bundle.dir} could not be read: ${err instanceof Error ? err.message : String(err)}`);
+    say("a file in it is missing or not valid JSON; the folder is the run's own output and is safe to delete and re-run");
+    return 1;
+  }
+
   if (html) {
-    writeFileSync(html, renderHtml(report));
+    try {
+      writeFileSync(html, renderHtml(report));
+    } catch (err) {
+      say(`could not write ${resolve(html)}: ${err instanceof Error ? err.message : String(err)}`);
+      return 1;
+    }
     say(`wrote ${resolve(html)} — one file, no network, opens from disk`);
   }
   if (json) stdout.write(JSON.stringify(report) + "\n");
