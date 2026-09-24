@@ -33,7 +33,7 @@ in `agent.yaml` (`pix-out: sandbox`) and the row in the README's maturity
 table. Keeping them aligned is what makes "what is sandbox here" answerable
 from the manifest alone. Note that agents do NOT import each other's modules
 — there is no shared home for one yet, so an agent that wants another's
-capability copies it; see `docs/OPEN_QUESTIONS.md` § 36f.
+capability copies it; see `docs/OPEN_QUESTIONS.md` § 39f.
 | `test/*.test.ts` | Your own tests, if you want more than `eval`. | OPTIONAL. Copy from `agents/bills-agent/test`. |
 | `.codespar/`, `runs/` | Local state, the signed mandate, proof bundles. Gitignored. | Never commit. |
 

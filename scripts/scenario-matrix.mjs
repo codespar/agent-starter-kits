@@ -26,11 +26,13 @@ const BIN = join(ROOT, "packages/agent-runtime/bin.mjs");
 const AGENTS_DIR = join(ROOT, "agents");
 
 /**
- * The section 12 table, minus `partial-batch-failure`: that one is the
- * `supplier-payments-agent`'s and lives in another lane. The table is printed
- * as coverage, not enforced — a read-only agent has no cap to exceed and no
- * mandate to revoke, so a missing row there is correct, and the gate is the
- * final state of the scenarios an agent DOES declare.
+ * The section 12 table, minus `partial-batch-failure`: that row belongs to
+ * whichever agent runs batches — today the `supplier-payments-agent`, which
+ * declares it — so it is credited per agent below rather than expected of
+ * all of them. The table is printed as coverage, not enforced: a read-only
+ * agent has no cap to exceed and no mandate to revoke, so a missing row
+ * there is correct, and the gate is the final state of the scenarios an
+ * agent DOES declare.
  */
 const SECTION_12 = ["happy-path", "cap-exceeded", "beneficiary-not-allowed", "charge-expired", "prompt-injection", "escalated-above-threshold", "mandate-revoked"];
 
@@ -119,7 +121,7 @@ function main(argv) {
   }
 
   say("");
-  say("section 12 coverage (partial-batch-failure belongs to supplier-payments-agent, another lane):");
+  say("section 12 coverage (partial-batch-failure is credited per agent: only a batch payer declares it):");
   for (const agent of agents()) {
     if (only && only !== agent.slug) continue;
     const declared = new Set(scenarios(agent).map((s) => s.name));

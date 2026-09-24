@@ -76,6 +76,7 @@ Not in this kit: WhatsApp, `embedded-consent` (see above), scheduling a batch fo
 | `npm run approve <execution-id>` / `npm run deny <execution-id>` | Decides one line left in `awaiting_approval`. A batch left undecided is decided line by line, which is the same granularity the terminal asks at. |
 | `npm run resume` | After a crash: dispatches only what the outbox proves was never sent, reconciles the rest from the rail, expires what went stale. Never pays twice. |
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches. |
+| `npm run inspect <run-id> [--json] [--html <file>]` | Reads a run's proof bundle back as a timeline. On a batch it is one timeline per line, each with its own approval artifact and `items_hash` — which is what "the approved list is attested" looks like when you read it back. |
 | `npm run reconcile` | Compares local state with the rail. Closes an `executing` execution only from a recorded rail outcome; what the rail has not answered stays `executing` with an `execution.uncertain` event, for a human. Never dispatches. |
 
 ## The proof bundle

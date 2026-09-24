@@ -256,7 +256,7 @@ state of your own goes through `ctx.engine.claim`/`claimed` — a tool
 handler's only durable surface is the engine, since `ToolContext` is
 `{ engine, onExecution }` and nothing else. And there is no way to import
 another agent's module: each agent owns its `src/`, so a capability two
-agents want is copied today (`docs/OPEN_QUESTIONS.md` § 36f).
+agents want is copied today (`docs/OPEN_QUESTIONS.md` § 39f).
 
 ### 10. Wire the root and run the gates
 

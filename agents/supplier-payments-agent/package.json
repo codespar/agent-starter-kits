@@ -12,6 +12,7 @@
     "resume": "codespar-agent resume",
     "rerun": "codespar-agent rerun",
     "reconcile": "codespar-agent reconcile",
+    "inspect": "codespar-agent inspect",
     "approve": "codespar-agent approve",
     "deny": "codespar-agent deny",
     "typecheck": "tsc --noEmit -p tsconfig.json",
