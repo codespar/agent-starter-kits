@@ -644,7 +644,7 @@ tr:first-child td { border-top: 0; }
 td.t { width: 78px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
 td.k { width: 120px; white-space: nowrap; }
 .sub { color: var(--muted); font-size: 12px; margin-top: 2px; word-break: break-word; }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
 .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); font-size: 11px; color: var(--muted); }
 .tag-proposed, .tag-approved { border-color: var(--accent); color: var(--accent); }
 .state { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 11px; font-family: ui-sans-serif, system-ui, sans-serif; color: var(--muted); }
