@@ -394,17 +394,18 @@ it outside the tree. Pinned because a moving `latest` would fail our gate on
 somebody else's release. A cache directory left by the old mechanism
 (`~/.cache/codespar-whatsapp-simulator`) is dead and can be deleted by hand.
 
-One wrinkle belongs here rather than in §46, because it is about PACKAGING and
-not about what the emulator does. **In 0.1.0 the published bin is a no-op.**
-`dist/cli.js` runs `main()` only when `import.meta.url` equals
-`pathToFileURL(process.argv[1]).href`, and a bin is a symlink, so invoked
-through `npx` — or through any `node_modules/.bin` — the two never match and the
-process exits 0 having started no server. That is the worst shape a failure can
-take: a command that passes and a port that is dead. So the script uses `npx`
-to FETCH the pinned version and then runs the module file it resolved to,
-checking the version in the resolved `package.json` against the pin so a stray
-global install cannot quietly take over. `resolveCli` goes the day that guard
-is fixed upstream. Reported here, not patched: same rule as the five gaps.
+**CLOSED, and worth keeping as the one finding that got fixed.** 0.1.0's
+published bin was a no-op: `dist/cli.js` ran `main()` only when
+`import.meta.url` equalled `pathToFileURL(process.argv[1]).href`, and a bin is
+a symlink that Node resolves on one side and not the other, so through `npx`
+the two never matched — `npx … serve` exited 0 having started no server, which
+is the worst shape a failure can take: a command that passes and a port that is
+dead. We reported it rather than patching around it for good, and **0.1.1
+fixes it** with a `realpathSync` on `argv[1]`, covered upstream by a test that
+packs, installs and runs the bin. So the script simply calls the bin again, and
+the path-resolution workaround this lane carried for one version is gone. The
+same rule as the five gaps below produced a fix in a day; that is the argument
+for reporting them.
 
 Two things remain STUBS on our side and are named rather than implied.
 
@@ -530,7 +531,7 @@ that the interactive simulator is a demo and `--scripted` is the real path.
 Driving the whole `collections-agent` flow through `dyvit-wa-sim` found five
 gaps. They were first measured at `2f1f8bc120ddbc1bfa23386622f9a93f3fdeb980`,
 the sha this lane pinned while the tool was not yet on npm, and re-measured
-unchanged at `@dyvit/whatsapp-simulator-cli@0.1.0`, the version it pins now.
+unchanged at `@dyvit/whatsapp-simulator-cli@0.1.1`, the version it pins now.
 Each is the exact
 payload that failed, so this section and
 `packages/agent-runtime/test/whatsapp-emulator.integration.test.ts` say the
