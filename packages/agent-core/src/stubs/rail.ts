@@ -129,6 +129,11 @@ export class StubRail implements PaymentRail {
       ...body,
       chain,
       receipt_sig: `stub:${sha256Hex(`sig:${chain}`).slice(0, 32)}`,
+      // The stub holds no CodeSpar key and must not look as though it did:
+      // `npm run verify` answers `unsigned` on a stub receipt, which is the
+      // truth about it.
+      receipt_sig_ed25519: null,
+      receipt_sig_kid: null,
       actor,
       raw: { stub: true, transaction_id: out.transaction_id },
     };
