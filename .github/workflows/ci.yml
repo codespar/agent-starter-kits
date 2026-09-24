@@ -29,6 +29,7 @@ jobs:
           npm run eval --workspace=agents/bills-agent
           npm run eval --workspace=agents/collections-agent
           npm run eval --workspace=agents/hello-agent
+          npm run eval --workspace=agents/supplier-payments-agent
       # Section 12: one row per scenario per mode, every agent, discovered from
       # `agents/*/agent.yaml` rather than listed — a fourth agent is in the
       # matrix the day it lands. The gate is the FINAL STATE the scenario
@@ -49,6 +50,18 @@ jobs:
           cd agents/collections-agent
           npm start --silent -- --input "fechado, pago à vista" --transcript test/fixtures/accept-1042.transcript.jsonl --approve --simulate-payer --json --now 2026-09-23T14:00:00-03:00 > /tmp/coll.json
           node -e 'const o=JSON.parse(require("fs").readFileSync("/tmp/coll.json","utf8")); if(o.executions[0].state!=="settled"||o.executions[0].charges.length!==1||o.receipts.length!==1||!o.actor) process.exit(1)'
+      # A batch is a loop of executions, so the one-shot asserts the shape a
+      # single execution cannot have: three settled lines, three receipts, and
+      # a second run of the same batch that pays nobody again.
+      - name: a batch runs once, and running it twice pays nobody twice (stub rail, pinned clock)
+        run: |
+          cd agents/supplier-payments-agent
+          export SUPPLIER_PAYMENTS_STATE_DIR=/tmp/supplier-state SUPPLIER_PAYMENTS_RUNS_DIR=/tmp/supplier-runs
+          npm start --silent -- --input "roda a folha de outubro" --transcript scenarios/happy-path.transcript.jsonl --approve --json --now 2026-09-23T14:00:00-03:00 > /tmp/batch1.json
+          node -e 'const o=JSON.parse(require("fs").readFileSync("/tmp/batch1.json","utf8")); if(o.executions.length!==3||o.executions.some(e=>e.state!=="settled")||o.settled_minor!==540000||o.receipts.length!==3||!o.actor) process.exit(1)'
+          npm start --silent -- --input "roda a folha de outubro" --transcript scenarios/happy-path.transcript.jsonl --approve --json --now 2026-09-23T14:00:00-03:00 > /tmp/batch2.json
+          node -e 'const o=JSON.parse(require("fs").readFileSync("/tmp/batch2.json","utf8")); if(o.executions.length!==0||o.settled_minor!==0||o.receipts.length!==0) process.exit(1)'
+
       - name: tests (core + agent, including restart and rerun)
         run: npm test
 

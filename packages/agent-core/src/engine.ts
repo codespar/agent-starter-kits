@@ -645,6 +645,27 @@ export class ExecutionEngine {
     return true;
   }
 
+  /**
+   * A durable claim for work whose unit is bigger than one execution: a batch
+   * line, a scheduled instruction. `claimed` reads which execution covers a
+   * key, `claim` records it. Same cursor table as `markShown`, which is this
+   * with a boolean answer.
+   *
+   * It exists because a tool handler's only durable surface is this engine,
+   * and a batch that must not pay the same payee twice across runs has to
+   * remember which execution already covers each line. What a held claim
+   * MEANS is the kit's to decide: the engine records the pairing and reads
+   * nothing into it, because "settled, so skip" and "denied, so retry" are
+   * the batch's rules and not the state machine's.
+   */
+  claimed(key: string): string | undefined {
+    return this.deps.store.getCursor(`claim:${key}`);
+  }
+
+  claim(key: string, executionId: string): void {
+    this.deps.store.setCursor(`claim:${key}`, executionId);
+  }
+
   // ---- reads --------------------------------------------------------------
 
   get(executionId: string): Execution | undefined {

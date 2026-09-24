@@ -5,8 +5,8 @@ description: Create a new CodeSpar starter-kit agent under agents/<name> (a paye
 
 # codespar-agent-builder
 
-You are adding `agents/<name>` to `codespar/agent-starter-kits`. The three
-agents in the tree are references; yours is the fourth. The manifest
+You are adding `agents/<name>` to `codespar/agent-starter-kits`. The four
+agents in the tree are references; yours is the next one. The manifest
 `agent.yaml` is the index, `@codespar/agent-core` is the only thing that
 moves an execution past `drafted`, `@codespar/agent-runtime` is the runner
 you do NOT write, and the task is done when `npm run check`, `npm run eval
@@ -68,12 +68,25 @@ follow from it:
 | Kind | It calls | `tools.json` meta-tool `effect` | `agent.yaml` `maturity` key | Reference |
 |---|---|---|---|---|
 | Payer (money goes OUT under a consumer mandate) | `codespar_pay` | `payment` | `pix-out` | `agents/bills-agent` |
+| Batch payer (money goes out to MANY payees, independently) | `codespar_pay` | `payment` | `pix-out` + `batch-payout` | `agents/supplier-payments-agent` |
 | Collector (money comes IN, a receivable per instalment) | `codespar_charge` | `charge` | `bolepix-receivables` | `agents/collections-agent` |
 | Read-only (proposes nothing, pays nothing) | local read tools only | none | none of the two above | `agents/hello-agent`, the worked example |
 
 `npm run check` ties the two together: a `payment` tool without `pix-out`
 maturity fails, and so does the reverse; same for `charge` and
-`bolepix-receivables`.
+`bolepix-receivables`. `batch-payout` is not tied to anything by the check —
+it rides on the payment tool `pix-out` already requires — so it is a claim
+about the agent that only your own tests hold up.
+
+A batch payer is a payer whose handler loops: one tool call becomes one
+execution PER LINE, so a refusal on one payee does not stop the others and a
+re-run pays nobody twice. Choose it when the lines must succeed or fail
+independently; choose a plain payer when they move together. The mechanism,
+and the two things the loop makes yours to handle, are in
+[reference/anatomy.md](reference/anatomy.md) § "One handler, several
+executions" — read it before writing the loop, because a multi-item execution
+stops dispatching at its first refusal and that is the failure a batch exists
+to not have.
 
 ### 1. Create the five files and the packs
 
@@ -180,7 +193,10 @@ anything.
 Follow [reference/evals.md](reference/evals.md). Minimum: the `happy-path`
 scenario and the seven adversarial cases of section 9, one file each, named
 `prompt-injection`, `beneficiary-swap`, `false-authority`, `fractioning`,
-`exfiltration`, `model-total`, `webhook-replay`. Every case except
+`exfiltration`, `model-total`, `webhook-replay`. Add a case of your own when
+your agent has a refusal the table does not cover: a batch payer ships
+`batch-tampering`, where the model is steered into writing the batch's lines
+itself and is refused before a handler runs. Every case except
 `webhook-replay` has a `.transcript.jsonl` playing the model that obeys the
 attack. The expected outcome depends on the kind of agent (table in the
 reference). Keep `evals/eval.yaml` as `extends: ../agent.yaml` plus metrics;
@@ -234,6 +250,13 @@ examples. What you may set, and nothing else is yours:
 | `presentInstrument`, `announceOutcome` | The QR the payer reads, the one message per outcome | collector |
 | `ensureMandate`, `consent` | The consent that mints the mandate | payer |
 | `warmUp`, `runEventsCase`, `rerunPlan` | What the section 9 suite and `rerun` need per agent | see `evals.md` |
+
+Two things the seam does NOT carry, and where they live instead. Durable
+state of your own goes through `ctx.engine.claim`/`claimed` — a tool
+handler's only durable surface is the engine, since `ToolContext` is
+`{ engine, onExecution }` and nothing else. And there is no way to import
+another agent's module: each agent owns its `src/`, so a capability two
+agents want is copied today (`docs/OPEN_QUESTIONS.md` § 39f).
 
 ### 10. Wire the root and run the gates
 
