@@ -74,11 +74,12 @@ export class ProofBundle {
     writeFileSync(join(this.dir, "mandate.snapshot.json"), JSON.stringify({ ...safe, beneficiaries: safe.beneficiaries.map((b) => ({ ...b, payee: maskPayee(b.payee) })), merchant_allowlist: safe.merchant_allowlist.map(maskPayee) }, null, 2) + "\n");
   }
 
+  /** Returns the path INSIDE the bundle (`receipts/<id>.json`): a bundle travels, and an absolute path names the machine that wrote it. */
   receipt(receipt: RailReceipt): string {
-    const path = join(this.dir, "receipts", `${receipt.receipt_id}.json`);
+    const relative = join("receipts", `${receipt.receipt_id}.json`);
     const { raw: _raw, ...safe } = receipt;
-    writeFileSync(path, JSON.stringify({ ...safe, payment: { ...safe.payment, payee: safe.payment.payee ? maskPayee(safe.payment.payee) : null } }, null, 2) + "\n");
-    return path;
+    writeFileSync(join(this.dir, relative), JSON.stringify({ ...safe, payment: { ...safe.payment, payee: safe.payment.payee ? maskPayee(safe.payment.payee) : null } }, null, 2) + "\n");
+    return relative;
   }
 
   listReceipts(): string[] {
