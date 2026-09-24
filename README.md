@@ -7,7 +7,7 @@ Agents that move money under a mandate. The person signs the limits once (cap pe
 Three agents ship today, all in TypeScript, all running against the CodeSpar sandbox:
 
 - **[`bills-agent`](agents/bills-agent)** pays a household's monthly bills (school, cleaner, utilities) over Pix.
-- **[`collections-agent`](agents/collections-agent)** is the merchant side: it agrees payment terms with a customer, issues a bolepix per instalment and closes the loop when the charge is paid.
+- **[`collections-agent`](agents/collections-agent)** is the merchant side: it agrees payment terms with a customer, issues a bolepix per instalment and closes the loop when the charge is paid. It is also the one with a second channel: WhatsApp, run against a [local Cloud API emulator](agents/collections-agent#the-whatsapp-channel) that needs no account.
 - **[`supplier-payments-agent`](agents/supplier-payments-agent)** is the company side: suppliers, sales commissions and payroll, paid in batches. A batch is a loop of executions, one per line, so a refusal on one payee does not stop the others and re-running it pays nobody twice.
 
 A fourth, **[`hello-agent`](agents/hello-agent)**, is the worked example the [`codespar-agent-builder`](skills/codespar-agent-builder) skill builds: read-only, 300 lines, no payment tool at all.
@@ -65,12 +65,14 @@ Same code, same states, same receipts. Start with `human`, switch when you trust
 |---|---|
 | Pix payments out (`bills-agent`) | Sandbox |
 | Bolepix charges with a sandbox payer (`collections-agent`) | Sandbox |
+| WhatsApp as a channel (`collections-agent`) | Against [`dyvit-wa-sim`](https://github.com/fabianocruz/whatsapp-simulator), a local Cloud API emulator: no Meta account, no credential. The CI closes the cycle three times from zero on it |
+| WhatsApp through Meta's Cloud API | The same backend, one base URL away. Credentials absent by default; never run against Meta from this repo |
 | Batch payouts, one execution per line (`supplier-payments-agent`) | Sandbox |
 | Mandate revocation checked against the API before every payment (`bills-agent`) | Live in the sandbox |
 | Receipts sealed with HMAC | Proves the payment to whoever runs the agent |
 | Approval artifacts signed with a local dev key | Stub: the API does not sign approval lists yet |
 
-Not here yet: WhatsApp as a channel (terminal only for now), Ed25519-signed receipts. Each agent's README lists its own stubs. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) tracks every place the code and the spec diverge.
+Not here yet: a WhatsApp run against Meta itself (the adapter is written from the published documentation and this repo has never opened an account), Ed25519-signed receipts. Each agent's README lists its own stubs. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) tracks every place the code and the spec diverge.
 
 The kits use Pix and bolepix. The CodeSpar API also settles USDC over x402; see the [docs](https://codespar.dev/docs).
 

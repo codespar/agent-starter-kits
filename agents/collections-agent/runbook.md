@@ -18,6 +18,39 @@ Then flip the key: `npm start --workspace=agents/collections-agent -- --mode man
 
 Without a key: `npm start --workspace=agents/collections-agent -- --scenario happy-path` runs the same script on the stub rail and the recorded model, in both modes, in under a second. `--scenario charge-expired` shows the other ending.
 
+## The same scene on WhatsApp
+
+The terminal is where the runbook is timed, because the five-minute contract
+is a terminal contract and WhatsApp is deliberately outside it. But the scene
+above is a WhatsApp scene — a debtor replying to a message — so it is worth
+filming on the channel it is written for:
+
+```sh
+npm run whatsapp:emulator                                               # terminal 1
+npm run start:collections -- --channel whatsapp --conversation acordo-1042 --simulate-payer
+```
+
+The conversation goes through a local emulator of the WhatsApp Cloud API
+(`dyvit-wa-sim`, MIT, cloned at a pinned sha): you type as Joana, the store
+answers, the copy-and-paste arrives as its own message (which is how a person
+actually pays — a code inside a picture cannot be copied), and "recebemos,
+acordo quitado" closes it. No Meta account, no credential. For the phone frame,
+run the emulator's own web app and point it at `http://127.0.0.1:4290`. In
+`approval: human` the operator's question is still on the console, labelled
+`[operador]`, and never in the conversation.
+
+For a take with no typing at all, and for the CI:
+
+```sh
+npm run whatsapp:gate     # three runs from a clean state, no intervention
+```
+
+Measured 2026-09-24, against the emulator: three runs, `settled` each time,
+one receivable, one record, two messages in and eight out, the same shape
+every run. That is the
+wave-4 gate — "três execuções do zero sem intervenção" — and it runs on every
+pull request.
+
 ## Measured
 
 Second real run on staging, 2026-09-23 18:03:16Z, `org_demo`, replay provider, `--scenario happy-path --mode human --rail api`: **10 s from the issuance to `settled`** (create answered in 4.1 s, the instrument registered on the second look, the sandbox payer paid, the next look found `settlement: confirmed`), 15 s for the whole scenario. Charge `9fa7974e-9d1c-452e-aa01-64e9272f4f52`, execution `exe_624615ee1de452c5`. The first run of the day stopped at the issuance (no Celcoin on the demo org until ent#1613). Details, request ids and the three walls in `docs/OPEN_QUESTIONS.md` sections 22 and 31.

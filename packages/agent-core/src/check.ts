@@ -1,12 +1,14 @@
 /**
  * `npm run check`: the manifest is the index, and the files it points to
  * must agree with it. Fails on a contradiction between `agent.yaml` and
- * `SYSTEM_PROMPT.md`, `tools.json` or `guardrails.json`, on `AGENTS.md`
- * and `CLAUDE.md` diverging, and on a missing `mcp`, `cli` or `schema`.
+ * `SYSTEM_PROMPT.md`, `tools.json`, `guardrails.json` or `channels/`, on
+ * `AGENTS.md` and `CLAUDE.md` diverging, and on a missing `mcp`, `cli` or
+ * `schema`.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { ConversationScriptSchema } from "./channels.js";
 import { GuardrailsSchema } from "./guardrails.js";
 import { loadManifest, ManifestSchema, type LoadedManifest } from "./manifest.js";
 import { MandateSchema } from "./mandate.js";
@@ -90,6 +92,31 @@ export function checkAgent(agentDir: string): CheckReport {
         error("guardrails_contradict_manifest", "guardrails.escalate_above differs from agent.yaml escalate_above");
       }
     }
+  }
+
+  // channels: the declaration and what the agent ships, checked BOTH ways.
+  //
+  // A channel is the runner's, but the conversations are the agent's, so
+  // `channels: [terminal, whatsapp]` is a claim about files. Declaring
+  // whatsapp without shipping a conversation gives a reader a channel that
+  // cannot be driven; shipping one without declaring it hides a surface the
+  // agent answers on. Both are errors, and a script that no longer parses is
+  // one too, because the simulator and this check read the same schema.
+  if (!manifest.channels.includes("terminal")) {
+    error("channels_terminal_missing", "agent.yaml must declare the terminal channel: `npm start` opens it and it needs no account");
+  }
+  const whatsappDir = join(agentDir, "channels", "whatsapp");
+  const scripts = existsSync(whatsappDir) ? readdirSync(whatsappDir).filter((f) => f.endsWith(".json")).sort() : [];
+  if (manifest.channels.includes("whatsapp") && scripts.length === 0) {
+    error("channels_not_shipped", "agent.yaml declares the whatsapp channel but channels/whatsapp/ ships no conversation for the simulator to drive");
+  }
+  if (!manifest.channels.includes("whatsapp") && scripts.length > 0) {
+    error("channels_undeclared", `channels/whatsapp/ ships ${scripts.length} conversation(s) but agent.yaml does not declare the whatsapp channel`);
+  }
+  for (const file of scripts) {
+    const parsed = ConversationScriptSchema.safeParse(JSON.parse(readFileSync(join(whatsappDir, file), "utf8")));
+    if (!parsed.success) error("channels_script_invalid", `channels/whatsapp/${file}: ${parsed.error.message}`);
+    else if (parsed.data.name !== file.replace(/\.json$/, "")) error("channels_script_invalid", `channels/whatsapp/${file} declares name ${parsed.data.name}`);
   }
 
   // mandate.example.json

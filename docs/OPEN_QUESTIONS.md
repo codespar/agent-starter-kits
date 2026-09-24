@@ -328,3 +328,287 @@ Two things the fix had to keep apart, because they want opposite answers. A line
 **What both shapes need from the core, and now have:** every attempt is dispatched and every attempt is named (this PR). Before it, the one-execution shape silently dropped the items after the first refusal, which is why the choice looked like a choice between "the list is attested" and "a refusal does not stop the others". It was never that; it was a defect in `dispatch`.
 
 **v5.3:** say both in section 5, with the rule of thumb above, and drop the implication in section 12 that `partial-batch-failure` and "falha parcial multi-item" are the same test written twice — they are the same PROPERTY in two shapes, and a kit declares which shape it is.
+
+# The WhatsApp channel (wave 4), against spec v5.2
+
+Same rule. Entries 41 to 46 come from building `channels/whatsapp` and
+running it against a local Cloud API emulator on 2026-09-24. Input for v5.3.
+
+## 41. Where a channel lives: the runner owns the behaviour, the agent owns the conversations
+
+Section 5's anatomy table puts `channels/terminal/` and `channels/whatsapp/`
+inside an agent. Since the #18 refactor the runner owns channels — one
+`terminal.ts` serves all four agents, and a second copy of it per agent is the
+thing that refactor removed — so a per-agent `channels/terminal/` would be an
+empty directory whose only job is to match a table.
+
+What the code does: the BEHAVIOUR is `packages/agent-runtime/src/channels/`
+(the seam, the rules, the WhatsApp adapter, its two backends), and what an
+agent ships under `agents/<name>/channels/whatsapp/` is the CONVERSATIONS —
+one JSON file per conversation, naming the contact it is bound to, the
+agreement it may be about, and the person's turns. That is the half a runner
+cannot have: which debtor, which number, which agreement.
+
+`npm run check` reads the split in both directions (`channels_not_shipped`,
+`channels_undeclared`, `channels_script_invalid`, `channels_terminal_missing`),
+so `channels: [terminal, whatsapp]` is a claim about files rather than a label.
+The schema for a conversation is in the core (`packages/agent-core/src/channels.ts`)
+next to the manifest and the guardrails, because the check parses it and the
+core is what the check can import.
+
+A third thing lives outside both: the EMULATOR the channel talks to, which is
+somebody else's repository at a pinned sha. See §42.
+
+One correction that belongs here: §21 and the `collections-agent` README call
+the webhook receiver `channels/webhook/`. There is no such directory and there
+never was — it is `packages/agent-runtime/src/webhook.ts`, reached by
+`npm run webhook`. Now that `channels/` means something specific the wording
+would mislead, so the README says the path. **v5.3:** section 5 should say
+where each half lives, and drop `channels/webhook/` as a path.
+
+## 42. The house simulator is somebody else's, and that is the point
+
+The first cut of this lane wrote its own simulator. It was replaced, before
+that code was a day old, by `dyvit-wa-sim` — the local Cloud API emulator in
+[fabianocruz/whatsapp-simulator](https://github.com/fabianocruz/whatsapp-simulator),
+MIT — and the reason is worth stating because it applies to the next seam too.
+
+**A mock we write agrees with us by construction.** It accepts the payloads we
+send because we wrote both sides, and the day Meta refuses one of them we find
+out in production. The emulator answers
+`POST /v{version}/{phone-number-id}/messages` with the Cloud API's own response
+shape and posts back the same `x-hub-signature-256`-signed webhooks, so the
+`simulator` backend is now literally THE SAME CODE as the official one with a
+different base URL (`live` is derived from the host, not from a flag). That is
+the thing worth proving, and a mock cannot prove it.
+
+It is not a dependency of this workspace: its packages are not published to npm
+(checked 2026-09-24 — `@dyvit/whatsapp-simulator-cli` and `@dyvit/whatsapp-pricing`
+both 404) and it is a pnpm workspace while this repo is an npm one. So it is a
+CLONE AT A PINNED SHA in a cache directory, started by
+`scripts/whatsapp-emulator.mjs` and by one CI step. `npm ci` never sees it.
+Pinned because a moving `main` would fail our gate on somebody else's commit.
+
+Two things remain STUBS on our side and are named rather than implied.
+
+a. **Template approval.** A template is registered in a Meta Business account,
+reviewed by Meta and given a status no call of ours can read without that
+account — and the emulator does not model it either. What the channel holds is
+the LOCAL registry: the template names the agent declares. Sending one that was
+never declared is refused here instead of 400-ing at Meta. Whether Meta
+approved it is the developer's to check.
+
+b. **The QR as an image.** Sending an image means uploading it first
+(`POST /{version}/{phone-number-id}/media`, multipart) or handing a public URL.
+This repo hosts nothing and renders no PNG, so `buildSendRequest` answers
+`media_upload_unimplemented` and the channel sends the copy-and-paste as its
+own text message, which is the string that actually pays. Worth recording
+precisely: **the emulator would take it** — `type: "image"` with an `image.link`
+answers 200 — so the blocker is OURS, not its. The concrete option is to serve
+the QR from the receiver the channel already runs
+(`http://127.0.0.1:<port>/qr/<id>.png`), which needs a PNG encoder; against
+Meta that URL has to be publicly reachable, which is a deployment question and
+not a code one. **Open:** do that, or accept that on WhatsApp the copy-and-paste
+is the payable artifact and the QR is for a second device.
+
+c. **The secrecy rule's reach is the alias, and only the alias.** "A message
+may not name another debtor's agreement" is enforced by comparing the message
+against the aliases the agent has conversations for (`acordo-1042`,
+`acordo-1103`), which is the set the runner can see: the debtors' book is
+`src/agreements.ts` and the runtime does not read an agent's source. So a
+message carrying `acordo-1103` into Joana's conversation is refused, and "o
+Carlos tambem deve" is not. That is a real limit and not a bug to fix in the
+channel — deciding whether a sentence discloses somebody's debt is the prompt's
+job and the operator's, exactly like "no embarrassment". **Open:** should an
+agent declare its subjects somewhere the runner can read (a `subjects` key on
+the guardrails envelope), so the rule covers the whole book rather than the
+conversations that happen to be shipped?
+
+And the whole official backend is written against Meta's published
+documentation and has never been run against Meta from this repo. The pure
+half — the signature check, the webhook parse, the verification handshake and
+the request builder — is under test; the send is one `fetch` over a request
+those functions built. The READMEs say this in those words.
+
+## 43. Consent in the conversation (decision 19a): the seam is wired, and a simulator may not use it
+
+ent#1615 landed `attestation.evidence` on `POST /v1/consents/{token}/submit`.
+For the `whatsapp` channel the API accepts exactly four keys beside `channel`
+— `contact`, `message_id`, `session_id`, `provider_ts` — and refuses `ip`,
+`user_agent`, `device_id_hash` and `geo` with 400 `attestation_evidence_invalid`,
+because a conversation hands a partner a message and a sender, not a socket.
+The wire carries `contact` in the clear and the API hashes it into
+`contact_hash` under the org's own key, which a partner cannot compute.
+
+`channels/whatsapp/evidence.ts` builds that object and mirrors the rule, so a
+mistake fails in this repo instead of failing as a 400 at the submit.
+
+**It refuses to build one from the simulator, and that is the answer to the
+question the wave asked.** Everything in the object is a claim about what a
+provider observed. A simulated conversation was observed by nobody: the message
+id is a counter, the timestamp is this process's clock and the contact is a
+fixture. Signing that would be the same false declaration the API's own schema
+warns about for a partner that declares `other` for a WhatsApp act. So
+`evidenceFor` returns a refusal with the reason on it, and the simulator's ids
+are `sim_...` so nothing downstream can mistake the two.
+
+**Two things still stand between the seam and a mandate born in a chat, and
+neither is this lane's to close.** The `collections-agent` has no consent step
+at all — the MERCHANT's collection policy is its own file, because a signed
+policy for the receiving side does not exist in the API (§25, spec section 16)
+— so the agent that has the WhatsApp channel has nothing to attest. And the
+agent that does have a consent step, the `bills-agent`, runs at a terminal
+where `in_person` is the correct attestation and `partner_session` would be a
+worse claim, not a better one. **Open for v5.3:** which agent is the one whose
+mandate is born in a conversation, and does `method: "verified_code"` (whose
+contact must carry one of our own OTP verifications within 24 h) fit a kit
+better than `partner_session` for that agent.
+
+## 44. Measured: three runs from zero, no intervention
+
+`npm run whatsapp:gate` — three runs of the `collections-agent` over the
+channel, each from a clean state directory and a clean runs directory, the
+debtor's turns from `channels/whatsapp/acordo-1042.json`, the model from the
+recorded transcript, the rail the stub and the payer its fixture. The channel
+talks to the emulator over HTTP, so every message is a real
+`POST /v22.0/{phone-number-id}/messages` and every turn arrives as a signed
+webhook our own receiver verifies. No external network, no key, no Meta
+account. Measured 2026-09-24, on `--mode mandate`:
+
+| Run | Final state | Records | In | Out |
+|---|---|---|---|---|
+| 1 | `settled` | 1 | 2 | 8 |
+| 2 | `settled` | 1 | 2 | 8 |
+| 3 | `settled` | 1 | 2 | 8 |
+
+The gate names its conversation (`--conversation acordo-1042`), because the
+agent ships two: `acordo-1042` ends paid and `acordo-1103` ends expired, and
+which person a run messages is not a default.
+
+What the gate asserts is the final state and the SHAPE of the conversation,
+never the wording: settled, one receivable, one record, every message
+delivered, the QR followed immediately by the copy-and-paste as its own
+message, the person told the outcome, the contact masked in the log, and no
+message carrying anything document-shaped. Then the three runs must agree with
+each other and must not share a charge id — the part one run cannot show. The
+clock is pinned to `2026-09-23T14:00:00-03:00` (#16) so the collection-hours
+guardrail reads the same at 03:00 as at 15:00. `--mode human` passes too, with
+`--approve`, because a script has no keyboard for an operator to answer from.
+
+## 45. The interactive simulator has one keyboard and two people at it
+
+`npm start -- --channel whatsapp` without `--scripted` reads the debtor's turns
+from the terminal, and in `approval: human` the operator's question is read
+from the same terminal. That is one person playing both parts, distinguishable
+only by the prompt (`voce (+55 ****4321)>` against `[operador] Aprovar ...`).
+It is honest for a demo and wrong for anything else; the operator's surface is
+the dashboard, and this kit has none. The scripted path has no such problem,
+which is why the gate uses it, and a scripted run in `human` mode without
+`--approve` is refused outright rather than left waiting on a keyboard nobody
+is at. **Open:** a second channel for the operator, or an explicit statement
+that the interactive simulator is a demo and `--scripted` is the real path.
+
+## 46. What the emulator does not do, measured against the pinned sha
+
+Driving the whole `collections-agent` flow through `dyvit-wa-sim` at
+`2f1f8bc120ddbc1bfa23386622f9a93f3fdeb980` found five gaps. Each is the exact
+payload that failed, so this section and
+`packages/agent-runtime/test/whatsapp-emulator.integration.test.ts` say the
+same thing twice — the tests are written to go RED the day a gap is closed,
+which is how we find out. This is a spec for the repository's owner, not a
+complaint: nothing here is patched from our side, and no pull request was
+opened there.
+
+**a. The 24-hour window is priced but not enforced. This is the one that
+matters.** After `POST /_sim/clock {"advance_hours": 26}`, a free-form send:
+
+```http
+POST /v22.0/{phone-number-id}/messages
+{"messaging_product":"whatsapp","recipient_type":"individual","to":"5511987654321",
+ "type":"text","text":{"preview_url":false,"body":"Recebemos, acordo quitado."}}
+```
+
+answers **`200 accepted`**. The real Cloud API answers `400` with error
+`131047` ("Message failed to send because more than 24 hours have passed since
+the customer last replied") and sends nothing. So an app that Meta would refuse
+passes here, and the session window — the rule that decides whether a
+collections agent may speak at all when the payment lands three days later —
+cannot be proved by a run against the emulator.
+
+The reason it is worth reporting rather than working around: **the emulator has
+already decided.** Reading `/_sim/state` after that send, the message carries
+`reasonCode: "INVALID_NON_TEMPLATE_OUTSIDE_CSW"`. The refusal is one branch away
+from data the pricing engine computes today. A send that Meta would reject
+could answer the Graph-shaped error instead of `200`, and everything else about
+the tool stays as it is.
+
+Our own cover: the channel refuses it at `session_window_closed` before the
+backend is reached, so the rule is enforced on our side either way. That is a
+worse place for it — it means our test proves our rule, not the provider's.
+
+**b. There is no way to redeliver or reorder a webhook.** `POST /_sim/replay`,
+`POST /_sim/webhooks/replay` and `POST /_sim/redeliver` all answer 404;
+`GET /_sim/webhooks` is a read-only log and nothing re-dispatches from it, and
+`handleSend` dispatches each status exactly once, in order. So the case our own
+adversarial suite names — the same event twice, and an event arriving before
+the one that should precede it — cannot be driven through this channel at all.
+We cover it on the CodeSpar side (`kit.runEventsCase` replays
+`commerce.charge.paid` twice and out of order through `ingestExternalEvent`),
+but that is the CodeSpar event, not the WhatsApp delivery. A
+`POST /_sim/webhooks/{index}/redeliver`, or a `replay` that re-sends a recorded
+delivery, would make the WhatsApp half testable.
+
+**c. A `+` on one side and none on the other splits one person into two
+conversations.** The emulator keys a session on the literal string
+`${phone_number_id}:${to|from}`. The Cloud API documents `to` without a `+`,
+and Meta's inbound `from` also arrives without one — but `POST /_sim/inbound`
+defaults `from` to `+5511999999999`. Sending the documented way while
+simulating an inbound the default way produced two keys for one person:
+
+```
+"keys": ["109876543210:+5511987654321", "109876543210:5511987654321"]
+```
+
+The consequence is not cosmetic. The customer-service window opens on the
+inbound session, so the outbound session never has one, and the pricing — which
+is the tool's whole reason for existing — is computed against a conversation
+missing the customer's messages. We strip the `+` on both sides to avoid it
+(`toGraphNumber`), which is a workaround, not a fix. Normalising the key would
+close it.
+
+**d. Only `sent` and `delivered` are ever emitted.** `toStatusWebhook` can
+build `read` and `failed`, and nothing emits either: `handleSend` walks the
+message through the two and stops. So a channel cannot observe a read receipt,
+and cannot be tested against a delivery that failed — which on WhatsApp is a
+normal outcome (a number that is not on WhatsApp, a block list). Our
+`DeliveryState` carries all four and only ever sees two.
+
+**e. An inbound interactive reply degrades to an empty text message.** Outbound
+interactive works and is good — `graph-api.ts` handles `list`, `flow`,
+`cta_url` and buttons, confirmed by sending each — but the reply to one does
+not exist. `POST /_sim/inbound` with
+
+```json
+{"phone_number_id":"...","from":"+5511987654321","type":"interactive",
+ "interactive":{"type":"button_reply","button_reply":{"id":"avista","title":"À vista"}}}
+```
+
+answers 200 and produces `contentType: "text"` with `bodyPreview: ""`, and the
+webhook carries `type: "text"`, `text.body: ""`. So the debtor can be SHOWN
+"À vista / 3x" and cannot tap either — which is precisely the interaction
+collections over WhatsApp is built on. An `_sim/inbound` that carried
+`interactive.button_reply` through to the webhook would close it.
+
+### And one gap that is ours, not the emulator's
+
+The case in (a) — the agent speaking after the window shut — is the NORMAL
+collections case: the debtor agrees on Tuesday and pays on Friday, and
+"recebemos, acordo quitado" falls outside the window, where only an approved
+template may go. We cannot run it end to end, and not because of the emulator:
+there is no `codespar-agent poll --channel whatsapp`. The terminal has `poll`
+for exactly this (the payer acts after the conversation ended) and the channel
+does not, so the outcome message is always sent inside the same turn that
+issued the charge, which is always inside the window. Closing it needs the
+poll command to take a channel, and the agent to own an approved template for
+the outcome — and that template is (a) of §42, which needs a Meta account.
+**Open, and ours.**

@@ -2,7 +2,7 @@
   "name": "@codespar/agent-runtime",
   "version": "0.1.0",
   "private": true,
-  "description": "The runner every CodeSpar starter-kit agent shares: the terminal channel and the commands (start, consent, approve, deny, resume, rerun, reconcile, poll, webhook, check, eval), parameterised by the agent directory.",
+  "description": "The runner every CodeSpar starter-kit agent shares: the terminal and WhatsApp channels and the commands (start, consent, approve, deny, resume, rerun, reconcile, poll, webhook, check, eval), parameterised by the agent directory.",
   "license": "MIT",
   "type": "module",
   "main": "./src/index.ts",
@@ -18,10 +18,6 @@
   },
   "dependencies": {
     "@codespar/agent-core": "0.1.0",
-    "qrcode-terminal": "0.12.0",
     "zod": "3.25.76"
-  },
-  "devDependencies": {
-    "@types/qrcode-terminal": "0.12.2"
   }
 }

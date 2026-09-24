@@ -5,6 +5,7 @@ export * from "./ids.js";
 export * from "./approval.js";
 export * from "./manifest.js";
 export * from "./guardrails.js";
+export * from "./channels.js";
 export * from "./mandate.js";
 export * from "./escalate.js";
 export * from "./clock.js";
