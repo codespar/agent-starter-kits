@@ -11,6 +11,8 @@
  * No network: the key set is a document, or a fetcher the test supplies.
  */
 import { createPublicKey, generateKeyPairSync, sign as signDetached, verify as nodeVerify, type KeyObject } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RECEIPT_KEYS_URL,
@@ -113,11 +115,15 @@ describe("tampered", () => {
     expect(report.verdict).toBe("tampered");
   });
 
-  it("refuses a signature made by a key that is not the published one", () => {
+  it("refuses a signature made by a key that is not the published one, and names the deployment case", () => {
     const { privateKey } = keypair();
     const other = keypair();
+    // The shape of the staging-receipt-against-production-keys mistake: both
+    // deployments publish a key called `did:web:id.codespar.dev#1` and the two
+    // are not the same key, so the message has to offer that reading.
     const report = verifyReceiptWithKeys(receipt({ receipt_sig_ed25519: seal(privateKey), receipt_sig_kid: KID }), keySet(publishedKey(other.x)));
     expect(report.verdict).toBe("tampered");
+    expect(report.message).toContain("deployment");
   });
 
   it("refuses a signature that is not 64 base64url bytes", () => {
@@ -273,5 +279,38 @@ describe("the check a third party reimplements", () => {
     );
     expect(ok).toBe(true);
     expect(verifyReceiptWithKeys(receipt({ receipt_sig_ed25519: signature, receipt_sig_kid: KID }), keySet(publishedKey(x))).verdict).toBe("verified");
+  });
+});
+
+/**
+ * The one fixture that is not this test's own: a receipt the CodeSpar sandbox
+ * actually sealed (bills-agent, staging, 2026-09-24), as the proof bundle
+ * wrote it, and the key set that deployment publishes, as it was served. Every
+ * other case here signs with a key the test made, which proves the module is
+ * self-consistent; this one proves it agrees with the signer.
+ *
+ * Offline: both are files. If the API ever changes the signed string, this is
+ * the case that fails.
+ */
+describe("a receipt the sandbox really sealed", () => {
+  const dir = join(import.meta.dirname, "fixtures");
+  const real = JSON.parse(readFileSync(join(dir, "staging-receipt.json"), "utf8")) as Record<string, unknown>;
+  const realKeys = JSON.parse(readFileSync(join(dir, "staging-receipt-keys.json"), "utf8")) as unknown;
+
+  it("verifies against the key set that deployment publishes", () => {
+    const report = verifyReceiptWithKeys(real, realKeys, "staging");
+    expect(report.verdict).toBe("verified");
+    expect(report.kid).toBe("did:web:id.codespar.dev#1");
+    expect(report.signing_string).toBe(`codespar-receipt:v1:${real["receipt_id"] as string}:${real["chain"] as string}`);
+  });
+
+  it("is refused when one character of the chain changes", () => {
+    const chain = real["chain"] as string;
+    const edited = { ...real, chain: chain.slice(0, -1) + (chain.endsWith("0") ? "1" : "0") };
+    expect(verifyReceiptWithKeys(edited, realKeys, "staging").verdict).toBe("tampered");
+  });
+
+  it("is refused when the receipt id changes, which is why the id is in the signed string", () => {
+    expect(verifyReceiptWithKeys({ ...real, receipt_id: "rcpt_0000000000000000000000" }, realKeys, "staging").verdict).toBe("tampered");
   });
 });

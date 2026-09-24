@@ -28,9 +28,17 @@
  * recomputing that digest from the receipt body needs the canonical link
  * shapes, which CodeSpar does not publish today. Binding the body to the chain
  * is therefore not something this module can promise, and it does not pretend
- * to: see `docs/OPEN_QUESTIONS.md` §16. It is also why the signature survives
+ * to: see `docs/OPEN_QUESTIONS.md` §47. It is also why the signature survives
  * the proof bundle's masking — the bundle masks the payee, and the signature
  * covers the id and the digest, not the copy in front of you.
+ *
+ * WHICH KEY SET. `kid` is `<did>#<n>` and the DID is the platform's, so it is
+ * the same string on every deployment while the KEY behind it is not: a
+ * sandbox receipt checked against the production key set finds a key of that
+ * name, fails to verify, and reads `tampered`. The verifier therefore points
+ * at ONE deployment's `/.well-known/codespar-receipt-keys.json` — the default
+ * is production, and `--url` names another. Nothing in the two documents tells
+ * them apart today; `docs/OPEN_QUESTIONS.md` §47 says so and names the ask.
  *
  * The signed string is the enterprise's `receiptSigningString`
  * (`packages/api/src/receipt-signature.ts`, ent#1633), reproduced here rather
@@ -320,7 +328,7 @@ export function verifyReceiptWithKeys(receipt: unknown, keyDocument: unknown, la
       signing_string: signingString,
       keys_from: label,
       reason: "signature_does_not_match",
-      message: `receipt ${receiptId} does not match its signature: the key \`${kid}\` did not sign this receipt id and this chain. The id or the chain was changed after the receipt was sealed, or the signature was copied from another receipt`,
+      message: `receipt ${receiptId} does not match its signature: the key \`${kid}\` did not sign this receipt id and this chain. The id or the chain was changed after the receipt was sealed, the signature was copied from another receipt, or this key set is not the one the deployment that sealed it publishes — a sandbox receipt checked against the production keys reads exactly like this, because every deployment publishes its own key under the same \`kid\``,
     };
   }
   return {

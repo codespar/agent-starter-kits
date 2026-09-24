@@ -88,9 +88,12 @@ A receipt carries two, and they prove different things to different people.
 npm run verify -- runs/<run-id>/receipts/<receipt-id>.json        # fetches the public keys over HTTPS
 npm run verify -- receipt.json --keys codespar-receipt-keys.json # a saved copy: no network at all
 npm run verify -- receipt.json --json                            # the verdict as JSON on stdout, the sentence on stderr
+npm run verify -- receipt.json --url https://api.staging.codespar.dev/.well-known/codespar-receipt-keys.json
 ```
 
 The signature covers `codespar-receipt:v1:<receipt_id>:<chain>` and nothing else, so it survives the bundle's masking: a receipt copied off the machine that produced it still verifies, with no key, no API key and no CodeSpar call that could be refused. The answers are kept apart on purpose — `verified`, `tampered`, `unsigned` (sealed before the capability existed, which is not a failure), `unknown_key`, `unreachable` (unknown, never "invalid") and `malformed` — and each has its own exit code. The verifier is [`packages/agent-core/src/receipt-verification.ts`](packages/agent-core/src/receipt-verification.ts): `node:crypto` and nothing else, no SDK, no key material.
+
+Point it at the deployment that sealed the receipt. The default is production; a receipt sealed by another deployment needs its `--url`, because every deployment publishes its own key under the same `kid` and a receipt checked against the wrong set reads `tampered`. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §47 has the measurement and the ask.
 
 The kits use Pix and bolepix. The CodeSpar API also settles USDC over x402; see the [docs](https://codespar.dev/docs).
 
