@@ -38,6 +38,16 @@ jobs:
       # (#16), so the matrix reads the same at 03:00 as at 15:00.
       - name: scenario matrix (section 12), every scenario of every agent
         run: npm run scenarios
+      # Wave 4's gate: three runs of the collections-agent over the WhatsApp
+      # channel, each from a clean state directory, with nobody at a keyboard.
+      # The house simulator is the backend, so there is no network, no Meta
+      # account and no credential — the WHATSAPP_* variables are not set on
+      # this runner and the official Cloud API backend is never opened. What
+      # passes is the final state and the shape of the conversation (settled,
+      # one charge, one record, the QR followed by the copy-and-paste as its
+      # own message), plus the three runs agreeing with each other.
+      - name: the WhatsApp channel closes the cycle three times from zero (house simulator, no network)
+        run: npm run whatsapp:gate
       - name: one command, machine output
         run: |
           cd agents/bills-agent

@@ -44,6 +44,14 @@ export async function startWhatsApp(options: StartWhatsAppOptions): Promise<numb
   const now = options.now ?? (() => new Date());
   const conversation = { contact: script.contact, subject: script.subject };
 
+  // A scripted conversation has nobody at a keyboard, and in `human` mode
+  // somebody has to decide. Refused rather than left waiting on a stdin that
+  // will never answer: a gate that hangs teaches nothing.
+  if (options.scripted && s.mode === "human" && !options.decision) {
+    say("--scripted has nobody at the keyboard and approval: human needs a decision: add --approve or --deny, or run --mode mandate");
+    return 2;
+  }
+
   let backend: ChannelBackend;
   if (options.backend === "cloud-api") {
     const { config, missing } = loadCloudApiConfig(process.env);
