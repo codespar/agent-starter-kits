@@ -152,6 +152,8 @@ export class CodeSparChargeRail implements PaymentRail {
         payment: { amount_minor: view.amount_minor, payee: null, attempt_id: chargeId, money_moved: false, sandbox: true, at: raw.settled_at ?? new Date().toISOString() },
         chain: null,
         receipt_sig: null,
+        receipt_sig_ed25519: null,
+        receipt_sig_kid: null,
         actor,
         raw: view,
       };

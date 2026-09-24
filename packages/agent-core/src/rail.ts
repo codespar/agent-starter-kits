@@ -72,6 +72,14 @@ export interface RailReceipt {
   /** Null when the API seals nothing for this kind of record. */
   chain: string | null;
   receipt_sig: string | null;
+  /** The Ed25519 signature CodeSpar seals alongside the HMAC (base64url) and
+   *  the published key that made it. Null on a receipt sealed before the API
+   *  had the capability, on a record the API seals nothing for (a paid
+   *  charge), and on the stub rail, which is not CodeSpar and must not look
+   *  like it. Carried onto the bundle's copy so THAT copy is what a third
+   *  party checks: `npm run verify runs/<run-id>/receipts/<id>.json`. */
+  receipt_sig_ed25519: string | null;
+  receipt_sig_kid: string | null;
   /** Section 4.5: the kit stamps the actor onto the local copy of every receipt. */
   actor: Actor;
   raw: unknown;

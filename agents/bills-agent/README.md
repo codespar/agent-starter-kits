@@ -51,7 +51,7 @@ Read from `agent.yaml`, field `maturity`:
 |---|---|---|
 | `pix-out` | sandbox | Pix payments through the CodeSpar sandbox. No real money. |
 | `embedded-consent` | sandbox | The mandate starts from a consent the account holder authorizes; in the sandbox the kit runs the partner surface in the terminal. |
-| `receipt-verification` | blocked | Waits for Ed25519. The receipt seal is HMAC today. |
+| `receipt-verification` | sandbox | Every receipt sealed since the API added Ed25519 carries a signature anybody can check against the published key set: `npm run verify -- runs/<run-id>/receipts/<id>.json`. Receipts sealed before that carry none and never will. |
 
 What the agent applies on its own, before the mandate (`guardrails.json`): the escalation thresholds (R$ 1.500,00 per payment, first payment to each payee, 22:00–07:00), a 24-hour velocity window per payee against fractioning, and "the core's total wins" when the model states another.
 
@@ -70,6 +70,7 @@ Not in this kit yet: WhatsApp, batch payouts.
 | `npm run resume` | After a crash: dispatches only what the outbox proves was never sent, reconciles the rest from the rail, expires what went stale. Never pays twice. |
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches. |
 | `npm run inspect <run-id> [--json] [--html <file>]` | The proof bundle of that run read back as a timeline: who proposed what, who approved it and when (with the `items_hash` and the escalation trigger when one fired), under which version of the mandate, every state transition with its actor, which call went out under which idempotency key, what the rail answered, and which receipts came back. `--json` puts the whole report on stdout and nothing else; `--html` writes one self-contained page that opens from disk with nothing fetched. Payees are masked the way the bundle masks them, and the conversation is reported as counts, not text. |
+| `npm run verify -- <receipt-file> [--json] [--keys <file>] [--url <url>]` | Checks a receipt's Ed25519 signature against CodeSpar's published key set. No key and no agent needed: it runs on a receipt file copied to another machine. The exit code is the verdict — 0 verified, 1 tampered, 3 unsigned, 4 unknown key, 5 the key set could not be read, 6 not a receipt. |
 | `npm run reconcile` | Compares local state with the rail. Closes an `executing` execution only from a recorded rail outcome; what the rail has not answered yet stays `executing` with an `execution.uncertain` event, for a human. Never dispatches. |
 | `npm run consent -- --yes` | Runs a new consent for a mandate (test key, partner surface); without `--yes` it asks at the keyboard. The signed envelope is stored in `.codespar/mandate.json`, mode 0600. The first thing to run after `.env`: `npm start -- --input` needs it. |
 
@@ -104,9 +105,18 @@ leaving the absence to be guessed at.
 
 Read the bundle back with `npm run inspect <run-id>`.
 
+The receipt copies carry both of the API's seals. `receipt_sig` is the HMAC, which proves the payment to whoever runs this agent; `receipt_sig_ed25519` and `receipt_sig_kid` are the asymmetric half, which proves it to anybody:
+
+```sh
+npm run verify -- runs/<run-id>/receipts/<receipt-id>.json
+```
+
+That reads the public key set from `/.well-known/codespar-receipt-keys.json`, picks the key the receipt names, rebuilds `codespar-receipt:v1:<receipt_id>:<chain>` and checks it with stock `node:crypto` — no key, no API key, no CodeSpar call that could be refused. `--keys <file>` uses a saved copy of the key set instead and touches no network at all; `--json` puts the verdict on stdout. `--url` names another deployment's key set: the default is production, and every deployment publishes its own key under the same `kid`, so a sandbox receipt checked against the production keys reads `tampered`. The signature covers the receipt id and the chain, so the masking above does not disturb it, and the file verifies on a machine that has never seen this repository. A receipt sealed before the API had the capability answers `unsigned`, which is not a failure: it has no Ed25519 signature and never will, and its HMAC seal is unaffected.
+
+
 ## Limits and stubs
 
-- The receipt is signed by HMAC with the consumer's secret held by CodeSpar. The chain verifies without network; the signature proves it to whoever runs this agent, and to nobody else until Ed25519.
+- The receipt carries two signatures. The HMAC one, under the consumer secret CodeSpar holds, proves the payment to whoever runs this agent, because verifying it means holding the key that also mints it. The Ed25519 one, sealed by CodeSpar's platform issuer key since the API added it, proves it to anybody with `npm run verify`. A receipt sealed before that carries no Ed25519 signature and never will — there is no backfill, and signing an old receipt with today's key would attest to what the database says now, not to what happened then.
 - The approval artifact is signed by HMAC with a **local development key** (`.codespar/approval.key`). This is a stub: the CodeSpar API does not sign approval lists today. It proves what was approved to whoever runs the agent.
 - Revocation is checked against the API. With a test key, the core reads `GET /v1/mandates/{id}` before every `executing` and executes on `status: active` only: `paused` → `denied` (`mandate_paused`), `revoked` → `denied` (`mandate_revoked`), `expired` → `expired`, and a read that does not answer (timeout, 5xx, 404, an unreadable body) → `denied` (`mandate_status_unavailable`), never "assume active". `npx -y @codespar/cli@0.14.0 mandate revoke <id>` is the switch. Without a key (the CI, the scenarios, `rerun`) the same check answers from a **local stub** (`packages/agent-core/src/stubs/mandate-status.ts`), which is also where the organization kill switch (`org pauseAll`) lives, since the API does not expose one yet.
 - The `actor` of every call is carried locally on every event, approval and receipt copy. The API has no `actor` field on the wire today; the spend carries `agent_id`, which the mandate binds.

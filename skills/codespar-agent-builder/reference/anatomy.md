@@ -17,7 +17,7 @@ with each entry when you build `agents/<name>`.
 | `evals/adversarial/*.json` + `*.transcript.jsonl` | Section 9 cases. | WRITE seven cases. See `evals.md`. |
 | `evals/eval.yaml` | `extends: ../agent.yaml` plus metrics. | COPY verbatim. |
 | `AGENTS.md`, `CLAUDE.md` | Rules for the coding agent. Identical. | WRITE one, copy the other. |
-| `README.md` | What it proves, what is sandbox, what it applies alone, commands. | WRITE. Never "verifiable by a third party". |
+| `README.md` | What it proves, what is sandbox, what it applies alone, commands. | WRITE. "Verifiable by a third party" only where `Ed25519` is written too. |
 | `runbook.md` | The forty-second script. | WRITE. |
 | `.env.example` | `CODESPAR_API_KEY` and `ANTHROPIC_API_KEY`. Only. | COPY verbatim; only the comment lines may change. |
 | `package.json` | Workspace package; every script is `codespar-agent <command>`. | ADAPT: `name`, `description`, the scripts your kind needs. |

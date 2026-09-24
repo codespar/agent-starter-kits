@@ -55,8 +55,12 @@ CodeSpar agent.
    any handler runs, and the refusal is in the trail. Ship the minimum.
 7. **Pins are exact.** `mcp:` and `cli:` in `agent.yaml` name one published
    version each; `npm run check` refuses a range or a tag.
-8. **No overclaims, no telemetry.** Never write "verifiable by a third party"
-   (the seals are HMAC today; `check` greps for it). Nothing phones home.
+8. **No overclaims, no telemetry.** "Verifiable by a third party" is true of
+   one thing here — the Ed25519 signature CodeSpar seals onto a payment
+   receipt, which `npm run verify` checks against the published key set — and
+   false of everything else: the approval artifact, a paid charge, and every
+   receipt sealed before the API had the capability. `check` fails on the
+   phrase unless the doc also names `Ed25519`. Nothing phones home.
 
 ## Procedure
 
@@ -277,7 +281,8 @@ disagree while you build, follow the API and add a numbered entry to
 | `agents_md_diverges` | `AGENTS.md` and `CLAUDE.md` differ |
 | `eval_extends` / `eval_redeclares_manifest` | `evals/eval.yaml` must be `extends: ../agent.yaml` plus cases and metrics |
 | `env_example_extra` | a third key in `.env.example` |
-| `doc_overclaims` | "verifiable by a third party" in a doc |
+| `doc_overclaims` | "verifiable by a third party" in a doc that never names `Ed25519` |
+| `maturity_overclaims` | `receipt-verification` beyond `blocked` with no `payment` meta-tool: only a payment seals a receipt |
 
 | `eval` failure | Meaning |
 |---|---|

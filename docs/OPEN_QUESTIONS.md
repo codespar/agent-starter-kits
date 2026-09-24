@@ -12,7 +12,7 @@ Section 4.5 says every API call carries `actor`. `POST /v1/consumers/mandates/{i
 
 ## 3. Who signs the approval artifact — STUB
 
-The API does not sign approval lists; its HMAC is the mandate proof and the receipt seal. The artifact of section 4.2 is signed with a local development key at `.codespar/approval.key` (generated on first use, mode 0600, gitignored), marked as a stub in `packages/agent-core/src/approval.ts` and in the READMEs. It proves what was approved to whoever runs the agent, and to nobody else. No third env var was added. **Open:** an API-side signature (or Ed25519 with the agent key from KYA) so the artifact means something to a third party.
+The API does not sign approval lists; its HMAC is the mandate proof and the receipt seal. The artifact of section 4.2 is signed with a local development key at `.codespar/approval.key` (generated on first use, mode 0600, gitignored), marked as a stub in `packages/agent-core/src/approval.ts` and in the READMEs. It proves what was approved to whoever runs the agent, and to nobody else. No third env var was added. Since wave 5 the RECEIPT carries an Ed25519 signature a third party can check (§47); the approval artifact does not, so this is now the one thing in the bundle that proves nothing outside the machine that wrote it. **Open:** an API-side signature (or Ed25519 with the agent key from KYA) so the artifact means something to a third party.
 
 ## 4. Revocation — CLOSED 2026-09-23 (#2); the organization kill switch stays open
 
@@ -252,7 +252,7 @@ So there are exactly two ways to produce the file, and the spec closes both:
 
 What is written instead: nothing, and `inspect` says so. Every rendering — terminal, `--json`, `--html` — carries `verify.present: false` and a one-sentence note naming `codespar audit replay` and the prohibition. `ProofBundle.hasVerify()` exists and reads the file, so a bundle that gains one the day the CLI ships the command is noticed rather than ignored; nothing in this repository writes it.
 
-**Decides:** whoever schedules `audit replay` on the CLI. Until then the receipt's own `chain` field is in the bundle (`receipts/*.json`), unverified, which is the honest state: the chain is recorded, and the check that would confirm it has no home yet. **v5.3:** say in section 11 that `verify.json` is conditional on the CLI command, rather than listing it beside six files that always exist.
+**Decides:** whoever schedules `audit replay` on the CLI. Until then the receipt's own `chain` field is in the bundle (`receipts/*.json`), unreplayed, which is the honest state: the chain is recorded, and the check that would confirm it has no home yet. Since wave 5 that chain is SIGNED — `npm run verify` proves CodeSpar sealed this receipt id with this chain — which is a different claim from replaying the audit interval, and does not close this section (§47). **v5.3:** say in section 11 that `verify.json` is conditional on the CLI command, rather than listing it beside six files that always exist.
 
 ## 37. What `npm run inspect` needed that the bundle was not writing (wave 3)
 
@@ -661,3 +661,19 @@ failure or a denial, because nobody has written copy for telling a debtor
 those, days later, in a template. The poll REPORTS such an outcome and exits
 non-zero rather than sending an approximate one — the record says settled and
 the person does not know — which is the right behaviour and not a solution.
+
+## 47. What `npm run verify` proves, and the one thing it cannot (wave 5)
+
+The API seals every agentic receipt with an Ed25519 signature over `codespar-receipt:v1:<receipt_id>:<chain>`, made with CodeSpar's platform issuer key (`did:web:id.codespar.dev`), and publishes the public keys with no credential at `/.well-known/codespar-receipt-keys.json`. `packages/agent-core/src/receipt-verification.ts` checks it with stock `node:crypto` and nothing else; `npm run verify -- <receipt-file>` is the command. That is the wave-5 gate: someone outside verifies a receipt without access to CodeSpar.
+
+Three things are worth writing down rather than implying.
+
+**What `verified` proves, exactly.** That CodeSpar sealed a receipt with THIS id and THIS chain. The chain is a SHA-256 over the RFC 8785 canonical JSON of the four links of the Control Record, so the seller, the amount and the payee are inside it — but recomputing that digest from a receipt body needs the canonical link shapes, and CodeSpar publishes the signing string, not the link shapes. So a verifier can prove the receipt is CodeSpar's and cannot, by itself, prove that the body printed beside the chain is the body that was hashed into it. The verifier does not pretend otherwise. **Open:** publish the link shapes (or a `chain` recipe in the key document, beside `signing_string`), so a third party can close the loop from the body to the digest. Until then the honest reading is "CodeSpar attests to a settlement with this id and this digest".
+
+It is also the reason the signature survives the proof bundle's masking: the bundle masks the payee, the signature covers the id and the digest, and the masked copy verifies exactly like the original. Convenient here, and the same fact both times.
+
+**A receipt sealed before the capability existed carries no signature and never will.** There is no backfill, by design on the API side: signing a June receipt with today's key would attest to what the database says now, not to what happened then. `npm run verify` answers `unsigned` for those, with its own exit code, and says in as many words that this is not a failure. The five other verdicts — `verified`, `tampered`, `unknown_key`, `unreachable`, `malformed` — are kept apart for the same reason: a verifier that collapses "I could not reach the key set" into "invalid" calls every receipt fraudulent the day its DNS breaks.
+
+**Every deployment publishes its own key under the same `kid`, and a verifier pointed at the wrong one says `tampered`.** Measured 2026-09-24: production and staging both serve `kid: "did:web:id.codespar.dev#1"`, `issuer: "did:web:id.codespar.dev"`, with different `x` values, because each bootstrapped its own platform issuer key. So a receipt sealed in the sandbox and checked against the production key set finds a key of that name, fails to verify, and is reported as tampered — a false accusation, and the one failure mode of this feature that hurts. What the code does: the default URL is production, `--url` names another deployment, and the `tampered` message says in as many words that a key set from the wrong deployment reads exactly like this. Nothing in either document distinguishes them, so the verifier cannot detect it. **Open, on the API side:** either the `kid` or the `issuer` names the deployment (`did:web:id.staging.codespar.dev`, or a `#staging-1` suffix), so a key set and a receipt that do not belong together are `unknown_key` — which is honest — instead of `tampered`, which is not.
+
+**The SDK's types are behind the API.** `@codespar/sdk@0.16.6` was generated before the two columns existed, so `packages/agent-core/src/api/rail.ts` reads `receipt_sig_ed25519` and `receipt_sig_kid` off the response body defensively instead of through the generated type. A deployment that predates the change answers null, which is the same answer the columns hold and reads as `unsigned`. **Open:** an SDK release that types them, at which point the cast comes out. Pinning a new SDK for two nullable strings was not worth a pin change of its own (rule 8).

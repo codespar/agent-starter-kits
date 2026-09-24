@@ -15,9 +15,16 @@ import { reconcile } from "./commands/reconcile.js";
 import { rerun } from "./commands/rerun.js";
 import { resume } from "./commands/resume.js";
 import { start } from "./commands/start.js";
+import { verify } from "./commands/verify.js";
 import { webhook } from "./commands/webhook.js";
 
-const COMMANDS = ["start", "consent", "approve", "deny", "resume", "rerun", "reconcile", "inspect", "poll", "webhook", "check", "eval"] as const;
+const COMMANDS = ["start", "consent", "approve", "deny", "resume", "rerun", "reconcile", "inspect", "poll", "webhook", "check", "eval", "verify"] as const;
+
+/** Commands that are not about an agent. `verify` reads a receipt file and a
+ *  public key set, which is all a party outside CodeSpar has: requiring an
+ *  `agent.yaml` above the working directory would mean the verifier needed the
+ *  agent that produced the receipt, and the whole point is that it does not. */
+const AGENTLESS: readonly string[] = ["verify"];
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   const rest = [...argv];
@@ -33,6 +40,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     stderr.write(`unknown command ${command}; one of: ${COMMANDS.join(", ")}\n`);
     return 2;
   }
+  if (AGENTLESS.includes(command)) return verify(rest);
   const agent = await loadAgent(dir);
   readDotEnv(agent.dir);
   return run(agent, command, rest);

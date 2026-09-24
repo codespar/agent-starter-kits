@@ -20,7 +20,7 @@ channels: [terminal]
 maturity:
   pix-out: sandbox
   embedded-consent: sandbox
-  receipt-verification: blocked   # waits for Ed25519; the receipt seal is HMAC today
+  receipt-verification: sandbox   # receipts sealed since the API added Ed25519 verify against the published key set: `npm run verify runs/<run-id>/receipts/<id>.json`
 scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md

@@ -70,9 +70,30 @@ Same code, same states, same receipts. Start with `human`, switch when you trust
 | Batch payouts, one execution per line (`supplier-payments-agent`) | Sandbox |
 | Mandate revocation checked against the API before every payment (`bills-agent`) | Live in the sandbox |
 | Receipts sealed with HMAC | Proves the payment to whoever runs the agent |
+| Receipts also sealed with Ed25519 | Proves the payment to anybody: `npm run verify -- <receipt-file>`. Receipts sealed before the API added it carry none and never will |
 | Approval artifacts signed with a local dev key | Stub: the API does not sign approval lists yet |
 
-Not here yet: a WhatsApp run against Meta itself (the adapter is written from the published documentation and this repo has never opened an account), Ed25519-signed receipts. Each agent's README lists its own stubs. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) tracks every place the code and the spec diverge.
+Not here yet: a WhatsApp run against Meta itself (the adapter is written from the published documentation and this repo has never opened an account). Each agent's README lists its own stubs. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) tracks every place the code and the spec diverge.
+
+### The two signatures on a receipt
+
+A receipt carries two, and they prove different things to different people.
+
+| Signature | Made with | Proves it to | Checked by |
+|---|---|---|---|
+| `receipt_sig` | HMAC under the consumer secret CodeSpar holds | Whoever runs the agent. Verifying it means holding the key that also mints it, so to anybody else it is a claim, not evidence | CodeSpar |
+| `receipt_sig_ed25519` | Ed25519 under CodeSpar's platform issuer key | Anybody. The public keys are served with no credential at [`/.well-known/codespar-receipt-keys.json`](https://api.codespar.dev/.well-known/codespar-receipt-keys.json) | `npm run verify -- <receipt-file>`, or twenty lines of `node:crypto` |
+
+```sh
+npm run verify -- runs/<run-id>/receipts/<receipt-id>.json        # fetches the public keys over HTTPS
+npm run verify -- receipt.json --keys codespar-receipt-keys.json # a saved copy: no network at all
+npm run verify -- receipt.json --json                            # the verdict as JSON on stdout, the sentence on stderr
+npm run verify -- receipt.json --url https://api.staging.codespar.dev/.well-known/codespar-receipt-keys.json
+```
+
+The signature covers `codespar-receipt:v1:<receipt_id>:<chain>` and nothing else, so it survives the bundle's masking: a receipt copied off the machine that produced it still verifies, with no key, no API key and no CodeSpar call that could be refused. The answers are kept apart on purpose — `verified`, `tampered`, `unsigned` (sealed before the capability existed, which is not a failure), `unknown_key`, `unreachable` (unknown, never "invalid") and `malformed` — and each has its own exit code. The verifier is [`packages/agent-core/src/receipt-verification.ts`](packages/agent-core/src/receipt-verification.ts): `node:crypto` and nothing else, no SDK, no key material.
+
+Point it at the deployment that sealed the receipt. The default is production; a receipt sealed by another deployment needs its `--url`, because every deployment publishes its own key under the same `kid` and a receipt checked against the wrong set reads `tampered`. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §47 has the measurement and the ask.
 
 The kits use Pix and bolepix. The CodeSpar API also settles USDC over x402; see the [docs](https://codespar.dev/docs).
 
@@ -94,7 +115,7 @@ The repo is also the `codespar-core` plugin: the CodeSpar MCP server (pinned at 
 | Path | What |
 |---|---|
 | [`packages/agent-core`](packages/agent-core) | State machine, approval artifact, `agent.yaml` schema, `escalate_above`, local SQLite state, proof bundle, model providers. Every agent builds on it. |
-| [`packages/agent-runtime`](packages/agent-runtime) | The runner every agent shares: the terminal channel, `codespar-agent start\|consent\|approve\|deny\|resume\|rerun\|reconcile\|poll\|webhook\|check\|eval`, and the scenario and adversarial runners. An agent is its files plus one `src/kit.ts`. |
+| [`packages/agent-runtime`](packages/agent-runtime) | The runner every agent shares: the terminal channel, `codespar-agent start\|consent\|approve\|deny\|resume\|rerun\|reconcile\|poll\|webhook\|check\|eval\|verify`, and the scenario and adversarial runners. An agent is its files plus one `src/kit.ts`. |
 | [`agents/bills-agent`](agents/bills-agent) | Pays bills under a mandate. |
 | [`agents/collections-agent`](agents/collections-agent) | Collects from customers inside a negotiation envelope. |
 | [`agents/supplier-payments-agent`](agents/supplier-payments-agent) | Pays suppliers, commissions and payroll in batches, under one mandate. |
@@ -111,7 +132,7 @@ All run in CI without a model key or a CodeSpar key:
 npm run typecheck                                   # includes a type test: illegal state transitions don't compile
 npm run check                                       # plugin manifests, then each agent's prompt/tools/guardrails vs agent.yaml
 npm run eval --workspace=agents/bills-agent         # adversarial suite + every scenario in both modes (blocks merge)
-npm test
+npm test                                            # includes the receipt verifier: no network, the key set is injected
 node scripts/secret-scan.mjs all                    # also a pre-commit hook
 ```
 

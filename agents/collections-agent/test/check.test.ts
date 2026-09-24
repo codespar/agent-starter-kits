@@ -80,7 +80,14 @@ describe("npm run check: the manifest is the index", () => {
     const dir = copyAgent();
     writeFileSync(join(dir, "CLAUDE.md"), readFileSync(join(dir, "CLAUDE.md"), "utf8") + "\nextra line\n");
     expect(codes(dir)).toContain("agents_md_diverges");
+    // This agent mints receivables, and a paid charge carries no chain and no signature, so the claim is refused in its own README even though that README names Ed25519.
     writeFileSync(join(dir, "README.md"), readFileSync(join(dir, "README.md"), "utf8") + "\nThe record is third-party verifiable.\n");
     expect(codes(dir)).toContain("doc_overclaims");
+  });
+
+  it("refuses a maturity this agent's records cannot carry", () => {
+    const dir = copyAgent();
+    writeFileSync(join(dir, "agent.yaml"), readFileSync(join(dir, "agent.yaml"), "utf8").replace("receipt-verification: blocked", "receipt-verification: sandbox"));
+    expect(codes(dir)).toContain("maturity_overclaims");
   });
 });
