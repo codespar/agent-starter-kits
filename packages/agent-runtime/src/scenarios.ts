@@ -60,6 +60,15 @@ export const ScenarioSchema = z
     /** Which rails can run it. A fixture-only outcome (`expires`) needs the stub. */
     rails: z.array(z.enum(["stub", "api"])).nonempty().default(["stub", "api"]),
     now: z.string().datetime().default("2026-09-23T18:00:00.000Z"),
+    /**
+     * Payees the stub rail refuses for the whole run, by their pinned key.
+     * The rail's answer is the only part of a partial failure a pack cannot
+     * script from the mandate: an allowlist refusal never reaches the rail,
+     * and a payout that the provider itself declines is what a batch has to
+     * survive. Empty by default, so a pack that does not name one runs
+     * exactly as before.
+     */
+    stub_refuse_payees: z.array(z.string()).default([]),
     transcript: z.string(),
     turns: z.array(TurnSchema).nonempty(),
     expect: z.record(z.enum(["human", "mandate", "both"]), ExpectSchema),
@@ -140,6 +149,7 @@ export async function runScenario(agent: Agent, scenario: Scenario, options: Run
     runsDir: options.runsDir ?? join(agent.dir, "runs"),
     stateDir,
     ...(rail === "stub" ? { now: tick } : {}),
+    ...(scenario.stub_refuse_payees.length > 0 ? { stubRail: { refusePayees: scenario.stub_refuse_payees } } : {}),
     say,
   });
   const stub = s.rail as { armUncertainOnce?: () => void };
