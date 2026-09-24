@@ -8,7 +8,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { ConversationScriptSchema } from "./channels.js";
+import { ConversationScriptSchema, TemplateRegistrySchema, TEMPLATE_REGISTRY_FILE, templateArity } from "./channels.js";
 import { GuardrailsSchema } from "./guardrails.js";
 import { loadManifest, ManifestSchema, type LoadedManifest } from "./manifest.js";
 import { MandateSchema } from "./mandate.js";
@@ -105,8 +105,13 @@ export function checkAgent(agentDir: string): CheckReport {
   if (!manifest.channels.includes("terminal")) {
     error("channels_terminal_missing", "agent.yaml must declare the terminal channel: `npm start` opens it and it needs no account");
   }
+  // `templates.json` is the one file in there that is NOT a conversation: it
+  // is the local registry of the templates the agent declares it sends, which
+  // is what makes "this name was never registered here" a refusal the channel
+  // can make instead of a 400 from Meta. A conversation therefore cannot be
+  // called `templates`, and this is the only place that says so.
   const whatsappDir = join(agentDir, "channels", "whatsapp");
-  const scripts = existsSync(whatsappDir) ? readdirSync(whatsappDir).filter((f) => f.endsWith(".json")).sort() : [];
+  const scripts = existsSync(whatsappDir) ? readdirSync(whatsappDir).filter((f) => f.endsWith(".json") && f !== TEMPLATE_REGISTRY_FILE).sort() : [];
   if (manifest.channels.includes("whatsapp") && scripts.length === 0) {
     error("channels_not_shipped", "agent.yaml declares the whatsapp channel but channels/whatsapp/ ships no conversation for the simulator to drive");
   }
@@ -117,6 +122,25 @@ export function checkAgent(agentDir: string): CheckReport {
     const parsed = ConversationScriptSchema.safeParse(JSON.parse(readFileSync(join(whatsappDir, file), "utf8")));
     if (!parsed.success) error("channels_script_invalid", `channels/whatsapp/${file}: ${parsed.error.message}`);
     else if (parsed.data.name !== file.replace(/\.json$/, "")) error("channels_script_invalid", `channels/whatsapp/${file} declares name ${parsed.data.name}`);
+  }
+  const registryPath = join(whatsappDir, TEMPLATE_REGISTRY_FILE);
+  if (existsSync(registryPath)) {
+    const parsed = TemplateRegistrySchema.safeParse(JSON.parse(readFileSync(registryPath, "utf8")));
+    if (!parsed.success) error("channels_templates_invalid", `channels/whatsapp/${TEMPLATE_REGISTRY_FILE}: ${parsed.error.message}`);
+    else {
+      // A body with no placeholder takes no variables, and one with `{{3}}`
+      // and no `{{2}}` cannot be filled: Meta numbers them from 1 without
+      // gaps, and a send that skips one is a 132000 nobody sees until the
+      // first real message goes out.
+      for (const template of parsed.data.templates) {
+        const arity = templateArity(template.body);
+        for (let n = 1; n <= arity; n += 1) {
+          if (!new RegExp(`\\{\\{\\s*${n}\\s*\\}\\}`).test(template.body)) {
+            error("channels_templates_invalid", `channels/whatsapp/${TEMPLATE_REGISTRY_FILE}: ${template.name} uses {{${arity}}} but never {{${n}}}; Meta numbers variables from 1 with no gaps`);
+          }
+        }
+      }
+    }
   }
 
   // mandate.example.json

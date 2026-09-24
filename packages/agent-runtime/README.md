@@ -22,13 +22,18 @@ nothing else.
   refuses on. The rules live in the adapter, above both — the collection
   hours, the bound contact, the secrecy of the debt, the document rule, the
   24-hour session window — so choosing a backend changes who carries the bytes
-  and nothing else. What an AGENT ships for this channel is the conversations,
-  under `agents/<name>/channels/whatsapp/`.
+  and nothing else. What an AGENT ships for this channel is the conversations
+  and its template registry, under `agents/<name>/channels/whatsapp/`.
+- `poll --channel whatsapp` comes back to a conversation the run that opened it
+  has ended: it reads the window back from the bundle's `channel.jsonl` and
+  confirms the outcome free-form while the 24 hours are open, as an approved
+  template once they have shut.
 - Every command: `start` (interactive, `--input`, `--scenario`, `--transcript`,
   `--json`, `--approve`/`--deny`, `--now`, `--channel`, `--backend`,
   `--conversation`, `--scripted`), `consent`, `approve`, `deny`, `resume`,
-  `rerun`, `reconcile`, `inspect` (`--json`, `--html <file>`), `poll`,
-  `webhook`, `check`, `eval`.
+  `rerun`, `reconcile`, `inspect` (`--json`, `--html <file>`), `poll`
+  (`--channel`, `--conversation`, `--backend`, `--wait`, `--simulate-payer`,
+  `--payer`, `--now`, `--json`), `webhook`, `check`, `eval`.
 - Setup: the manifest, the guardrails, the tools file, the system prompt, the
   local state, the signer, the proof bundle, the provider (Anthropic with a
   real key, replay without one), and the pinned clock (`--now`,

@@ -113,5 +113,12 @@ export interface ChannelLogLine {
   message_id: string;
   state: DeliveryState;
   text?: string;
+  /**
+   * Inbound only: the PROVIDER's own timestamp, unix seconds. Recorded
+   * because the 24-hour session window is counted on WhatsApp's clock and
+   * `at` is this process's, and a later run has to read the window back from
+   * this log rather than from a clock it does not share.
+   */
+  provider_timestamp?: number;
   refused?: { rule: string; detail: string };
 }

@@ -49,6 +49,7 @@ capability copies it; see `docs/OPEN_QUESTIONS.md` § 39f.
 | `packages/agent-runtime/src/scenarios.ts` | The section 12 runner and the pack schema. |
 | `packages/agent-runtime/src/adversarial.ts` | The section 9 runner and the case schema. |
 | `packages/agent-runtime/src/poll.ts` | Looking at a receivable until the payer acts. |
+| `packages/agent-runtime/src/commands/poll-whatsapp.ts` | The same loop, back in a conversation the run that opened it has ended: template outside the 24-hour window, free-form inside it. |
 | `packages/agent-runtime/src/webhook.ts` | The trigger receiver: signature, duplicates, out-of-order. |
 | `packages/agent-runtime/src/kit.ts` | `AgentKit`: the seam, documented field by field. |
 
@@ -61,7 +62,7 @@ have to be re-applied to it.
 - `npm run check` (the manifest gate, `checkAgent` in the core).
 - `npm run eval` (the section 9 suite plus every scenario in every mode, replay provider, no network).
 - `npm start -- --input "..." [--approve|--deny] [--json] [--now <ISO>]`, `--scenario <name>`, interactive `npm start`. A gate that runs a one-shot passes `--now` so an hours guardrail reads a pinned instant, not the hour the CI happens to run at.
-- `npm run approve|deny <execution-id>`, `npm run resume`, `npm run reconcile`, `npm run rerun <run-id>`, and for a collector `npm run poll` and `npm run webhook`.
+- `npm run approve|deny <execution-id>`, `npm run resume`, `npm run reconcile`, `npm run rerun <run-id>`, and for a collector `npm run poll` (add `--channel whatsapp --conversation <name>` to close the cycle back in the conversation) and `npm run webhook`.
 - The proof bundle under `runs/<run-id>/` (transcript, approvals, mandate snapshot, events, receipts), every line stamped with `actor`.
 - `npm run inspect <run-id> [--json] [--html <file>]`, which reads that bundle
   back as a timeline. A new agent gets it for nothing: `inspect` reads the

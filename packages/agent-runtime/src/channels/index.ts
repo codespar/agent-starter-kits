@@ -8,7 +8,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
-import { parseConversationScript, type ChannelName, type ConversationScript } from "@codespar/agent-core";
+import { parseConversationScript, parseTemplateRegistry, TEMPLATE_REGISTRY_FILE, type ChannelName, type ConversationScript, type WhatsAppTemplate } from "@codespar/agent-core";
 import type { Agent } from "../agent.js";
 
 export * from "./types.js";
@@ -24,9 +24,21 @@ export function listConversations(agent: Agent): string[] {
   const dir = conversationsDir(agent);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((f) => f.endsWith(".json"))
+    .filter((f) => f.endsWith(".json") && f !== TEMPLATE_REGISTRY_FILE)
     .map((f) => basename(f, ".json"))
     .sort();
+}
+
+/**
+ * The templates this agent declares, or none. An agent that never speaks
+ * outside the session window ships no registry and the channel then refuses
+ * every template, which is the honest answer: a template nobody declared is
+ * one Meta was never asked to approve.
+ */
+export function loadTemplates(agent: Agent): WhatsAppTemplate[] {
+  const path = join(conversationsDir(agent), TEMPLATE_REGISTRY_FILE);
+  if (!existsSync(path)) return [];
+  return parseTemplateRegistry(readFileSync(path, "utf8")).templates;
 }
 
 export function loadConversation(agent: Agent, name: string): ConversationScript {

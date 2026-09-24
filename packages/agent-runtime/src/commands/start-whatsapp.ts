@@ -2,10 +2,13 @@
  * `codespar-agent start --channel whatsapp`: wiring, and only wiring.
  *
  * It picks a backend, binds the conversation, hands the channel the rules the
- * agent's own guardrails declare, and runs the loop. The decisions are all
- * elsewhere: the rules in `channels/rules.ts`, the session window in
- * `channels/whatsapp/session.ts`, the gates in `terminal.ts`, which this path
- * reuses unchanged so the two channels cannot drift on what may execute.
+ * agent's own guardrails declare, and runs the loop — all of that through
+ * `channels/whatsapp/open.ts`, which `poll --channel whatsapp` goes through
+ * too, so the two commands cannot end up enforcing different rules. The
+ * decisions are elsewhere: the rules in `channels/rules.ts`, the session
+ * window in `channels/whatsapp/session.ts`, the gates in `terminal.ts`, which
+ * this path reuses unchanged so the two channels cannot drift on what may
+ * execute.
  */
 import { stdout } from "node:process";
 import { relative } from "node:path";
@@ -13,14 +16,11 @@ import type { ConversationScript } from "@codespar/agent-core";
 import type { Agent } from "../agent.js";
 import type { Setup } from "../setup.js";
 import { defaultAsk } from "../terminal.js";
-import { knownSubjects } from "../channels/index.js";
 import { converse } from "../channels/whatsapp/run.js";
-import { WhatsAppChannel } from "../channels/whatsapp/index.js";
-import { toGraphNumber, WhatsAppCloudApi, loadCloudApiConfig, type CloudApiConfig } from "../channels/whatsapp/cloud-api.js";
-import { EmulatorDriver, EmulatorUnreachableError, EMULATOR_DEFAULTS, EMULATOR_ENV, WhatsAppEmulator } from "../channels/whatsapp/emulator.js";
-import type { ChannelBackend } from "../channels/types.js";
+import { buildWhatsApp, simulatedCost, type WhatsAppBackendName } from "../channels/whatsapp/open.js";
+import { EmulatorUnreachableError } from "../channels/whatsapp/emulator.js";
 
-export type WhatsAppBackendName = "simulator" | "cloud-api";
+export type { WhatsAppBackendName };
 
 export interface StartWhatsAppOptions {
   agent: Agent;
@@ -52,61 +52,26 @@ export async function startWhatsApp(options: StartWhatsAppOptions): Promise<numb
     return 2;
   }
 
-  let backend: ChannelBackend;
-  let driver: EmulatorDriver | undefined;
-  let sessionKey: string | undefined;
-  if (options.backend === "cloud-api") {
-    const { config, missing } = loadCloudApiConfig(process.env);
-    if (!config) {
-      say(`the cloud-api backend needs credentials this repo ships none of: ${missing.join(", ")}.`);
-      say(`They live in the agent's .env (commented out in .env.example) and belong to a Meta Business account. The emulator needs none: drop --backend cloud-api.`);
-      return 1;
-    }
-    say("[whatsapp] cloud-api backend: this repo has never run one against Meta. The shapes are written from the published documentation; the first live run is yours.");
-    backend = new WhatsAppCloudApi({ config, conversation: { contact: script.contact }, say });
-  } else {
-    // The SAME backend, pointed somewhere else. What the emulator adds is the
-    // `_sim/*` side: making the person write, and moving the conversation clock.
-    const env = process.env;
-    const url = env[EMULATOR_ENV.url]?.trim() || EMULATOR_DEFAULTS.url;
-    const config: CloudApiConfig = {
-      baseUrl: url,
-      phoneNumberId: env[EMULATOR_ENV.phoneNumberId]?.trim() || EMULATOR_DEFAULTS.phoneNumberId,
-      // Not credentials: the emulator has no auth, and these are the values
-      // `npm run whatsapp:emulator` starts it with.
-      accessToken: "emulator",
-      verifyToken: "emulator",
-      appSecret: env[EMULATOR_ENV.appSecret]?.trim() || EMULATOR_DEFAULTS.appSecret,
-      apiVersion: EMULATOR_DEFAULTS.apiVersion,
-      webhookPort: Number(env[EMULATOR_ENV.webhookPort]?.trim() || EMULATOR_DEFAULTS.webhookPort),
-    };
-    driver = new EmulatorDriver(url);
-    sessionKey = `${config.phoneNumberId}:${toGraphNumber(script.contact)}`;
-    backend = new WhatsAppEmulator({
-      config,
-      conversation: { contact: script.contact },
-      driver,
-      say,
-      render: say,
-      ...(options.scripted ? { script } : { ask: defaultAsk }),
-      ...(options.now ? { pinAt: options.now() } : {}),
-    });
-  }
-
-  // The hours are the agent's, from `guardrails.envelope.collection_hours`. An agent that declares none gets no hours rule, which is correct: not every conversation is a collection.
-  const window = typeof s.guardrails.envelope?.["collection_hours"] === "string" ? (s.guardrails.envelope["collection_hours"] as string) : undefined;
-
-  const channel = new WhatsAppChannel({
-    backend,
+  const built = buildWhatsApp({
+    agent,
+    setup: s,
     conversation,
+    backend: options.backend,
     now,
-    ...(window ? { hours: { window, timezone: s.guardrails.timezone } } : {}),
-    knownSubjects: knownSubjects(agent),
-    bundle: s.bundle,
     say,
-    render: say,
+    bundle: s.bundle,
+    ...(options.scripted ? { script } : { ask: defaultAsk }),
+    // A run that STARTS a conversation pins the emulator's clock to its own instant.
+    ...(options.now ? { pinAt: options.now() } : {}),
   });
+  if ("refusal" in built) {
+    for (const line of built.refusal) say(line);
+    return 1;
+  }
+  const { channel, driver, sessionKey } = built;
 
+  // The channel is opened here, which is where an emulator that is not
+  // running has to be reported: after this the run has already started.
   try {
     await channel.open();
   } catch (err) {
@@ -132,13 +97,7 @@ export async function startWhatsApp(options: StartWhatsAppOptions): Promise<numb
   // compute: what the conversation would have cost under Meta's rules. Read for
   // the console only — never asserted on, because it is their engine's answer
   // and not a contract of ours.
-  let cost: { total: number; currency: string } | undefined;
-  if (driver && sessionKey) {
-    const state = (await driver.state(sessionKey).catch(() => undefined)) as
-      | { priced?: { total?: number; currency?: string } }
-      | undefined;
-    if (typeof state?.priced?.total === "number") cost = { total: state.priced.total, currency: state.priced.currency ?? "BRL" };
-  }
+  const cost = await simulatedCost(driver, sessionKey);
 
   const log = channel.log();
   const refused = log.filter((l) => l.refused).map((l) => ({ rule: l.refused!.rule, detail: l.refused!.detail }));

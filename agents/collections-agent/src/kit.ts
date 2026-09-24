@@ -52,6 +52,8 @@ const kit: AgentKit = {
   npm start -- --scenario <name>                               run a scenario pack (see scenarios/)
   npm start -- --channel whatsapp --conversation <name>        the conversation channel (needs npm run whatsapp:emulator at the repo root)
   npm start -- --channel whatsapp --conversation <name> --scripted   the same, with the debtor's turns replayed from channels/whatsapp/
+  npm run poll -- --channel whatsapp --conversation <name>     back to a conversation whose payment landed after the run ended:
+                                                               mensagem livre com a janela de 24h aberta, template aprovado depois dela
 options: --mode human|mandate  --provider anthropic|replay  --transcript <file>  --rail stub|api  --user <id>
          --wait <seconds>  --simulate-payer  --payer pays|expires|never (stub only)  --json
          --now <ISO 8601>  pin the run to that instant (collection hours, due dates, timestamps); env CODESPAR_AGENT_NOW is the same thing
@@ -101,6 +103,11 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
           return { ok: true as const, detail: "stub payer: will pay at the next look" };
         },
         behave: (b) => stub.setPayer(b),
+        // A receivable the rail has already looked at carries its fate in
+        // state.db, and `setPayer` only changes the default for the ones it
+        // has not. This is what lets a poll ask "and if nobody pays?" — the
+        // due date passes between two runs, never inside one.
+        decideFor: (attemptId, b) => stub.decide(attemptId, b),
       },
     };
   },
@@ -183,6 +190,29 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
     tell(text);
     setup.engine.note("message.debtor", execution.id, { state: execution.state, reason: execution.reason ?? null, text });
     return true;
+  },
+
+  /**
+   * The same outcome as `announceOutcome`, as one of the templates this agent
+   * declares in `channels/whatsapp/templates.json`. It is what a poll sends
+   * when the 24-hour window has shut, which for a collection is the ordinary
+   * case and not the edge one: agreed Tuesday, paid Friday.
+   *
+   * Three outcomes have approved copy and the rest return undefined on
+   * purpose. A charge that failed on the rail, a proposal that was denied or
+   * one that expired without a decision are not things this agent has ever
+   * had to say to a debtor days later — the first two are answered inside the
+   * turn that produced them, and inventing a template for them would mean
+   * asking Meta to approve copy nobody has written. The poll REPORTS an
+   * outcome it cannot carry rather than sending an approximate one.
+   */
+  outcomeTemplate: (execution) => {
+    const agreement = execution.items[0]?.alias ?? execution.items[0]?.beneficiary;
+    if (!agreement) return undefined;
+    if (execution.state === "settled") return { template: "acordo_quitado", variables: [agreement] };
+    if (execution.reason === "charge_expired") return { template: "acordo_cobranca_vencida", variables: [agreement] };
+    if (execution.reason === "charge_cancelled") return { template: "acordo_cobranca_cancelada", variables: [agreement] };
+    return undefined;
   },
 
   /** Agreements with a prior settled receivable under this policy, so the velocity window has history. */

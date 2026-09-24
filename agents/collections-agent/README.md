@@ -31,6 +31,7 @@ Scaffold instead of cloning: `npx -y @codespar/cli@0.14.0 init my-agent --templa
 | Two modes, one envelope | `approval: human` (default): the operator approves each issuance. `approval: mandate`: the agent issues alone inside the envelope and asks the operator above R$ 3.000,00. Same code, same states, same records. |
 | Readable refusal | Discount, instalments, due date, hours, cap, unknown debtor, revoked policy: each names itself in the trail and in the chat. |
 | Survives a restart | Kill the process after the issuance, run `npm run resume` then `npm run poll`: one charge, one settlement. |
+| Closes days later, on the channel | `npm run poll -- --channel whatsapp` comes back to a conversation whose run ended, and confirms by approved template once the 24-hour window has shut. |
 | Sandbox by construction | A key that does not start with `csk_test_` fails before any network call. The sandbox payer is a test-environment route the API refuses to a live key. |
 
 ## How the loop closes: poll, and a webhook when you have one
@@ -119,7 +120,45 @@ ours).
 
 **The conversation is part of the proof.** Each run writes `channel.jsonl` into
 its bundle: every message in and out, in order, with the delivery state and any
-refusal, and the contact masked, because the bundle travels.
+refusal, and the contact masked, because the bundle travels. Inbound lines also
+carry the PROVIDER's timestamp, which is what a later process counts the
+24-hour window from — see the poll below.
+
+### Agreed on Tuesday, paid on Friday
+
+The ordinary collection does not close inside the turn that issued the charge.
+The debtor agrees now and pays days later, and by then WhatsApp's 24-hour
+customer-service window has shut: the only thing a business may send is a
+template Meta approved in advance.
+
+```sh
+npm run poll -- --channel whatsapp --conversation acordo-1042
+```
+
+It comes back to the conversation from the RECORD — the bundle's
+`channel.jsonl` plus `state.db` — looks at the receivable the way the terminal
+poll does, and puts the outcome back into that same conversation, appended
+under the QR it confirms rather than into a second folder. **Free-form while
+the window is open, template once it has shut**, and which of the two is the
+window's decision, not the command's.
+
+Three things it will not do. Nothing waiting for a payer is a clean no-op that
+exits 0 and never opens the channel — a cron that fails on an empty queue is a
+cron somebody turns off. Polling twice tells the person once, because the
+cursor that says so lives in `state.db` and outlives the process. And a charge
+that expired gets the expiry template, never the paid one.
+
+Which executions belong to the conversation is decided by its `subject` — the
+agreement alias it is allowed to name. That is the same rule that keeps one
+debtor's agreement out of another's chat, used in the other direction.
+
+**The templates are the agent's**, declared in
+[`channels/whatsapp/templates.json`](channels/whatsapp/templates.json) with the
+name, the language and the body as submitted. `npm run check` validates it, and
+the channel refuses a name nobody declared, a language the template was not
+registered in, and a variable count the body has no placeholders for — the
+three things a local registry can see that Meta answers with a 4xx. Whether
+Meta APPROVED a template is not knowable from here and stays yours.
 
 **Consent in the conversation is wired and deliberately unused here.**
 `attestation.evidence` on the consent submit accepts four keys on this channel
@@ -137,6 +176,14 @@ with nobody at a keyboard, and asserts the final state and the shape of the
 conversation each time — not the wording. It needs the emulator running and
 FAILS rather than skips when it is not, so the gate never passes against
 nothing. It runs in the CI, which starts the emulator in its own step.
+
+A fourth run covers the case the other three cannot reach: agree, move the
+conversation's clock 26 hours, let the sandbox payer pay, poll. It asserts the
+execution settled and the confirmation went out as a TEMPLATE. Read that
+precisely: the emulator PRICES the 24-hour window and does not ENFORCE it
+(`docs/OPEN_QUESTIONS.md` §46a), so what passes is OUR choice of carrier and
+not the provider refusing the alternative. The day the emulator enforces the
+window, that run gets stronger without changing.
 
 ## The sandbox payer
 
@@ -166,7 +213,8 @@ Not in this kit yet: a policy signed by the API for the receiving side (section 
 | `npm run check` | The manifest gate: fails if the prompt, tools or guardrails contradict `agent.yaml`, if `AGENTS.md` and `CLAUDE.md` differ, or if `mcp`, `cli` or `schema` are missing. |
 | `npm run eval` | The adversarial suite (`evals/adversarial/`) and every scenario in every mode, on the replay provider and the stub rail. |
 | `npm run approve <execution-id>` / `npm run deny <execution-id>` | The operator's decision as its own command: decides an execution left in `awaiting_approval`, writes the section 4.2 artifact, runs it through the same last gate `npm start` uses, and waits for the payer (`--wait`, `--simulate-payer`). |
-| `npm run poll [--wait <s>] [--simulate-payer]` | Keeps looking at every receivable still waiting for its payer. Shows an instrument not shown yet, tells the payer the outcome once, fetches the paid record. |
+| `npm run poll [--wait <s>] [--simulate-payer] [--payer pays\|expires\|never]` | Keeps looking at every receivable still waiting for its payer. Shows an instrument not shown yet, tells the payer the outcome once, fetches the paid record. `--payer` scripts the stub's fixture, which is how "nobody paid and it expired" is reachable at all: a due date passes between two runs, never inside one. |
+| `npm run poll -- --channel whatsapp --conversation <name>` | The same, back in the conversation. Free-form while the 24-hour window is open, an approved template once it has shut. Nothing waiting is a clean no-op; polling twice tells the person once. See [Agreed on Tuesday, paid on Friday](#agreed-on-tuesday-paid-on-friday). |
 | `npm run webhook [--port 8787] [--secret <trigger secret>]` | The receiving end of a trigger delivery, on localhost. A stub: you register the trigger and expose the URL. |
 | `npm run resume` | After a crash: dispatches only what the outbox proves was never sent, reconciles the rest from the rail. Never issues twice. |
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches; the payer's behaviour (paid, expired) is read from the recording. |

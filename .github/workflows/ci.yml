@@ -52,7 +52,13 @@ jobs:
       - name: scenario matrix (section 12), every scenario of every agent
         run: npm run scenarios
       # Wave 4's gate: three runs of the collections-agent over the WhatsApp
-      # channel, each from a clean state directory, with nobody at a keyboard.
+      # channel, each from a clean state directory, with nobody at a keyboard,
+      # plus a fourth that is the production case the other three cannot reach
+      # (#25): agree, move the conversation's clock 26 hours, let the sandbox
+      # payer pay, then `poll --channel whatsapp`. It asserts the cycle closed
+      # and the confirmation went out as a TEMPLATE — which is OUR choice of
+      # carrier, since the emulator prices the 24-hour window and does not
+      # enforce it (docs/OPEN_QUESTIONS.md §46a).
       # The backend is the SAME code the official one uses, pointed at the
       # emulator above, so what passes is the adapter and not a mock of it. The
       # WHATSAPP_* variables are not set on this runner and Meta is never
@@ -60,7 +66,7 @@ jobs:
       # conversation (settled, one charge, one record, the copy-and-paste as
       # its own message after the QR), plus the three runs agreeing with each
       # other. It FAILS rather than skips when the emulator is not up.
-      - name: the WhatsApp channel closes the cycle three times from zero (against the emulator)
+      - name: the WhatsApp channel closes the cycle three times from zero, and once across a shut 24-hour window (against the emulator)
         run: npm run whatsapp:gate
       - name: one command, machine output
         run: |

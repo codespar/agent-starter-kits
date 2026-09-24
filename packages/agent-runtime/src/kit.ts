@@ -50,6 +50,21 @@ export interface SandboxPayer {
   pay(chargeId: string, attemptId: string): Promise<{ ok: true; detail: string } | { ok: false; detail: string }>;
   /** Stub only: what the fixture does with receivables issued from now on. */
   behave(behaviour: StubPayerBehaviour): void;
+  /**
+   * Stub only: what the fixture does with ONE receivable that was already
+   * issued and looked at.
+   *
+   * It is separate from `behave` because they answer different questions, and
+   * a poll needs the second one. `behave` sets the default for receivables
+   * the rail has not seen yet; by the time a poll resumes a conversation the
+   * rail HAS seen this one, and its fate is a row in state.db that only this
+   * rewrites. It is separate from `pay` because `pay` means pay — the
+   * scenario runner's late payer calls it after telling the fixture to sit on
+   * everything, and it has to pay anyway.
+   *
+   * The API's payer is a route and has no equivalent, so this is optional.
+   */
+  decideFor?(attemptId: string, behaviour: StubPayerBehaviour): void;
 }
 
 export interface RailContext {
@@ -152,6 +167,23 @@ export interface AgentKit {
   presentInstrument?(execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument, tell: (line: string) => void): void;
   /** `await-payer` only: the one message per outcome the counterparty receives. */
   announceOutcome?(execution: Execution, setup: Setup, tell: (line: string) => void): boolean;
+  /**
+   * The SAME outcome as `announceOutcome`, carried as an approved template.
+   *
+   * It exists because a channel can have a rule about WHEN free text may be
+   * sent, and WhatsApp does: outside the 24 hours after the person's last
+   * message only a template Meta approved goes out. A collection reaches that
+   * state as its normal case — agreed Tuesday, paid Friday — so an agent that
+   * closes its cycle on a channel owns a template for each outcome it can
+   * close on, or it cannot tell the person at all.
+   *
+   * The name must be one the agent declares in
+   * `channels/whatsapp/templates.json`; the language is the registry's and is
+   * not repeated here. `undefined` means this agent has no approved copy for
+   * that outcome, which the caller REPORTS rather than papers over: a person
+   * who was not told was not told.
+   */
+  outcomeTemplate?(execution: Execution): { template: string; variables: string[] } | undefined;
   /** Runs before a one-shot or an interactive session, when the mandate may have to be born first. Returns false to stop the run. */
   ensureMandate?(ctx: EnsureMandateContext): Promise<boolean>;
   /** `codespar-agent consent`. Absent means the agent has no consent step. */

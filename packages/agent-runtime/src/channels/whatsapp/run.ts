@@ -19,6 +19,7 @@ import type { ChargeInstrument, Execution } from "@codespar/agent-core";
 import { handleExecution, type TerminalOptions } from "../../terminal.js";
 import type { Setup } from "../../setup.js";
 import type { OutboundBody } from "../types.js";
+import { instrumentBodies } from "./present.js";
 import type { WhatsAppChannel } from "./index.js";
 
 export interface ConverseOptions {
@@ -62,29 +63,12 @@ class Outbox {
 export async function converse(options: ConverseOptions): Promise<ConverseResult> {
   const { setup: s, channel, approver, say } = options;
   const outbox = new Outbox(channel);
-  const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: s.mandate.currency });
   const replies: string[] = [];
   const toolCalls: Array<{ name: string; refused: boolean }> = [];
   let turns = 0;
 
   const presentInstrument = (execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument): Promise<void> => {
-    const item = execution.items[instalment - 1];
-    const count = execution.items.length;
-    const head = [
-      count > 1 ? `Parcela ${instalment}/${count}: ` : "",
-      item ? money.format(item.amount / 100) : "",
-      instrument.due_date ? `, vence ${formatDate(instrument.due_date)}` : "",
-      ` — cobranca ${chargeId}`,
-    ].join("");
-    outbox.push({ kind: "text", text: head });
-    if (instrument.pix_copy_paste) {
-      outbox.push({ kind: "media", media: "qr", data: instrument.pix_copy_paste });
-      outbox.push({ kind: "instrument", instrument: "pix_copy_paste", value: instrument.pix_copy_paste });
-    }
-    if (instrument.boleto_bank_line) {
-      outbox.push({ kind: "text", text: "Ou pelo boleto, linha digitavel:" });
-      outbox.push({ kind: "instrument", instrument: "boleto_bank_line", value: instrument.boleto_bank_line });
-    }
+    for (const body of instrumentBodies(execution, instalment, chargeId, instrument, s.mandate.currency)) outbox.push(body);
     // Awaited by the poll: the person has the code in hand before the next look, not after the cycle closed.
     return outbox.drain();
   };
@@ -126,10 +110,4 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
   }
 
   return { turns, replies, toolCalls, executions: s.engine.list().filter((e) => e.run_id === s.runId) };
-}
-
-/** `2026-09-30` -> `30/09/2026`. */
-function formatDate(iso: string): string {
-  const [y, m, d] = iso.split("-");
-  return `${d}/${m}/${y}`;
 }

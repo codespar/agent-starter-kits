@@ -620,16 +620,44 @@ webhook carries `type: "text"`, `text.body: ""`. So the debtor can be SHOWN
 collections over WhatsApp is built on. An `_sim/inbound` that carried
 `interactive.button_reply` through to the webhook would close it.
 
-### And one gap that is ours, not the emulator's
+### And one gap that was ours, not the emulator's — now closed
 
 The case in (a) — the agent speaking after the window shut — is the NORMAL
 collections case: the debtor agrees on Tuesday and pays on Friday, and
 "recebemos, acordo quitado" falls outside the window, where only an approved
-template may go. We cannot run it end to end, and not because of the emulator:
-there is no `codespar-agent poll --channel whatsapp`. The terminal has `poll`
-for exactly this (the payer acts after the conversation ended) and the channel
-does not, so the outcome message is always sent inside the same turn that
-issued the charge, which is always inside the window. Closing it needs the
-poll command to take a channel, and the agent to own an approved template for
-the outcome — and that template is (a) of §42, which needs a Meta account.
-**Open, and ours.**
+template may go. Until issue #25 we could not run it end to end, and not
+because of the emulator: there was no `codespar-agent poll --channel
+whatsapp`. The terminal had `poll` for exactly this (the payer acts after the
+conversation ended) and the channel did not, so the outcome message was always
+sent inside the same turn that issued the charge, which is always inside the
+window.
+
+**CLOSED.** `poll` took a `--channel`, the agent took a template registry
+(`channels/whatsapp/templates.json`), and the gate took a fourth run: agree,
+`POST /_sim/clock {"advance_hours": 26}`, the sandbox payer pays, poll. What
+the poll resumes from is the RECORD — the bundle's `channel.jsonl`, which now
+carries the provider's timestamp on every inbound line, plus `state.db` — and
+the confirmation is appended to that same conversation rather than opening a
+second one.
+
+Two things about it are worth keeping written down rather than implied.
+
+**The fourth run asserts OUR choice of carrier, not the provider's refusal.**
+Because of (a) above, the emulator would have taken the free-form message too.
+The session window in `packages/agent-runtime/src/channels/whatsapp/session.ts`
+is what decides, and the gate's own output says so in as many words. The day
+the emulator enforces the window, that run gets stronger without a line
+changing — which is the same bet the rest of this section makes.
+
+**Template APPROVAL is still a stub and still ours to leave that way.** The
+registry proves the agent DECLARED the name, the language and the variable
+count, so the three things Meta answers with a 4xx are refused locally instead.
+Whether Meta approved the copy is a status in a Business account this
+repository does not have. That is (a) of §42 and is unchanged.
+
+**Open, and smaller:** an outcome with no declared template. The collections
+agent declares three (paid, expired, cancelled) and returns nothing for a rail
+failure or a denial, because nobody has written copy for telling a debtor
+those, days later, in a template. The poll REPORTS such an outcome and exits
+non-zero rather than sending an approximate one — the record says settled and
+the person does not know — which is the right behaviour and not a solution.
