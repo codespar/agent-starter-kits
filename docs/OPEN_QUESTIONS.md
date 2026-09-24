@@ -328,3 +328,143 @@ Two things the fix had to keep apart, because they want opposite answers. A line
 **What both shapes need from the core, and now have:** every attempt is dispatched and every attempt is named (this PR). Before it, the one-execution shape silently dropped the items after the first refusal, which is why the choice looked like a choice between "the list is attested" and "a refusal does not stop the others". It was never that; it was a defect in `dispatch`.
 
 **v5.3:** say both in section 5, with the rule of thumb above, and drop the implication in section 12 that `partial-batch-failure` and "falha parcial multi-item" are the same test written twice — they are the same PROPERTY in two shapes, and a kit declares which shape it is.
+
+# The WhatsApp channel (wave 4), against spec v5.2
+
+Same rule. Entries 41 to 45 come from building `channels/whatsapp` and the
+house simulator on 2026-09-24. Input for v5.3.
+
+## 41. Where a channel lives: the runner owns the behaviour, the agent owns the conversations
+
+Section 5's anatomy table puts `channels/terminal/` and `channels/whatsapp/`
+inside an agent. Since the #18 refactor the runner owns channels — one
+`terminal.ts` serves all four agents, and a second copy of it per agent is the
+thing that refactor removed — so a per-agent `channels/terminal/` would be an
+empty directory whose only job is to match a table.
+
+What the code does: the BEHAVIOUR is `packages/agent-runtime/src/channels/`
+(the seam, the rules, the WhatsApp adapter, its two backends), and what an
+agent ships under `agents/<name>/channels/whatsapp/` is the CONVERSATIONS —
+one JSON file per conversation, naming the contact it is bound to, the
+agreement it may be about, and the person's turns. That is the half a runner
+cannot have: which debtor, which number, which agreement.
+
+`npm run check` reads the split in both directions (`channels_not_shipped`,
+`channels_undeclared`, `channels_script_invalid`, `channels_terminal_missing`),
+so `channels: [terminal, whatsapp]` is a claim about files rather than a label.
+The schema for a conversation is in the core (`packages/agent-core/src/channels.ts`)
+next to the manifest and the guardrails, because the check parses it and the
+core is what the check can import.
+
+One correction that belongs here: §21 and the `collections-agent` README call
+the webhook receiver `channels/webhook/`. There is no such directory and there
+never was — it is `packages/agent-runtime/src/webhook.ts`, reached by
+`npm run webhook`. Now that `channels/` means something specific the wording
+would mislead, so the README says the path. **v5.3:** section 5 should say
+where each half lives, and drop `channels/webhook/` as a path.
+
+## 42. What the house simulator is, and the two things it cannot be
+
+The simulator speaks WhatsApp's shape with no network, no Meta account and no
+credential: inbound and outbound messages, an image, a template, delivery
+states, and the 24-hour session window. It obeys the rules that would bite in
+production rather than accepting everything — a free-form message more than 24
+hours after the person's last one is refused, exactly as Meta refuses it —
+because a rule that only fires against the real provider is a rule you meet in
+production. Its message ids are `sim_...` and deliberately never `wamid....`;
+see §43 for why that matters.
+
+Two things are STUBS and are named rather than implied.
+
+a. **Template approval.** A template is registered in a Meta Business account,
+reviewed by Meta and given a status no call of ours can read without that
+account. What the channel holds is the LOCAL registry — the template names the
+agent declares — so sending one that was never declared is refused here instead
+of 400-ing at Meta. Whether Meta approved it is the developer's to check.
+
+b. **The QR as an image on the official backend.** Sending an image means
+uploading it first (`POST /{version}/{phone-number-id}/media`, multipart) or
+handing Meta a public URL. This repo hosts nothing and renders no PNG —
+`qrcode-terminal` draws characters — so `buildSendRequest` answers
+`media_upload_unimplemented` for an image and the channel sends the
+copy-and-paste as its own text message, which is the string that actually pays.
+The simulator draws the QR. **Open:** a PNG renderer plus the media upload, or
+an accepted answer that on WhatsApp the copy-and-paste is the payable artifact
+and the QR is for a second device.
+
+And the whole official backend is written against Meta's published
+documentation and has never been run against Meta from this repo. The pure
+half — the signature check, the webhook parse, the verification handshake and
+the request builder — is under test; the send is one `fetch` over a request
+those functions built. The READMEs say this in those words.
+
+## 43. Consent in the conversation (decision 19a): the seam is wired, and a simulator may not use it
+
+ent#1615 landed `attestation.evidence` on `POST /v1/consents/{token}/submit`.
+For the `whatsapp` channel the API accepts exactly four keys beside `channel`
+— `contact`, `message_id`, `session_id`, `provider_ts` — and refuses `ip`,
+`user_agent`, `device_id_hash` and `geo` with 400 `attestation_evidence_invalid`,
+because a conversation hands a partner a message and a sender, not a socket.
+The wire carries `contact` in the clear and the API hashes it into
+`contact_hash` under the org's own key, which a partner cannot compute.
+
+`channels/whatsapp/evidence.ts` builds that object and mirrors the rule, so a
+mistake fails in this repo instead of failing as a 400 at the submit.
+
+**It refuses to build one from the simulator, and that is the answer to the
+question the wave asked.** Everything in the object is a claim about what a
+provider observed. A simulated conversation was observed by nobody: the message
+id is a counter, the timestamp is this process's clock and the contact is a
+fixture. Signing that would be the same false declaration the API's own schema
+warns about for a partner that declares `other` for a WhatsApp act. So
+`evidenceFor` returns a refusal with the reason on it, and the simulator's ids
+are `sim_...` so nothing downstream can mistake the two.
+
+**Two things still stand between the seam and a mandate born in a chat, and
+neither is this lane's to close.** The `collections-agent` has no consent step
+at all — the MERCHANT's collection policy is its own file, because a signed
+policy for the receiving side does not exist in the API (§25, spec section 16)
+— so the agent that has the WhatsApp channel has nothing to attest. And the
+agent that does have a consent step, the `bills-agent`, runs at a terminal
+where `in_person` is the correct attestation and `partner_session` would be a
+worse claim, not a better one. **Open for v5.3:** which agent is the one whose
+mandate is born in a conversation, and does `method: "verified_code"` (whose
+contact must carry one of our own OTP verifications within 24 h) fit a kit
+better than `partner_session` for that agent.
+
+## 44. Measured: three runs from zero, no intervention
+
+`npm run whatsapp:gate` — three runs of the `collections-agent` over the
+channel, each from a clean state directory and a clean runs directory, the
+debtor's turns from `channels/whatsapp/acordo-1042.json`, the model from the
+recorded transcript, the rail the stub and the payer its fixture. No network,
+no key, no Meta account. Measured 2026-09-24, on `--mode mandate`:
+
+| Run | Final state | Records | In | Out |
+|---|---|---|---|---|
+| 1 | `settled` | 1 | 2 | 8 |
+| 2 | `settled` | 1 | 2 | 8 |
+| 3 | `settled` | 1 | 2 | 8 |
+
+What the gate asserts is the final state and the SHAPE of the conversation,
+never the wording: settled, one receivable, one record, every message
+delivered, the QR followed immediately by the copy-and-paste as its own
+message, the person told the outcome, the contact masked in the log, and no
+message carrying anything document-shaped. Then the three runs must agree with
+each other and must not share a charge id — the part one run cannot show. The
+clock is pinned to `2026-09-23T14:00:00-03:00` (#16) so the collection-hours
+guardrail reads the same at 03:00 as at 15:00. `--mode human` passes too, with
+`--approve`, because a script has no keyboard for an operator to answer from.
+
+## 45. The interactive simulator has one keyboard and two people at it
+
+`npm start -- --channel whatsapp` without `--scripted` reads the debtor's turns
+from the terminal, and in `approval: human` the operator's question is read
+from the same terminal. That is one person playing both parts, distinguishable
+only by the prompt (`voce (+55 ****4321)>` against `[operador] Aprovar ...`).
+It is honest for a demo and wrong for anything else; the operator's surface is
+the dashboard, and this kit has none. The scripted path has no such problem,
+which is why the gate uses it, and a scripted run in `human` mode without
+`--approve` is refused outright rather than left waiting on a keyboard nobody
+is at. **Open:** a second channel for the operator, or an explicit statement
+that the interactive simulator is a demo and `--scripted` is the real path.
