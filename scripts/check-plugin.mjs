@@ -13,7 +13,10 @@ const PLUGIN_NAME = "codespar-core";
 const MANIFESTS = [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".cursor-plugin/plugin.json", "plugin.json", "mcp.json", ".mcp.json", ".agents/plugins/marketplace.json"];
 const SKILLS_DIR = "skills";
 const AGENTS_DIR = "agents";
-/** Paths that belong to `packages/agent-runtime`. An agent holding one has forked the runner. */
+/** Paths that belong to `packages/agent-runtime`. An agent holding one has forked the runner.
+ *  Note what is NOT here: `channels/whatsapp/` is the agent's own, and is where it ships the
+ *  conversations a runner cannot know (which number, which debtor, which agreement). The
+ *  channel's BEHAVIOUR is the runtime's, which is why `channels/terminal` is on the list. */
 const RUNTIME_OWNED = ["src/commands", "src/main.ts", "channels/terminal", "channels/webhook", "src/setup.ts", "src/scenarios.ts", "src/adversarial.ts"];
 const RULES_DIR = "rules";
 const AGENTS_MD = "AGENTS.md";

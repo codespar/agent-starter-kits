@@ -72,7 +72,7 @@ function conversationOf(payload: Payload): ChannelLine[] {
 
 const INSIDE_HOURS = ["--now", "2026-09-23T14:00:00-03:00"];
 const AFTER_HOURS = ["--now", "2026-09-23T22:30:00-03:00"];
-const SCRIPTED = ["--channel", "whatsapp", "--scripted", "--simulate-payer", "--json"];
+const SCRIPTED = ["--channel", "whatsapp", "--conversation", "acordo-1042", "--scripted", "--simulate-payer", "--json"];
 
 describe("the cycle closes over the WhatsApp channel", () => {
   it("settles in mandate mode with nobody at a keyboard, and sends the QR with the copy-and-paste under it", () => {
@@ -113,6 +113,20 @@ describe("the cycle closes over the WhatsApp channel", () => {
     }
   });
 
+  it("tells the person once when the charge expires, and writes no record", () => {
+    const out = run(["--channel", "whatsapp", "--conversation", "acordo-1103", "--scripted", "--mode", "mandate", "--payer", "expires", "--json", ...INSIDE_HOURS]);
+    const payload = payloadOf(out.stdout);
+    expect(payload.executions.map((e) => e.state)).toEqual(["failed"]);
+    expect(payload.receipts).toEqual([]);
+    expect(payload.channel.conversation).toBe("acordo-1103");
+    // The QR still went out: it was payable, nobody paid it.
+    const outbound = conversationOf(payload).filter((l) => l.direction === "out");
+    expect(outbound.some((l) => l.kind === "media")).toBe(true);
+    // The kit's one-per-outcome message, sent once however many looks carried the event.
+    // The model's own reply also says the charge expired, which is the terminal's behaviour too.
+    expect(outbound.filter((l) => String(l.text ?? "").startsWith("A cobranca venceu sem pagamento"))).toHaveLength(1);
+  });
+
   it("refuses to say anything at all outside the collection hours, and issues nothing", () => {
     const out = run([...SCRIPTED, "--mode", "mandate", ...AFTER_HOURS]);
     const payload = payloadOf(out.stdout);
@@ -125,7 +139,7 @@ describe("the cycle closes over the WhatsApp channel", () => {
 
 describe("what the channel refuses to be asked", () => {
   it("refuses the cloud-api backend by naming every credential this repo does not ship", () => {
-    const out = run(["--channel", "whatsapp", "--scripted", "--backend", "cloud-api", "--mode", "mandate", ...INSIDE_HOURS]);
+    const out = run(["--channel", "whatsapp", "--conversation", "acordo-1042", "--scripted", "--backend", "cloud-api", "--mode", "mandate", ...INSIDE_HOURS]);
     expect(out.code).toBe(1);
     for (const name of ["WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET"]) {
       expect(out.stderr).toContain(name);
@@ -145,9 +159,16 @@ describe("what the channel refuses to be asked", () => {
   });
 
   it("refuses a scripted human-mode run rather than waiting on a keyboard nobody is at", () => {
-    const out = run(["--channel", "whatsapp", "--scripted", "--mode", "human", "--json", ...INSIDE_HOURS]);
+    const out = run(["--channel", "whatsapp", "--conversation", "acordo-1042", "--scripted", "--mode", "human", "--json", ...INSIDE_HOURS]);
     expect(out.code).toBe(2);
     expect(out.stderr).toContain("--approve");
+  });
+
+  it("asks which conversation when the agent ships more than one: which debtor is not a default", () => {
+    const out = run(["--channel", "whatsapp", "--scripted", "--json", ...INSIDE_HOURS]);
+    expect(out.code).toBe(2);
+    expect(out.stderr).toContain("--conversation is required");
+    expect(out.stderr).toContain("acordo-1103");
   });
 
   it("refuses a conversation the agent does not ship", () => {

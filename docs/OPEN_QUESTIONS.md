@@ -392,6 +392,19 @@ The simulator draws the QR. **Open:** a PNG renderer plus the media upload, or
 an accepted answer that on WhatsApp the copy-and-paste is the payable artifact
 and the QR is for a second device.
 
+c. **The secrecy rule's reach is the alias, and only the alias.** "A message
+may not name another debtor's agreement" is enforced by comparing the message
+against the aliases the agent has conversations for (`acordo-1042`,
+`acordo-1103`), which is the set the runner can see: the debtors' book is
+`src/agreements.ts` and the runtime does not read an agent's source. So a
+message carrying `acordo-1103` into Joana's conversation is refused, and "o
+Carlos tambem deve" is not. That is a real limit and not a bug to fix in the
+channel — deciding whether a sentence discloses somebody's debt is the prompt's
+job and the operator's, exactly like "no embarrassment". **Open:** should an
+agent declare its subjects somewhere the runner can read (a `subjects` key on
+the guardrails envelope), so the rule covers the whole book rather than the
+conversations that happen to be shipped?
+
 And the whole official backend is written against Meta's published
 documentation and has never been run against Meta from this repo. The pure
 half — the signature check, the webhook parse, the verification handshake and
@@ -445,6 +458,10 @@ no key, no Meta account. Measured 2026-09-24, on `--mode mandate`:
 | 1 | `settled` | 1 | 2 | 8 |
 | 2 | `settled` | 1 | 2 | 8 |
 | 3 | `settled` | 1 | 2 | 8 |
+
+The gate names its conversation (`--conversation acordo-1042`), because the
+agent ships two: `acordo-1042` ends paid and `acordo-1103` ends expired, and
+which person a run messages is not a default.
 
 What the gate asserts is the final state and the SHAPE of the conversation,
 never the wording: settled, one receivable, one record, every message

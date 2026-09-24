@@ -48,9 +48,13 @@ two backends behind one interface, and **the house simulator is the one that
 works out of the box**:
 
 ```sh
-npm run start:collections -- --channel whatsapp             # you type as the debtor
-npm run start:collections -- --channel whatsapp --scripted --mode mandate --simulate-payer --now 2026-09-23T14:00:00-03:00
+npm run start:collections -- --channel whatsapp --conversation acordo-1042
+npm run start:collections -- --channel whatsapp --conversation acordo-1042 --scripted --mode mandate --simulate-payer --now 2026-09-23T14:00:00-03:00
 ```
+
+`--conversation` is required because the agent ships two, and which person you
+are messaging is not a default: `acordo-1042` is Joana and ends paid,
+`acordo-1103` is Ana Paula and ends expired (add `--payer expires`).
 
 No network, no Meta account, no credential. The simulator draws the
 conversation on stderr and speaks WhatsApp's shape: messages in and out, an
@@ -69,7 +73,7 @@ the agent's, and `npm run check` fails if the two disagree in either direction.
 Every outbound message is checked before anything carries it: nothing outside
 the collection hours (`guardrails.envelope.collection_hours`), nothing to a
 contact other than the one the conversation is bound to, nothing naming
-another debtor's agreement, and no CPF or CNPJ in a message. A refused message
+another debtor's agreement (by its alias, which is what the agent's own book calls it), and no CPF or CNPJ in a message. A refused message
 is not a failed delivery — it never left the process — and it is recorded as
 such in the conversation log. A Pix copy-and-paste and a boleto line are their
 own message kind and are not read as prose, which is why the document rule does

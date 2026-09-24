@@ -26,7 +26,7 @@ above is a WhatsApp scene — a debtor replying to a message — so it is worth
 filming on the channel it is written for:
 
 ```sh
-npm run start:collections -- --channel whatsapp --simulate-payer
+npm run start:collections -- --channel whatsapp --conversation acordo-1042 --simulate-payer
 ```
 
 The house simulator draws the conversation: you type as Joana, the store

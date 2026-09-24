@@ -44,10 +44,14 @@ one of these files: they are committed, and the simulator does not need one.
 ## Running it
 
 ```sh
-npm start -- --channel whatsapp                # you type as the debtor
-npm start -- --channel whatsapp --scripted     # the turns above, replayed
-npm start -- --channel whatsapp --conversation acordo-1042 --scripted
+npm start -- --channel whatsapp --conversation acordo-1042              # you type as Joana
+npm start -- --channel whatsapp --conversation acordo-1042 --scripted   # the turns above, replayed
+npm start -- --channel whatsapp --conversation acordo-1103 --scripted --payer expires
 ```
+
+`--conversation` is required: this agent ships two, and which person you are
+messaging is not a default. `acordo-1042` ends paid; `acordo-1103` is the other
+ending, where nobody pays and the charge expires.
 
 The default backend is the house simulator: no network, no Meta account, no
 credential. `npm run whatsapp:gate` at the repository root runs the whole

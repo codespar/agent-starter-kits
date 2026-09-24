@@ -16,7 +16,7 @@ import { defaultAsk } from "../terminal.js";
 import { knownSubjects } from "../channels/index.js";
 import { converse } from "../channels/whatsapp/run.js";
 import { WhatsAppChannel } from "../channels/whatsapp/index.js";
-import { WhatsAppCloudApi, CLOUD_API_ENV, loadCloudApiConfig } from "../channels/whatsapp/cloud-api.js";
+import { WhatsAppCloudApi, loadCloudApiConfig } from "../channels/whatsapp/cloud-api.js";
 import { WhatsAppSimulator } from "../channels/whatsapp/simulator.js";
 import type { ChannelBackend } from "../channels/types.js";
 

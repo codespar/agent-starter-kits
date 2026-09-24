@@ -46,6 +46,8 @@ function runOnce(index, mode) {
         AGENT,
         "--channel",
         "whatsapp",
+        "--conversation",
+        "acordo-1042",
         "--scripted",
         "--mode",
         mode,
