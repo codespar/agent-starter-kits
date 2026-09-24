@@ -47,6 +47,29 @@ export class ProofBundle {
     appendFileSync(join(this.dir, "events.jsonl"), JSON.stringify(event) + "\n");
   }
 
+  /**
+   * The conversation, when the run had one: every message in and out of a
+   * channel, in order, with what the channel did with it. Separate from the
+   * transcript, which is the MODEL's side, because on a channel the two are
+   * not the same thing — a message the channel refused never reached the
+   * person, and the QR and the copy-and-paste were sent by the runner.
+   *
+   * It carries no contact in the clear: the channel masks it before it gets
+   * here, because the bundle travels.
+   */
+  channel(line: Record<string, unknown>): void {
+    appendFileSync(join(this.dir, "channel.jsonl"), JSON.stringify(line) + "\n");
+  }
+
+  readChannel(): Record<string, unknown>[] {
+    const path = join(this.dir, "channel.jsonl");
+    if (!existsSync(path)) return [];
+    return readFileSync(path, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+  }
+
   readEvents(): Record<string, unknown>[] {
     const path = join(this.dir, "events.jsonl");
     if (!existsSync(path)) return [];

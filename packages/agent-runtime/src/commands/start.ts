@@ -2,19 +2,22 @@
  * `codespar-agent start`                              interactive terminal
  * `codespar-agent start --input "..."`                one turn, no prompt
  * `codespar-agent start --scenario happy-path`        a scenario pack, every mode it declares
+ * `codespar-agent start --channel whatsapp`           the conversation channel
  *
  * `--json` puts machine data on stdout (valid JSON, nothing else) and the
  * human messages on stderr.
  */
 import { stderr, stdout } from "node:process";
 import { relative, resolve } from "node:path";
-import { NotATestKeyError, isTestKey, loadManifest, resolveFixedClock, type ApprovalMode } from "@codespar/agent-core";
+import { NotATestKeyError, isTestKey, loadManifest, resolveFixedClock, type ApprovalMode, type ChannelName } from "@codespar/agent-core";
 import { join } from "node:path";
 import type { Agent } from "../agent.js";
 import type { RailKind } from "../kit.js";
 import { resolveProvider, resolveRailKind, setup, type ProviderKind } from "../setup.js";
 import { checkScenario, listScenarios, loadScenario, runScenario, scenariosDir } from "../scenarios.js";
 import { closeTerminal, defaultAsk, handleExecution, interactive } from "../terminal.js";
+import { resolveConversation } from "../channels/index.js";
+import { startWhatsApp, type WhatsAppBackendName } from "./start-whatsapp.js";
 
 interface Args {
   input?: string;
@@ -31,11 +34,17 @@ interface Args {
   payer?: "pays" | "expires" | "never";
   /** ISO 8601 instant the run is pinned to (the guardrails read it instead of the wall clock). */
   now?: string;
+  /** Which channel the person is on. `terminal` is every agent's; `whatsapp` needs a conversation. */
+  channel: ChannelName;
+  backend?: WhatsAppBackendName;
+  conversation?: string;
+  /** Replay the conversation's turns instead of reading them from the keyboard. */
+  scripted: boolean;
   help: boolean;
 }
 
 export function parseArgs(argv: string[], awaitsPayer: boolean): Args {
-  const args: Args = { json: false, simulatePayer: false, help: false };
+  const args: Args = { json: false, simulatePayer: false, help: false, channel: "terminal", scripted: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i]!;
     const next = () => {
@@ -73,6 +82,16 @@ export function parseArgs(argv: string[], awaitsPayer: boolean): Args {
       if (v !== "pays" && v !== "expires" && v !== "never") throw new Error("--payer must be pays, expires or never");
       args.payer = v;
     } else if (a === "--now") args.now = next();
+    else if (a === "--channel") {
+      const v = next();
+      if (v !== "terminal" && v !== "whatsapp") throw new Error("--channel must be terminal or whatsapp");
+      args.channel = v;
+    } else if (a === "--backend") {
+      const v = next();
+      if (v !== "simulator" && v !== "cloud-api") throw new Error("--backend must be simulator or cloud-api");
+      args.backend = v;
+    } else if (a === "--conversation") args.conversation = next();
+    else if (a === "--scripted") args.scripted = true;
     else if (a === "--help" || a === "-h") args.help = true;
     else throw new Error(`unknown argument ${a}`);
   }
@@ -113,16 +132,40 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
 
   if (args.scenario) return runScenarioCommand(agent, args, railKind, say);
 
+  // A channel is a conversation, so the flags a one-shot and a scenario pack use have no meaning on one.
+  if (args.channel === "whatsapp" && (args.input !== undefined || args.scenario !== undefined)) {
+    say("--channel whatsapp is a conversation: it takes its turns from channels/whatsapp/, not from --input or --scenario");
+    return 2;
+  }
+  if (args.channel !== "whatsapp" && (args.backend !== undefined || args.conversation !== undefined || args.scripted)) {
+    say("--backend, --conversation and --scripted belong to --channel whatsapp");
+    return 2;
+  }
+  if (args.channel === "whatsapp" && !loadManifest(join(agent.dir, "agent.yaml")).manifest.channels.includes("whatsapp")) {
+    say(`${agent.slug} does not declare the whatsapp channel in agent.yaml`);
+    return 2;
+  }
+
   if (agent.kit.ensureMandate) {
     const ok = await agent.kit.ensureMandate({ agentDir: agent.dir, argv, say, railKind, oneShot: args.input !== undefined, ask: defaultAsk });
     if (!ok) return 1;
   }
 
-  // One-shot without a model: replay the recorded scenario whose first turn is this input.
+  // The first thing the person says: the `--input` of a one-shot, or the first scripted turn of a conversation.
+  let conversationScript;
+  try {
+    conversationScript = args.channel === "whatsapp" ? resolveConversation(agent, args.conversation) : undefined;
+  } catch (err) {
+    say(err instanceof Error ? err.message : String(err));
+    return 2;
+  }
+  const firstInput = args.input ?? (args.scripted ? conversationScript?.turns[0].text : undefined);
+
+  // No model: replay the recorded scenario whose first turn is what the person said first.
   let transcript = args.transcript;
   const provider = resolveProvider(process.env, args.provider);
-  if (provider === "replay" && !transcript && args.input) {
-    const match = listScenarios(agent).map((n) => loadScenario(agent, n)).find((s) => s.turns[0].input === args.input);
+  if (provider === "replay" && !transcript && firstInput) {
+    const match = listScenarios(agent).map((n) => loadScenario(agent, n)).find((s) => s.turns[0].input === firstInput);
     if (match) transcript = resolve(scenariosDir(agent), match.transcript);
     else {
       say(`no ANTHROPIC_API_KEY and no recorded transcript for that input. Set the key, pass --transcript, or use one of: ${listScenarios(agent).map((n) => `"${loadScenario(agent, n).turns[0].input}"`).join(", ")}`);
@@ -135,6 +178,23 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
   const approver = { id: args.user ?? s.kit.labels.defaultUser, channel: "terminal" };
   const startedAt = Date.now();
   try {
+    if (args.channel === "whatsapp") {
+      return await startWhatsApp({
+        agent,
+        setup: s,
+        script: conversationScript!,
+        backend: args.backend ?? "simulator",
+        scripted: args.scripted,
+        approver: { id: approver.id, channel: "whatsapp" },
+        json: args.json,
+        startedAt,
+        say,
+        ...(args.decision ? { decision: args.decision } : {}),
+        ...(args.wait !== undefined ? { waitSeconds: args.wait } : {}),
+        simulatePayer: args.simulatePayer,
+        now,
+      });
+    }
     const runtime = s.makeRuntime();
     if (!args.input) {
       await interactive({ setup: s, approver, runtime, say, waitSeconds: args.wait, simulatePayer: args.simulatePayer });

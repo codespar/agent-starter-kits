@@ -3,6 +3,7 @@ export * from "./kit.js";
 export * from "./default-kit.js";
 export * from "./setup.js";
 export * from "./terminal.js";
+export * from "./channels/index.js";
 export * from "./poll.js";
 export * from "./webhook.js";
 export * from "./scenarios.js";

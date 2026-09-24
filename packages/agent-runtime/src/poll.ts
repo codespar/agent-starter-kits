@@ -11,8 +11,13 @@ import type { ChargeInstrument, Execution, ExecutionEngine } from "@codespar/age
 import type { SandboxPayer } from "./kit.js";
 
 export interface PollHooks {
-  /** A receivable became payable: show the payer how to pay. Called once per instalment. */
-  onInstrument?: (execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument) => void;
+  /**
+   * A receivable became payable: show the payer how to pay. Called once per
+   * instalment, and AWAITED — on a console the lines are on the screen by the
+   * time the call returns, but on a channel the message still has to go out,
+   * and a payer told how to pay after the poll already closed was not told.
+   */
+  onInstrument?: (execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument) => void | Promise<void>;
   /** The execution reached a terminal state. Called once. */
   onClosed?: (execution: Execution) => void;
   /** Called before each look after the first. */
@@ -61,15 +66,15 @@ export async function pollUntilClosed(engine: ExecutionEngine, executionId: stri
   let rounds = 0;
   let paidRequested = false;
 
-  const present = (e: Execution) => {
+  const present = async (e: Execution) => {
     for (const outcome of e.outcomes) {
       if (outcome.status !== "accepted" || !outcome.instrument?.payable || !outcome.transaction_id) continue;
       if (!engine.markShown(e.id, outcome.attempt_id)) continue;
-      options.onInstrument?.(e, outcome.index + 1, outcome.transaction_id, outcome.instrument);
+      await options.onInstrument?.(e, outcome.index + 1, outcome.transaction_id, outcome.instrument);
     }
   };
 
-  present(execution);
+  await present(execution);
   while (execution.state === "executing") {
     if (rounds > 0) {
       // A zero-interval loop (the stub) is bounded by looks; a real one by the wall clock.
@@ -79,7 +84,7 @@ export async function pollUntilClosed(engine: ExecutionEngine, executionId: stri
     }
     rounds += 1;
     execution = await engine.reconcile(execution.id);
-    present(execution);
+    await present(execution);
     // The sandbox payer plays once every receivable is payable (the QR was shown first, as in the scene), or after a few looks if the
     // clearing house is still registering: the API's test route settles a PROCESSING charge too, and on the shared sandbox the
     // registration can take minutes. A real payer is not this hook.

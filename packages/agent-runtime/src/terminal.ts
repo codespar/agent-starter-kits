@@ -8,7 +8,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stderr, stdout } from "node:process";
 import { relative } from "node:path";
-import type { AgentRuntime, Execution } from "@codespar/agent-core";
+import type { AgentRuntime, ChargeInstrument, Execution } from "@codespar/agent-core";
 import { pollUntilClosed, type PollResult } from "./poll.js";
 import type { Setup } from "./setup.js";
 
@@ -25,6 +25,13 @@ export interface TerminalOptions {
   ask?: ((question: string) => Promise<string>) | undefined;
   /** Where the lines for the counterparty go (the conversation); `say` is the operator's console. */
   tell?: ((line: string) => void) | undefined;
+  /**
+   * How a payable receivable is put in front of the counterparty. Defaults to
+   * the kit's own, which writes lines to a console. A channel overrides it,
+   * because a QR on WhatsApp is an image and the copy-and-paste is its own
+   * message, and neither of those is a line of text.
+   */
+  presentInstrument?: ((execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument, tell: (line: string) => void) => void | Promise<void>) | undefined;
 }
 
 export function describeExecution(execution: Execution, setup: Setup): string[] {
@@ -102,7 +109,7 @@ export async function waitForPayer(executionId: string, options: TerminalOptions
     intervalMs: setup.pollIntervalMs,
     timeoutMs: waitSeconds * 1000,
     payer: options.simulatePayer ? setup.payer : undefined,
-    onInstrument: (e, n, id, instrument) => setup.kit.presentInstrument?.(e, n, id, instrument, tell),
+    onInstrument: (e, n, id, instrument) => (options.presentInstrument ?? setup.kit.presentInstrument)?.(e, n, id, instrument, tell),
     onWait: (_e, round) => {
       const line = setup.kit.labels.waitingForPayer?.(round);
       if (setup.railKind === "api" && line !== undefined && round % 5 === 0) say(line);
