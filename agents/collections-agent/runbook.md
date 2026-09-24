@@ -26,15 +26,18 @@ above is a WhatsApp scene — a debtor replying to a message — so it is worth
 filming on the channel it is written for:
 
 ```sh
+npm run whatsapp:emulator                                               # terminal 1
 npm run start:collections -- --channel whatsapp --conversation acordo-1042 --simulate-payer
 ```
 
-The house simulator draws the conversation: you type as Joana, the store
-answers, the QR arrives as an image with the copy-and-paste as its own message
-underneath (which is how a person actually pays — a code inside a picture
-cannot be copied), and "recebemos, acordo quitado" closes it. No network, no
-Meta account, no credential. In `approval: human` the operator's question is
-still on the console, labelled `[operador]`, and never in the conversation.
+The conversation goes through a local emulator of the WhatsApp Cloud API
+(`dyvit-wa-sim`, MIT, cloned at a pinned sha): you type as Joana, the store
+answers, the copy-and-paste arrives as its own message (which is how a person
+actually pays — a code inside a picture cannot be copied), and "recebemos,
+acordo quitado" closes it. No Meta account, no credential. For the phone frame,
+run the emulator's own web app and point it at `http://127.0.0.1:4290`. In
+`approval: human` the operator's question is still on the console, labelled
+`[operador]`, and never in the conversation.
 
 For a take with no typing at all, and for the CI:
 
@@ -42,8 +45,9 @@ For a take with no typing at all, and for the CI:
 npm run whatsapp:gate     # three runs from a clean state, no intervention
 ```
 
-Measured 2026-09-24: three runs, `settled` each time, one receivable, one
-record, two messages in and eight out, the same shape every run. That is the
+Measured 2026-09-24, against the emulator: three runs, `settled` each time,
+one receivable, one record, two messages in and eight out, the same shape
+every run. That is the
 wave-4 gate — "três execuções do zero sem intervenção" — and it runs on every
 pull request.
 

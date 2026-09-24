@@ -19,6 +19,7 @@
     "test": "vitest run --pool=forks --maxWorkers=1",
     "scenarios": "node scripts/scenario-matrix.mjs",
     "whatsapp:gate": "node scripts/whatsapp-gate.mjs",
+    "whatsapp:emulator": "node scripts/whatsapp-emulator.mjs",
     "typecheck": "tsc --noEmit -p packages/agent-core/tsconfig.json && tsc --noEmit -p packages/agent-runtime/tsconfig.json && tsc --noEmit -p agents/bills-agent/tsconfig.json && tsc --noEmit -p agents/collections-agent/tsconfig.json && tsc --noEmit -p agents/hello-agent/tsconfig.json && tsc --noEmit -p agents/supplier-payments-agent/tsconfig.json",
     "secret-scan": "node scripts/secret-scan.mjs",
     "start:collections": "npm start --workspace=agents/collections-agent --",

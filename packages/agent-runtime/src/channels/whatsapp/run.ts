@@ -101,7 +101,8 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
     ...(options.simulatePayer !== undefined ? { simulatePayer: options.simulatePayer } : {}),
   };
 
-  await channel.open();
+  // The channel is opened by the caller, which is where an emulator that is not
+  // running has to be reported: by here the run has already started.
   const runtime = s.makeRuntime();
   const loop = s.makeLoop(runtime, (execution) => handleExecution(execution, terminalOptions));
 

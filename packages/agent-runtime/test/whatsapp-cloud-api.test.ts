@@ -17,6 +17,7 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   buildSendRequest,
+  isMetaBaseUrl,
   loadCloudApiConfig,
   parseInbound,
   verifyChallenge,
@@ -26,6 +27,7 @@ import {
 } from "../src/channels/whatsapp/cloud-api.js";
 
 const CONFIG: CloudApiConfig = {
+  baseUrl: "https://graph.facebook.com",
   phoneNumberId: "111222333",
   accessToken: "test-token-not-a-credential",
   verifyToken: "verify-me",
@@ -49,10 +51,37 @@ describe("credentials are absent by default", () => {
     expect(missing).toEqual(["WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_ACCESS_TOKEN"]);
   });
 
-  it("defaults the version and the port, and nothing else", () => {
+  it("defaults the version, the port and Meta's own host, and nothing else", () => {
     const { config } = loadCloudApiConfig({ WHATSAPP_PHONE_NUMBER_ID: "1", WHATSAPP_ACCESS_TOKEN: "2", WHATSAPP_VERIFY_TOKEN: "3", WHATSAPP_APP_SECRET: "4" });
     expect(config?.apiVersion).toBe("v21.0");
     expect(config?.webhookPort).toBe(3111);
+    expect(config?.baseUrl).toBe("https://graph.facebook.com");
+  });
+});
+
+describe("live is decided by the base URL, and only by it", () => {
+  it("is Meta's host and nothing that merely looks like it", () => {
+    expect(isMetaBaseUrl("https://graph.facebook.com")).toBe(true);
+    expect(isMetaBaseUrl("https://graph.facebook.com/")).toBe(true);
+    expect(isMetaBaseUrl("http://127.0.0.1:4290")).toBe(false);
+    expect(isMetaBaseUrl("https://graph.facebook.com.evil.test")).toBe(false);
+    expect(isMetaBaseUrl("not a url")).toBe(false);
+  });
+
+  it("names itself `emulator` and reports `live: false` off Meta, which is what the evidence builder refuses on", () => {
+    const options = { conversation: { contact: "+5511987654321" }, say: () => undefined, fetchImpl: async () => new Response("{}") };
+    const emulator = new WhatsAppCloudApi({ ...options, config: { ...CONFIG, baseUrl: "http://127.0.0.1:4290" } });
+    expect(emulator.live).toBe(false);
+    expect(emulator.name).toBe("emulator");
+    const meta = new WhatsAppCloudApi({ ...options, config: CONFIG });
+    expect(meta.live).toBe(true);
+    expect(meta.name).toBe("cloud-api");
+  });
+
+  it("builds the send against whichever base URL it was given, with the path unchanged", () => {
+    const request = buildSendRequest({ ...CONFIG, baseUrl: "http://127.0.0.1:4290", apiVersion: "v22.0" }, "+5511987654321", { kind: "text", text: "oi" });
+    if ("unsupported" in request) throw new Error("expected a request");
+    expect(request.url).toBe("http://127.0.0.1:4290/v22.0/111222333/messages");
   });
 });
 

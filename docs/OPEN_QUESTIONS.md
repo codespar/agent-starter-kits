@@ -356,6 +356,9 @@ The schema for a conversation is in the core (`packages/agent-core/src/channels.
 next to the manifest and the guardrails, because the check parses it and the
 core is what the check can import.
 
+A third thing lives outside both: the EMULATOR the channel talks to, which is
+somebody else's repository at a pinned sha. See §42.
+
 One correction that belongs here: §21 and the `collections-agent` README call
 the webhook receiver `channels/webhook/`. There is no such directory and there
 never was — it is `packages/agent-runtime/src/webhook.ts`, reached by
@@ -363,34 +366,50 @@ never was — it is `packages/agent-runtime/src/webhook.ts`, reached by
 would mislead, so the README says the path. **v5.3:** section 5 should say
 where each half lives, and drop `channels/webhook/` as a path.
 
-## 42. What the house simulator is, and the two things it cannot be
+## 42. The house simulator is somebody else's, and that is the point
 
-The simulator speaks WhatsApp's shape with no network, no Meta account and no
-credential: inbound and outbound messages, an image, a template, delivery
-states, and the 24-hour session window. It obeys the rules that would bite in
-production rather than accepting everything — a free-form message more than 24
-hours after the person's last one is refused, exactly as Meta refuses it —
-because a rule that only fires against the real provider is a rule you meet in
-production. Its message ids are `sim_...` and deliberately never `wamid....`;
-see §43 for why that matters.
+The first cut of this lane wrote its own simulator. It was replaced, before
+that code was a day old, by `dyvit-wa-sim` — the local Cloud API emulator in
+[fabianocruz/whatsapp-simulator](https://github.com/fabianocruz/whatsapp-simulator),
+MIT — and the reason is worth stating because it applies to the next seam too.
 
-Two things are STUBS and are named rather than implied.
+**A mock we write agrees with us by construction.** It accepts the payloads we
+send because we wrote both sides, and the day Meta refuses one of them we find
+out in production. The emulator answers
+`POST /v{version}/{phone-number-id}/messages` with the Cloud API's own response
+shape and posts back the same `x-hub-signature-256`-signed webhooks, so the
+`simulator` backend is now literally THE SAME CODE as the official one with a
+different base URL (`live` is derived from the host, not from a flag). That is
+the thing worth proving, and a mock cannot prove it.
+
+It is not a dependency of this workspace: its packages are not published to npm
+(checked 2026-09-24 — `@dyvit/whatsapp-simulator-cli` and `@dyvit/whatsapp-pricing`
+both 404) and it is a pnpm workspace while this repo is an npm one. So it is a
+CLONE AT A PINNED SHA in a cache directory, started by
+`scripts/whatsapp-emulator.mjs` and by one CI step. `npm ci` never sees it.
+Pinned because a moving `main` would fail our gate on somebody else's commit.
+
+Two things remain STUBS on our side and are named rather than implied.
 
 a. **Template approval.** A template is registered in a Meta Business account,
 reviewed by Meta and given a status no call of ours can read without that
-account. What the channel holds is the LOCAL registry — the template names the
-agent declares — so sending one that was never declared is refused here instead
-of 400-ing at Meta. Whether Meta approved it is the developer's to check.
+account — and the emulator does not model it either. What the channel holds is
+the LOCAL registry: the template names the agent declares. Sending one that was
+never declared is refused here instead of 400-ing at Meta. Whether Meta
+approved it is the developer's to check.
 
-b. **The QR as an image on the official backend.** Sending an image means
-uploading it first (`POST /{version}/{phone-number-id}/media`, multipart) or
-handing Meta a public URL. This repo hosts nothing and renders no PNG —
-`qrcode-terminal` draws characters — so `buildSendRequest` answers
-`media_upload_unimplemented` for an image and the channel sends the
-copy-and-paste as its own text message, which is the string that actually pays.
-The simulator draws the QR. **Open:** a PNG renderer plus the media upload, or
-an accepted answer that on WhatsApp the copy-and-paste is the payable artifact
-and the QR is for a second device.
+b. **The QR as an image.** Sending an image means uploading it first
+(`POST /{version}/{phone-number-id}/media`, multipart) or handing a public URL.
+This repo hosts nothing and renders no PNG, so `buildSendRequest` answers
+`media_upload_unimplemented` and the channel sends the copy-and-paste as its
+own text message, which is the string that actually pays. Worth recording
+precisely: **the emulator would take it** — `type: "image"` with an `image.link`
+answers 200 — so the blocker is OURS, not its. The concrete option is to serve
+the QR from the receiver the channel already runs
+(`http://127.0.0.1:<port>/qr/<id>.png`), which needs a PNG encoder; against
+Meta that URL has to be publicly reachable, which is a deployment question and
+not a code one. **Open:** do that, or accept that on WhatsApp the copy-and-paste
+is the payable artifact and the QR is for a second device.
 
 c. **The secrecy rule's reach is the alias, and only the alias.** "A message
 may not name another debtor's agreement" is enforced by comparing the message
@@ -450,8 +469,11 @@ better than `partner_session` for that agent.
 `npm run whatsapp:gate` — three runs of the `collections-agent` over the
 channel, each from a clean state directory and a clean runs directory, the
 debtor's turns from `channels/whatsapp/acordo-1042.json`, the model from the
-recorded transcript, the rail the stub and the payer its fixture. No network,
-no key, no Meta account. Measured 2026-09-24, on `--mode mandate`:
+recorded transcript, the rail the stub and the payer its fixture. The channel
+talks to the emulator over HTTP, so every message is a real
+`POST /v22.0/{phone-number-id}/messages` and every turn arrives as a signed
+webhook our own receiver verifies. No external network, no key, no Meta
+account. Measured 2026-09-24, on `--mode mandate`:
 
 | Run | Final state | Records | In | Out |
 |---|---|---|---|---|
@@ -485,3 +507,108 @@ which is why the gate uses it, and a scripted run in `human` mode without
 `--approve` is refused outright rather than left waiting on a keyboard nobody
 is at. **Open:** a second channel for the operator, or an explicit statement
 that the interactive simulator is a demo and `--scripted` is the real path.
+
+## 46. What the emulator does not do, measured against the pinned sha
+
+Driving the whole `collections-agent` flow through `dyvit-wa-sim` at
+`2f1f8bc120ddbc1bfa23386622f9a93f3fdeb980` found five gaps. Each is the exact
+payload that failed, so this section and
+`packages/agent-runtime/test/whatsapp-emulator.integration.test.ts` say the
+same thing twice — the tests are written to go RED the day a gap is closed,
+which is how we find out. This is a spec for the repository's owner, not a
+complaint: nothing here is patched from our side, and no pull request was
+opened there.
+
+**a. The 24-hour window is priced but not enforced. This is the one that
+matters.** After `POST /_sim/clock {"advance_hours": 26}`, a free-form send:
+
+```http
+POST /v22.0/{phone-number-id}/messages
+{"messaging_product":"whatsapp","recipient_type":"individual","to":"5511987654321",
+ "type":"text","text":{"preview_url":false,"body":"Recebemos, acordo quitado."}}
+```
+
+answers **`200 accepted`**. The real Cloud API answers `400` with error
+`131047` ("Message failed to send because more than 24 hours have passed since
+the customer last replied") and sends nothing. So an app that Meta would refuse
+passes here, and the session window — the rule that decides whether a
+collections agent may speak at all when the payment lands three days later —
+cannot be proved by a run against the emulator.
+
+The reason it is worth reporting rather than working around: **the emulator has
+already decided.** Reading `/_sim/state` after that send, the message carries
+`reasonCode: "INVALID_NON_TEMPLATE_OUTSIDE_CSW"`. The refusal is one branch away
+from data the pricing engine computes today. A send that Meta would reject
+could answer the Graph-shaped error instead of `200`, and everything else about
+the tool stays as it is.
+
+Our own cover: the channel refuses it at `session_window_closed` before the
+backend is reached, so the rule is enforced on our side either way. That is a
+worse place for it — it means our test proves our rule, not the provider's.
+
+**b. There is no way to redeliver or reorder a webhook.** `POST /_sim/replay`,
+`POST /_sim/webhooks/replay` and `POST /_sim/redeliver` all answer 404;
+`GET /_sim/webhooks` is a read-only log and nothing re-dispatches from it, and
+`handleSend` dispatches each status exactly once, in order. So the case our own
+adversarial suite names — the same event twice, and an event arriving before
+the one that should precede it — cannot be driven through this channel at all.
+We cover it on the CodeSpar side (`kit.runEventsCase` replays
+`commerce.charge.paid` twice and out of order through `ingestExternalEvent`),
+but that is the CodeSpar event, not the WhatsApp delivery. A
+`POST /_sim/webhooks/{index}/redeliver`, or a `replay` that re-sends a recorded
+delivery, would make the WhatsApp half testable.
+
+**c. A `+` on one side and none on the other splits one person into two
+conversations.** The emulator keys a session on the literal string
+`${phone_number_id}:${to|from}`. The Cloud API documents `to` without a `+`,
+and Meta's inbound `from` also arrives without one — but `POST /_sim/inbound`
+defaults `from` to `+5511999999999`. Sending the documented way while
+simulating an inbound the default way produced two keys for one person:
+
+```
+"keys": ["109876543210:+5511987654321", "109876543210:5511987654321"]
+```
+
+The consequence is not cosmetic. The customer-service window opens on the
+inbound session, so the outbound session never has one, and the pricing — which
+is the tool's whole reason for existing — is computed against a conversation
+missing the customer's messages. We strip the `+` on both sides to avoid it
+(`toGraphNumber`), which is a workaround, not a fix. Normalising the key would
+close it.
+
+**d. Only `sent` and `delivered` are ever emitted.** `toStatusWebhook` can
+build `read` and `failed`, and nothing emits either: `handleSend` walks the
+message through the two and stops. So a channel cannot observe a read receipt,
+and cannot be tested against a delivery that failed — which on WhatsApp is a
+normal outcome (a number that is not on WhatsApp, a block list). Our
+`DeliveryState` carries all four and only ever sees two.
+
+**e. An inbound interactive reply degrades to an empty text message.** Outbound
+interactive works and is good — `graph-api.ts` handles `list`, `flow`,
+`cta_url` and buttons, confirmed by sending each — but the reply to one does
+not exist. `POST /_sim/inbound` with
+
+```json
+{"phone_number_id":"...","from":"+5511987654321","type":"interactive",
+ "interactive":{"type":"button_reply","button_reply":{"id":"avista","title":"À vista"}}}
+```
+
+answers 200 and produces `contentType: "text"` with `bodyPreview: ""`, and the
+webhook carries `type: "text"`, `text.body: ""`. So the debtor can be SHOWN
+"À vista / 3x" and cannot tap either — which is precisely the interaction
+collections over WhatsApp is built on. An `_sim/inbound` that carried
+`interactive.button_reply` through to the webhook would close it.
+
+### And one gap that is ours, not the emulator's
+
+The case in (a) — the agent speaking after the window shut — is the NORMAL
+collections case: the debtor agrees on Tuesday and pays on Friday, and
+"recebemos, acordo quitado" falls outside the window, where only an approved
+template may go. We cannot run it end to end, and not because of the emulator:
+there is no `codespar-agent poll --channel whatsapp`. The terminal has `poll`
+for exactly this (the payer acts after the conversation ended) and the channel
+does not, so the outcome message is always sent inside the same turn that
+issued the charge, which is always inside the window. Closing it needs the
+poll command to take a channel, and the agent to own an approved template for
+the outcome — and that template is (a) of §42, which needs a Meta account.
+**Open, and ours.**

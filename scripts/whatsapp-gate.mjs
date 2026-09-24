@@ -6,7 +6,13 @@
  * a clean state directory and a clean runs directory, with nobody at a
  * keyboard: the debtor's turns come from the conversation the agent ships,
  * the model comes from the recorded transcript, the rail is the stub and the
- * payer is its fixture. No network, no key, no Meta account.
+ * payer is its fixture. No external network, no key, no Meta account.
+ *
+ * The channel runs against `dyvit-wa-sim`, the local Cloud API emulator from
+ * https://github.com/fabianocruz/whatsapp-simulator (MIT), which must already
+ * be listening — `npm run whatsapp:emulator`. That is deliberate: the backend
+ * under test is the SAME code the official one uses, with a different base
+ * URL, so what passes here is the adapter and not a mock of it.
  *
  * What makes a run pass is the FINAL STATE and the SHAPE of the conversation,
  * never the wording — the same rule the scenario matrix follows. Concretely:
@@ -30,6 +36,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = join(ROOT, "packages/agent-runtime/bin.mjs");
 const AGENT = join(ROOT, "agents/collections-agent");
+const EMULATOR = process.env.WHATSAPP_SIM_URL ?? "http://127.0.0.1:4290";
 /** Pinned so the collection-hours guardrail reads the same at 03:00 as at 15:00 (#16). */
 const NOW = "2026-09-23T14:00:00-03:00";
 
@@ -99,19 +106,30 @@ function check(payload, conversation) {
   if (!payload.actor) failures.push("no actor on the payload");
 
   const channel = payload.channel ?? {};
-  if (channel.backend !== "simulator") failures.push(`backend ${channel.backend} != simulator`);
-  if ((channel.refused ?? []).length) failures.push(`the channel refused ${channel.refused.length} message(s): ${channel.refused.map((r) => r.rule).join(", ")}`);
+  const refusedRules = (channel.refused ?? []).map((r) => r.rule);
+  if (channel.backend !== "emulator") failures.push(`backend ${channel.backend} != emulator`);
+  // One refusal is expected and is the documented stub: neither backend can
+  // upload the QR image, because this repo hosts nothing and renders no PNG.
+  // Anything else refused is a real failure.
+  const unexpected = refusedRules.filter((rule) => rule !== "media_upload_unimplemented");
+  if (unexpected.length) failures.push(`the channel refused ${unexpected.length} message(s): ${unexpected.join(", ")}`);
 
   const inbound = conversation.filter((l) => l.direction === "in");
   const outbound = conversation.filter((l) => l.direction === "out");
   if (inbound.length !== 2) failures.push(`${inbound.length} inbound message(s), expected the conversation's 2`);
   if (!outbound.length) failures.push("the agent sent nothing");
-  if (outbound.some((l) => l.refused)) failures.push(`refused outbound in the log: ${outbound.filter((l) => l.refused).map((l) => l.refused.rule).join(", ")}`);
-  if (outbound.some((l) => l.state === "failed")) failures.push("an outbound message failed");
+  const badRefusals = outbound.filter((l) => l.refused && l.refused.rule !== "media_upload_unimplemented");
+  if (badRefusals.length) failures.push(`refused outbound in the log: ${badRefusals.map((l) => l.refused.rule).join(", ")}`);
+  const delivered = outbound.filter((l) => !l.refused);
+  if (delivered.some((l) => l.state === "failed")) failures.push("an outbound message failed at the provider");
+  // Every delivered message came back with a provider id, which is what proves
+  // it went through the emulator's Cloud API surface and not around it.
+  const noId = delivered.filter((l) => !String(l.message_id ?? "").startsWith("wamid."));
+  if (noId.length) failures.push(`${noId.length} message(s) carry no wamid from the provider`);
 
-  // The scene: the QR, and the copy-and-paste as the very next message.
+  // The scene: the QR attempted, and the copy-and-paste as the very next message.
   const qr = outbound.findIndex((l) => l.kind === "media");
-  if (qr < 0) failures.push("no QR went into the conversation");
+  if (qr < 0) failures.push("the QR was never attempted");
   else {
     const next = outbound[qr + 1];
     if (!next || next.kind !== "instrument") failures.push("the message after the QR is not the copy-and-paste");
@@ -136,7 +154,17 @@ function check(payload, conversation) {
   return failures;
 }
 
-function main(argv) {
+/** The emulator is a separate process and the gate does not start one: a gate that silently ran against nothing would pass. */
+async function emulatorIsUp() {
+  try {
+    const response = await fetch(`${EMULATOR}/health`, { signal: AbortSignal.timeout(3000) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function main(argv) {
   const json = argv.includes("--json");
   const mode = argv.includes("--mode") ? argv[argv.indexOf("--mode") + 1] : "mandate";
   const total = argv.includes("--runs") ? Number(argv[argv.indexOf("--runs") + 1]) : 3;
@@ -144,7 +172,15 @@ function main(argv) {
   const rows = [];
   let failed = 0;
 
-  say(`whatsapp gate: ${total} run(s) of collections-agent over the house simulator, approval: ${mode}, clock pinned to ${NOW}`);
+  if (!(await emulatorIsUp())) {
+    say(`whatsapp gate FAILED: nothing is answering at ${EMULATOR}.`);
+    say(`  Start the emulator first:  npm run whatsapp:emulator`);
+    say(`  It is dyvit-wa-sim (https://github.com/fabianocruz/whatsapp-simulator, MIT), cloned at a pinned sha. No Meta account, no credential.`);
+    if (json) process.stdout.write(JSON.stringify({ ok: false, reason: "emulator_unreachable", emulator: EMULATOR }) + "\n");
+    return 1;
+  }
+
+  say(`whatsapp gate: ${total} run(s) of collections-agent over dyvit-wa-sim at ${EMULATOR}, approval: ${mode}, clock pinned to ${NOW}`);
   for (let i = 1; i <= total; i += 1) {
     const { payload, conversation, failures } = runOnce(i, mode);
     if (failures.length) failed += 1;
@@ -183,4 +219,4 @@ function main(argv) {
   return failed === 0 ? 0 : 1;
 }
 
-process.exit(main(process.argv.slice(2)));
+process.exit(await main(process.argv.slice(2)));

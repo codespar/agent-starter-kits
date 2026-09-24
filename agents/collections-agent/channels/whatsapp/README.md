@@ -6,8 +6,9 @@ number, which debtor, which agreement, and what the person said.
 
 The behaviour is the runner's, in
 [`packages/agent-runtime/src/channels/`](../../../../packages/agent-runtime/src/channels):
-the adapter, the rules, the house simulator, the Cloud API backend. Nothing
-about WhatsApp lives here.
+the adapter, the rules, the Cloud API backend. Nothing about WhatsApp lives
+here, and the emulator the backend talks to is somebody else's repository
+(`npm run whatsapp:emulator`).
 
 ## One file
 
@@ -44,6 +45,7 @@ one of these files: they are committed, and the simulator does not need one.
 ## Running it
 
 ```sh
+npm run whatsapp:emulator                                               # once, at the repo root
 npm start -- --channel whatsapp --conversation acordo-1042              # you type as Joana
 npm start -- --channel whatsapp --conversation acordo-1042 --scripted   # the turns above, replayed
 npm start -- --channel whatsapp --conversation acordo-1103 --scripted --payer expires
@@ -53,7 +55,7 @@ npm start -- --channel whatsapp --conversation acordo-1103 --scripted --payer ex
 messaging is not a default. `acordo-1042` ends paid; `acordo-1103` is the other
 ending, where nobody pays and the charge expires.
 
-The default backend is the house simulator: no network, no Meta account, no
-credential. `npm run whatsapp:gate` at the repository root runs the whole
-cycle over it three times from a clean state and asserts the final state each
-time.
+The default backend is the local Cloud API emulator: no Meta account, no
+credential, nothing leaving the machine. `npm run whatsapp:gate` at the
+repository root runs the whole cycle over it three times from a clean state
+and asserts the final state each time.

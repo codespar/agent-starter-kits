@@ -1,13 +1,20 @@
 /**
  * The collections-agent on the channel it was written for.
  *
- * Every case here runs a real process over the house simulator: no network,
- * no key of either kind, and the WHATSAPP_* variables explicitly blanked, so
- * a machine that happens to have Meta credentials in its shell runs the same
- * test as the CI.
+ * Every case here runs a real process: no key of either kind, and the
+ * WHATSAPP_* variables explicitly blanked, so a machine that happens to have
+ * Meta credentials in its shell runs the same test as the CI.
+ *
+ * The cases that actually converse need `dyvit-wa-sim` listening — the local
+ * Cloud API emulator the channel's `simulator` backend talks to — and SKIP
+ * when it is not, so `npm test` is green on a machine that never started it.
+ * The CI starts it, and `npm run whatsapp:gate` fails rather than skipping, so
+ * the thing that matters never hides behind a skip. The cases that check what
+ * the channel REFUSES to be asked need no emulator: those refusals happen
+ * before anything is opened, and they run everywhere.
  *
  * What is asserted is the final state and the shape of the conversation, never
- * the wording — the QR followed by the copy-and-paste, the operator's question
+ * the wording — the copy-and-paste as its own message, the operator's question
  * nowhere near the debtor, nothing at all outside the collection hours.
  */
 import { spawnSync } from "node:child_process";
@@ -26,6 +33,7 @@ interface ChannelLine {
   text?: string;
   contact: string;
   state: string;
+  message_id: string;
   refused?: { rule: string };
 }
 
@@ -70,11 +78,22 @@ function conversationOf(payload: Payload): ChannelLine[] {
   return readFileSync(path, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as ChannelLine);
 }
 
+const EMULATOR = process.env["WHATSAPP_SIM_URL"] ?? "http://127.0.0.1:4290";
+/** Probed at module level: `describe.skipIf` is read when the file is collected, before any hook runs. */
+const emulatorUp = await (async () => {
+  try {
+    return (await fetch(`${EMULATOR}/health`, { signal: AbortSignal.timeout(2000) })).ok;
+  } catch {
+    return false;
+  }
+})();
+if (!emulatorUp) process.stderr.write(`[whatsapp] no emulator at ${EMULATOR}; the conversing cases are skipped. Start it with \`npm run whatsapp:emulator\`.\n`);
+
 const INSIDE_HOURS = ["--now", "2026-09-23T14:00:00-03:00"];
 const AFTER_HOURS = ["--now", "2026-09-23T22:30:00-03:00"];
 const SCRIPTED = ["--channel", "whatsapp", "--conversation", "acordo-1042", "--scripted", "--simulate-payer", "--json"];
 
-describe("the cycle closes over the WhatsApp channel", () => {
+describe.skipIf(!emulatorUp)("the cycle closes over the WhatsApp channel", () => {
   it("settles in mandate mode with nobody at a keyboard, and sends the QR with the copy-and-paste under it", () => {
     const out = run([...SCRIPTED, "--mode", "mandate", ...INSIDE_HOURS]);
     expect(out.code).toBe(0);
@@ -82,8 +101,9 @@ describe("the cycle closes over the WhatsApp channel", () => {
     expect(payload.executions.map((e) => e.state)).toEqual(["settled"]);
     expect(payload.executions[0]!.charges).toHaveLength(1);
     expect(payload.receipts).toHaveLength(1);
-    expect(payload.channel.backend).toBe("simulator");
-    expect(payload.channel.refused).toEqual([]);
+    expect(payload.channel.backend).toBe("emulator");
+    // The one expected refusal: neither backend can upload the QR image.
+    expect(payload.channel.refused.map((r) => r.rule)).toEqual(["media_upload_unimplemented"]);
 
     const conversation = conversationOf(payload);
     const outbound = conversation.filter((l) => l.direction === "out");
@@ -92,6 +112,8 @@ describe("the cycle closes over the WhatsApp channel", () => {
     expect(outbound[qr + 1]!.kind).toBe("instrument");
     expect(outbound[qr + 1]!.text).toMatch(/^00020126/);
     expect(conversation.filter((l) => l.direction === "in")).toHaveLength(2);
+    // Every delivered message carries a provider id: it went through the Cloud API surface, not around it.
+    for (const line of outbound.filter((l) => !l.refused)) expect(line.message_id).toMatch(/^wamid\./);
   });
 
   it("settles in human mode too, and the operator's question never reaches the debtor", () => {
@@ -131,6 +153,7 @@ describe("the cycle closes over the WhatsApp channel", () => {
     const out = run([...SCRIPTED, "--mode", "mandate", ...AFTER_HOURS]);
     const payload = payloadOf(out.stdout);
     expect(payload.channel.messages_out).toBe(0);
+    // The emulator would have accepted every one of them: the collection hours are OUR rule, not WhatsApp's.
     expect(payload.channel.refused.map((r) => r.rule)).toContain("collection_hours");
     expect(payload.executions.flatMap((e) => e.charges)).toEqual([]);
     expect(payload.receipts).toEqual([]);
@@ -144,7 +167,7 @@ describe("what the channel refuses to be asked", () => {
     for (const name of ["WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET"]) {
       expect(out.stderr).toContain(name);
     }
-    expect(out.stderr).toContain("simulator");
+    expect(out.stderr).toContain("emulator");
   });
 
   it("refuses --input on a channel: a conversation takes its turns from the conversation", () => {

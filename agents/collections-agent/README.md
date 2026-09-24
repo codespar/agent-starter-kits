@@ -42,12 +42,17 @@ The webhook is the other closer, a documented stub (`packages/agent-runtime/src/
 ## The WhatsApp channel
 
 This is the agent WhatsApp is for: the debtor answers a message, the agent
-proposes terms, the QR goes into the conversation with the copy-and-paste
-under it, and "recebemos, acordo quitado" closes it. The channel ships with
-two backends behind one interface, and **the house simulator is the one that
-works out of the box**:
+proposes terms, the payable code goes into the conversation, and "recebemos,
+acordo quitado" closes it. The channel has two backends behind one interface,
+and they are **the same code with a different base URL**.
+
+The house simulator is [`dyvit-wa-sim`](https://github.com/fabianocruz/whatsapp-simulator)
+(MIT), a local emulator of the WhatsApp Cloud API. It is not ours and it is not
+a dependency: `npm run whatsapp:emulator` clones it at a pinned sha and runs it
+on `127.0.0.1:4290`. Start it in one terminal, run the agent in another:
 
 ```sh
+npm run whatsapp:emulator                                 # terminal 1
 npm run start:collections -- --channel whatsapp --conversation acordo-1042
 npm run start:collections -- --channel whatsapp --conversation acordo-1042 --scripted --mode mandate --simulate-payer --now 2026-09-23T14:00:00-03:00
 ```
@@ -56,18 +61,26 @@ npm run start:collections -- --channel whatsapp --conversation acordo-1042 --scr
 are messaging is not a default: `acordo-1042` is Joana and ends paid,
 `acordo-1103` is Ana Paula and ends expired (add `--payer expires`).
 
-No network, no Meta account, no credential. The simulator draws the
-conversation on stderr and speaks WhatsApp's shape: messages in and out, an
-image, a template, delivery states, and the 24-hour session window — outside
-which a free-form message is refused and only an approved template would
-carry, which is Meta's rule and not ours. It obeys it because a rule that only
-fires against the real provider is a rule you meet in production.
+**Why somebody else's emulator instead of a fake in this repo.** A mock we
+wrote would agree with us by construction — it would accept our payloads
+because we wrote both sides, and the day Meta refused one we would find out in
+production. This one answers `POST /v22.0/{phone-number-id}/messages` with the
+Cloud API's own response shape and posts back the same signed
+`x-hub-signature-256` webhooks, so what runs against it is the adapter itself.
+It also has a clock we can move (`POST /_sim/clock`), which a replay finishing
+in seconds cannot otherwise have. No Meta account, no credential, and no
+traffic that leaves the machine. What it does NOT cover is measured, with the
+exact payloads, in `docs/OPEN_QUESTIONS.md` §46 — chief among them that it
+prices the 24-hour window but does not enforce it.
 
 `--scripted` replays the debtor's turns from `channels/whatsapp/<name>.json`,
 which is what an agent ships for this channel: the contact the conversation is
-bound to, the agreement it may be about, and the person's turns. The behaviour
-is the runner's (`packages/agent-runtime/src/channels/`); the conversations are
-the agent's, and `npm run check` fails if the two disagree in either direction.
+bound to, the agreement it may be about, and the person's turns. Each turn is
+pushed through the emulator's `POST /_sim/inbound`, so a scripted turn takes
+the same path a real one would — including the signature check on the way
+back. The behaviour is the runner's (`packages/agent-runtime/src/channels/`);
+the conversations are the agent's, and `npm run check` fails if the two
+disagree in either direction.
 
 **The rules are above the backend, so a backend is not a way around one.**
 Every outbound message is checked before anything carries it: nothing outside
@@ -87,19 +100,21 @@ keyboard, so one person plays both parts. `--scripted` has no such problem,
 and a scripted `human` run without `--approve` is refused rather than left
 waiting.
 
-**The official Cloud API backend is an adapter and nothing more.**
-`--backend cloud-api` reads `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`,
-`WHATSAPP_VERIFY_TOKEN` and `WHATSAPP_APP_SECRET` from your `.env` (commented
-out and empty in `.env.example`) and refuses to open without them, by name.
+**Going live is a base URL.** `--backend cloud-api` reads
+`WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`
+and `WHATSAPP_APP_SECRET` from your `.env` (commented out and empty in
+`.env.example`) and refuses to open without them, by name. It is the same
+class the emulator runs, pointed at `graph.facebook.com` instead — which is
+also how the channel decides it is live, and therefore how the
+consent-evidence builder decides an act was observed by somebody.
 **This repo has never run one against Meta**: the shapes are written from
-Meta's published documentation, and the first live run is yours. Under test
-are the parts where a mistake is silent — the `X-Hub-Signature-256` check, the
-webhook parse, the registration handshake and the request builder — and
-nothing in the tests or the CI calls Meta. Two pieces are stubs and say so:
-template APPROVAL (a Meta Business account reviews templates; the channel only
-knows the names this agent declares) and sending the QR as an IMAGE (that
-needs a media upload or a public URL, and this repo hosts neither, so the
-copy-and-paste goes as its own text message — which is the string that pays).
+Meta's published documentation, and the first live run is yours. Two pieces
+are stubs and say so: template APPROVAL (a Meta Business account reviews
+templates; the channel only knows the names this agent declares) and sending
+the QR as an IMAGE (that needs a media upload or a public URL, and this repo
+hosts neither, so the copy-and-paste goes as its own text message — which is
+the string that pays; the emulator would accept the image, so that gap is
+ours).
 
 **The conversation is part of the proof.** Each run writes `channel.jsonl` into
 its bundle: every message in and out, in order, with the delivery state and any
@@ -108,16 +123,19 @@ refusal, and the contact masked, because the bundle travels.
 **Consent in the conversation is wired and deliberately unused here.**
 `attestation.evidence` on the consent submit accepts four keys on this channel
 (`contact`, `message_id`, `session_id`, `provider_ts`) and the channel builds
-exactly those — but only from a backend that talked to a real provider. A
-simulated act was observed by nobody, so the builder refuses and says why. This
-agent has no consent step to carry it either: the collection policy is the
-merchant's own file. See `docs/OPEN_QUESTIONS.md` section 43.
+exactly those — but only from a backend that talked to a real provider, which
+is decided by the base URL being Meta's. An act the emulator observed was
+observed by nobody, so the builder refuses and says why. This agent has no
+consent step to carry it either: the collection policy is the merchant's own
+file. See `docs/OPEN_QUESTIONS.md` section 43.
 
 ### The gate
 
 `npm run whatsapp:gate` runs the whole cycle three times from a clean state,
 with nobody at a keyboard, and asserts the final state and the shape of the
-conversation each time — not the wording. It runs in the CI on the simulator.
+conversation each time — not the wording. It needs the emulator running and
+FAILS rather than skips when it is not, so the gate never passes against
+nothing. It runs in the CI, which starts the emulator in its own step.
 
 ## The sandbox payer
 
@@ -142,7 +160,7 @@ Not in this kit yet: a policy signed by the API for the receiving side (section 
 |---|---|
 | `npm start` | Interactive terminal. You are the payer; the operator's approval is asked on the same keyboard. |
 | `npm start -- --input "oi, recebi a mensagem sobre o acordo do pedido 1042" [--approve] [--simulate-payer] [--wait 60] [--json] [--now <ISO>]` | One turn, no prompt. Without `ANTHROPIC_API_KEY` it replays the recorded scenario whose first turn is that input. `--json`: machine data on stdout, people on stderr (add npm's `-s` when piping). Exit code 3 when a receivable is still waiting. `--now 2026-09-23T14:00:00-03:00` pins the clock the guardrails read (collection hours `08:00-20:00`, the due-date window, every timestamp) instead of the wall clock; the CI gate passes it so the fixture is inside collection hours at any hour. `CODESPAR_AGENT_NOW` in the environment is the same pin and reaches every command (`approve`, `resume`, `poll`, `rerun`, `reconcile`); the flag wins when both are set. |
-| `npm start -- --channel whatsapp [--scripted] [--conversation <name>] [--backend simulator\|cloud-api]` | The conversation channel. The house simulator is the default and needs no network and no Meta account; `--scripted` replays the debtor's turns from `channels/whatsapp/`. See [The WhatsApp channel](#the-whatsapp-channel). |
+| `npm start -- --channel whatsapp [--scripted] [--conversation <name>] [--backend simulator\|cloud-api]` | The conversation channel. The default backend is the local emulator (`npm run whatsapp:emulator`, no Meta account and no credential); `--scripted` replays the debtor's turns from `channels/whatsapp/`. See [The WhatsApp channel](#the-whatsapp-channel). |
 | `npm start -- --scenario <name> [--mode human\|mandate] [--rail stub\|api]` | A scenario pack from `scenarios/`. With `--rail api` and a test key the charge, the poll and the sandbox payer are real, and `cycle_seconds` is measured. |
 | `npm run check` | The manifest gate: fails if the prompt, tools or guardrails contradict `agent.yaml`, if `AGENTS.md` and `CLAUDE.md` differ, or if `mcp`, `cli` or `schema` are missing. |
 | `npm run eval` | The adversarial suite (`evals/adversarial/`) and every scenario in every mode, on the replay provider and the stub rail. |

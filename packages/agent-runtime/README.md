@@ -13,13 +13,16 @@ nothing else.
 
 - The terminal channel: the banner, the approval question, the transitions it
   prints, the receipt path.
-- The WhatsApp channel (`src/channels/`): one adapter over two backends, the
-  house simulator (no network, no Meta account) and Meta's Cloud API. The
-  rules live in the adapter, above both — the collection hours, the bound
-  contact, the secrecy of the debt, the document rule, the 24-hour session
-  window — so choosing a backend changes who carries the bytes and nothing
-  else. What an AGENT ships for this channel is the conversations, under
-  `agents/<name>/channels/whatsapp/`.
+- The WhatsApp channel (`src/channels/`): one adapter over two backends that
+  are the SAME code with a different base URL — a local Cloud API emulator
+  ([`dyvit-wa-sim`](https://github.com/fabianocruz/whatsapp-simulator), MIT,
+  cloned at a pinned sha by `npm run whatsapp:emulator`) and Meta's own host.
+  `live` is derived from that host, which is what the consent-evidence builder
+  refuses on. The rules live in the adapter, above both — the collection
+  hours, the bound contact, the secrecy of the debt, the document rule, the
+  24-hour session window — so choosing a backend changes who carries the bytes
+  and nothing else. What an AGENT ships for this channel is the conversations,
+  under `agents/<name>/channels/whatsapp/`.
 - Every command: `start` (interactive, `--input`, `--scenario`, `--transcript`,
   `--json`, `--approve`/`--deny`, `--now`, `--channel`, `--backend`,
   `--conversation`, `--scripted`), `consent`, `approve`, `deny`, `resume`,

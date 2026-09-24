@@ -27,15 +27,39 @@ import { createServer, type Server } from "node:http";
 import type { ChannelBackend, InboundMessage, OutboundBody, SentMessage } from "../types.js";
 
 export interface CloudApiConfig {
+  /**
+   * Where the Graph API lives. Meta's own by default, and the local emulator's
+   * when the run is against the house simulator — which is the whole point of
+   * having it be a field: the two backends are THE SAME CODE with a different
+   * base URL, so the simulator exercises the adapter instead of standing in
+   * for it. A mock of our own would only ever agree with us.
+   */
+  baseUrl: string;
   /** The number the business sends from, as Meta's dashboard names it. */
   phoneNumberId: string;
   accessToken: string;
   /** Echoed back on the `GET` handshake when Meta registers the webhook. */
   verifyToken: string;
-  /** The app secret Meta signs deliveries with. Without it no delivery is trusted. */
+  /** The app secret that signs deliveries. Without it no delivery is trusted. */
   appSecret: string;
   apiVersion: string;
   webhookPort: number;
+}
+
+/** Meta's own Graph host. Anything else is a stand-in, and the channel treats it as one. */
+export const META_GRAPH_HOST = "graph.facebook.com";
+
+/**
+ * Whether this base URL is Meta. It decides one thing that matters beyond
+ * logging: `live`, which is what the consent-evidence builder refuses on. An
+ * act observed by an emulator was observed by nobody.
+ */
+export function isMetaBaseUrl(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname === META_GRAPH_HOST;
+  } catch {
+    return false;
+  }
 }
 
 export const CLOUD_API_ENV = {
@@ -45,6 +69,7 @@ export const CLOUD_API_ENV = {
   appSecret: "WHATSAPP_APP_SECRET",
   apiVersion: "WHATSAPP_API_VERSION",
   webhookPort: "WHATSAPP_WEBHOOK_PORT",
+  baseUrl: "WHATSAPP_GRAPH_URL",
 } as const;
 
 export interface ConfigResult {
@@ -72,6 +97,7 @@ export function loadCloudApiConfig(env: NodeJS.ProcessEnv): ConfigResult {
   return {
     missing,
     config: {
+      baseUrl: read(CLOUD_API_ENV.baseUrl) ?? `https://${META_GRAPH_HOST}`,
       phoneNumberId,
       accessToken,
       verifyToken,
@@ -170,11 +196,15 @@ export interface SendRequest {
  */
 export function buildSendRequest(config: CloudApiConfig, to: string, body: OutboundBody): SendRequest | { unsupported: string } {
   const base = {
-    url: `https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}/messages`,
+    url: `${config.baseUrl.replace(/\/$/, "")}/${config.apiVersion}/${config.phoneNumberId}/messages`,
     method: "POST" as const,
     headers: { authorization: `Bearer ${config.accessToken}`, "content-type": "application/json" },
   };
-  const recipient = { messaging_product: "whatsapp", recipient_type: "individual", to: to.replace(/^\+/, "") };
+  // `to` loses its `+`: the Cloud API documents the number in international
+  // format without one, and the emulator keys its conversation on the literal
+  // string, so a `+` here and none on the inbound side splits one person into
+  // two conversations (measured; docs/OPEN_QUESTIONS.md §46c).
+  const recipient = { messaging_product: "whatsapp", recipient_type: "individual", to: toGraphNumber(to) };
   switch (body.kind) {
     case "text":
       return { ...base, body: JSON.stringify({ ...recipient, type: "text", text: { preview_url: false, body: body.text } }) };
@@ -200,6 +230,11 @@ export function buildSendRequest(config: CloudApiConfig, to: string, body: Outbo
 
 /* ── the impure half: one fetch over a request the above built ── */
 
+/** `+5511987654321` -> `5511987654321`, the only form the Graph API takes. */
+export function toGraphNumber(contact: string): string {
+  return contact.replace(/^\+/, "");
+}
+
 export interface CloudApiOptions {
   config: CloudApiConfig;
   conversation: { contact: string };
@@ -209,14 +244,23 @@ export interface CloudApiOptions {
 }
 
 export class WhatsAppCloudApi implements ChannelBackend {
-  readonly name = "cloud-api";
-  readonly live = true;
+  readonly name: string;
+  /** True only against Meta. The emulator is a stand-in and says so. */
+  readonly live: boolean;
   private server: Server | undefined;
   private readonly queue: InboundMessage[] = [];
   private waiting: ((m: InboundMessage | undefined) => void) | undefined;
   private closed = false;
 
-  constructor(private readonly options: CloudApiOptions) {}
+  constructor(private readonly options: CloudApiOptions) {
+    this.live = isMetaBaseUrl(options.config.baseUrl);
+    this.name = this.live ? "cloud-api" : "emulator";
+  }
+
+  /** The port the receiver is listening on, which the emulator has to be told about. */
+  get webhookPort(): number {
+    return this.options.config.webhookPort;
+  }
 
   async open(): Promise<void> {
     const { config, say } = this.options;
@@ -257,7 +301,11 @@ export class WhatsAppCloudApi implements ChannelBackend {
       });
     });
     await new Promise<void>((resolve) => this.server!.listen(config.webhookPort, resolve));
-    say(`[whatsapp] cloud API backend: webhook on http://127.0.0.1:${config.webhookPort}/ — expose it and register it with Meta; deliveries are verified against ${CLOUD_API_ENV.appSecret}`);
+    say(
+      this.live
+        ? `[whatsapp] cloud API backend: webhook on http://127.0.0.1:${config.webhookPort}/ — expose it and register it with Meta; deliveries are verified against ${CLOUD_API_ENV.appSecret}`
+        : `[whatsapp] emulator backend: sending to ${config.baseUrl}/${config.apiVersion}, receiving signed deliveries on http://127.0.0.1:${config.webhookPort}/`,
+    );
   }
 
   private push(message: InboundMessage): void {

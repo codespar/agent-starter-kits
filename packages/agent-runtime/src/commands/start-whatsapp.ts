@@ -16,8 +16,8 @@ import { defaultAsk } from "../terminal.js";
 import { knownSubjects } from "../channels/index.js";
 import { converse } from "../channels/whatsapp/run.js";
 import { WhatsAppChannel } from "../channels/whatsapp/index.js";
-import { WhatsAppCloudApi, loadCloudApiConfig } from "../channels/whatsapp/cloud-api.js";
-import { WhatsAppSimulator } from "../channels/whatsapp/simulator.js";
+import { WhatsAppCloudApi, loadCloudApiConfig, type CloudApiConfig } from "../channels/whatsapp/cloud-api.js";
+import { EmulatorDriver, EmulatorUnreachableError, EMULATOR_DEFAULTS, EMULATOR_ENV, WhatsAppEmulator } from "../channels/whatsapp/emulator.js";
 import type { ChannelBackend } from "../channels/types.js";
 
 export type WhatsAppBackendName = "simulator" | "cloud-api";
@@ -57,18 +57,35 @@ export async function startWhatsApp(options: StartWhatsAppOptions): Promise<numb
     const { config, missing } = loadCloudApiConfig(process.env);
     if (!config) {
       say(`the cloud-api backend needs credentials this repo ships none of: ${missing.join(", ")}.`);
-      say(`They live in the agent's .env (commented out in .env.example) and belong to a Meta Business account. The house simulator needs none: drop --backend cloud-api.`);
+      say(`They live in the agent's .env (commented out in .env.example) and belong to a Meta Business account. The emulator needs none: drop --backend cloud-api.`);
       return 1;
     }
     say("[whatsapp] cloud-api backend: this repo has never run one against Meta. The shapes are written from the published documentation; the first live run is yours.");
     backend = new WhatsAppCloudApi({ config, conversation: { contact: script.contact }, say });
   } else {
-    backend = new WhatsAppSimulator({
-      conversation,
-      ...(options.scripted ? { script } : {}),
-      now,
+    // The SAME backend, pointed somewhere else. What the emulator adds is the
+    // `_sim/*` side: making the person write, and moving the conversation clock.
+    const env = process.env;
+    const url = env[EMULATOR_ENV.url]?.trim() || EMULATOR_DEFAULTS.url;
+    const config: CloudApiConfig = {
+      baseUrl: url,
+      phoneNumberId: env[EMULATOR_ENV.phoneNumberId]?.trim() || EMULATOR_DEFAULTS.phoneNumberId,
+      // Not credentials: the emulator has no auth, and these are the values
+      // `npm run whatsapp:emulator` starts it with.
+      accessToken: "emulator",
+      verifyToken: "emulator",
+      appSecret: env[EMULATOR_ENV.appSecret]?.trim() || EMULATOR_DEFAULTS.appSecret,
+      apiVersion: EMULATOR_DEFAULTS.apiVersion,
+      webhookPort: Number(env[EMULATOR_ENV.webhookPort]?.trim() || EMULATOR_DEFAULTS.webhookPort),
+    };
+    backend = new WhatsAppEmulator({
+      config,
+      conversation: { contact: script.contact },
+      driver: new EmulatorDriver(url),
+      say,
       render: say,
-      ...(options.scripted ? {} : { ask: defaultAsk }),
+      ...(options.scripted ? { script } : { ask: defaultAsk }),
+      ...(options.now ? { pinAt: options.now() } : {}),
     });
   }
 
@@ -83,7 +100,18 @@ export async function startWhatsApp(options: StartWhatsAppOptions): Promise<numb
     knownSubjects: knownSubjects(agent),
     bundle: s.bundle,
     say,
+    render: say,
   });
+
+  try {
+    await channel.open();
+  } catch (err) {
+    if (err instanceof EmulatorUnreachableError) {
+      say(err.message);
+      return 1;
+    }
+    throw err;
+  }
 
   const result = await converse({
     setup: s,

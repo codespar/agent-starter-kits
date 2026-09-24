@@ -16,7 +16,7 @@
 import type { ProofBundle } from "@codespar/agent-core";
 import { checkOutbound, type HoursRule, type RuleContext } from "../rules.js";
 import type { Channel, ChannelBackend, ChannelLogLine, Conversation, InboundMessage, OutboundBody, SentMessage } from "../types.js";
-import { maskContact } from "./simulator.js";
+import { maskContact } from "../contact.js";
 import { SessionWindow } from "./session.js";
 
 export interface WhatsAppChannelOptions {
@@ -31,6 +31,12 @@ export interface WhatsAppChannelOptions {
   templates?: readonly string[] | undefined;
   /** The operator's console. Refusals are reported here, never to the conversation. */
   say?: ((line: string) => void) | undefined;
+  /**
+   * Draws the conversation for whoever is watching the run. It is a VIEW of
+   * what went over the channel, written after the fact, and never a way to put
+   * something in front of the person — that is `send`, and it is the only one.
+   */
+  render?: ((line: string) => void) | undefined;
 }
 
 export class WhatsAppChannel implements Channel {
@@ -156,7 +162,22 @@ export class WhatsAppChannel implements Channel {
   private record(line: ChannelLogLine): void {
     this.lines.push(line);
     this.options.bundle?.channel({ ...line, channel: "whatsapp", backend: this.backend });
+    this.options.render?.(`  │ ${draw(line)}`);
   }
+}
+
+/** One console line for one message. The refusals are visible: a message nobody got is part of the conversation's story. */
+function draw(line: ChannelLogLine): string {
+  const who = line.direction === "in" ? `${line.contact}:` : "loja:";
+  const what =
+    line.kind === "instrument"
+      ? `[copia e cola] ${line.text ?? ""}`
+      : line.kind === "media"
+        ? "[imagem: QR Pix]"
+        : line.kind === "template"
+          ? line.text ?? "[template]"
+          : line.text ?? "";
+  return line.refused ? `${who} (nao enviada: ${line.refused.rule}) ${what}` : `${who} ${what}`;
 }
 
 function textOf(body: OutboundBody): string | undefined {
@@ -172,7 +193,8 @@ function textOf(body: OutboundBody): string | undefined {
   }
 }
 
+export * from "../contact.js";
 export * from "./cloud-api.js";
+export * from "./emulator.js";
 export * from "./evidence.js";
 export * from "./session.js";
-export * from "./simulator.js";
