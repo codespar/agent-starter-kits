@@ -58,7 +58,7 @@ export interface PollWhatsAppOptions {
 /** How the outcome reached the person, or why it did not. */
 type Delivery =
   | { told: true; carrier: "text" | "template"; template?: string }
-  | { told: false; reason: "already_told" | "no_template_for_outcome" | "refused"; detail?: string };
+  | { told: false; reason: "already_told" | "still_open" | "no_template_for_outcome" | "refused"; detail?: string };
 
 interface Polled {
   id: string;
@@ -216,9 +216,10 @@ export async function pollWhatsApp(options: PollWhatsAppOptions): Promise<number
   if (results.some((r) => r.timed_out)) return 3;
   // A cycle that closed and a person who was not told is a failure worth an
   // exit code: the record says the agreement is settled and the debtor does
-  // not know it. `already_told` is the opposite — it is this command running
-  // twice, which is the thing it is built to be safe under.
-  return results.some((r) => !r.delivery.told && r.delivery.reason !== "already_told") ? 1 : 0;
+  // not know it. The other two are not failures — `already_told` is this
+  // command running twice, which is the thing it is built to be safe under,
+  // and `still_open` is a wait that ran out, which the 3 above already said.
+  return results.some((r) => !r.delivery.told && r.delivery.reason !== "already_told" && r.delivery.reason !== "still_open") ? 1 : 0;
 }
 
 /**
@@ -277,13 +278,17 @@ async function presentInstrument(channel: WhatsAppChannel, s: Setup, execution: 
  * the debtor does not know.
  */
 async function tellOutcome(channel: WhatsAppChannel, s: Setup, execution: Execution): Promise<Delivery> {
-  if (execution.state === "executing") return { told: false, reason: "already_told" };
+  // Nothing closed, so there is no outcome to carry. Not a failure and not a
+  // silence to explain: the wait ran out and the receivable is still open.
+  if (execution.state === "executing") return { told: false, reason: "still_open" };
 
   if (channel.sessionOpen) {
-    let text: string | undefined;
-    const told = s.kit.announceOutcome?.(execution, s, (line) => void (text = line)) ?? false;
+    // The kit writes lines, the channel sends messages. Joined rather than
+    // last-one-wins, so a kit that says two sentences does not lose one.
+    const lines: string[] = [];
+    const told = s.kit.announceOutcome?.(execution, s, (line) => void lines.push(line)) ?? false;
     if (!told) return { told: false, reason: "already_told" };
-    const sent = await channel.send({ kind: "text", text: text ?? "" });
+    const sent = await channel.send({ kind: "text", text: lines.join("\n") });
     return deliveryOf(sent, "text");
   }
 
