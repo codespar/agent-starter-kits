@@ -8,9 +8,18 @@ description: Create a new CodeSpar starter-kit agent under agents/<name> (a paye
 You are adding `agents/<name>` to `codespar/agent-starter-kits`. The three
 agents in the tree are references; yours is the fourth. The manifest
 `agent.yaml` is the index, `@codespar/agent-core` is the only thing that
-moves an execution past `drafted`, and the task is done when `npm run check`,
-`npm run eval --workspace=agents/<name>`, `npm run typecheck` and `npm test`
-are green with no model and no CodeSpar key.
+moves an execution past `drafted`, `@codespar/agent-runtime` is the runner
+you do NOT write, and the task is done when `npm run check`, `npm run eval
+--workspace=agents/<name>`, `npm run typecheck` and `npm test` are green with
+no model and no CodeSpar key.
+
+**You write files, not a runner.** The terminal channel, every command
+(`start`, `approve`, `deny`, `resume`, `rerun`, `reconcile`, `poll`,
+`webhook`, `check`, `eval`), the setup, the scenario runner and the
+adversarial runner are in `packages/agent-runtime` and are shared. Your agent
+is its manifest, its prompt, its tools, its guardrails, its mandate and its
+packs, plus at most one module: `src/kit.ts`. Copying a command into
+`agents/<name>/src/` is refused by `npm run check`.
 
 Read the reference files as you reach each step:
 
@@ -60,30 +69,59 @@ follow from it:
 |---|---|---|---|---|
 | Payer (money goes OUT under a consumer mandate) | `codespar_pay` | `payment` | `pix-out` | `agents/bills-agent` |
 | Collector (money comes IN, a receivable per instalment) | `codespar_charge` | `charge` | `bolepix-receivables` | `agents/collections-agent` |
-| Read-only (proposes nothing, pays nothing) | local read tools only | none | none of the two above | this skill's worked example (`docs/OPEN_QUESTIONS.md`, "hello-agent") |
+| Read-only (proposes nothing, pays nothing) | local read tools only | none | none of the two above | `agents/hello-agent`, the worked example |
 
 `npm run check` ties the two together: a `payment` tool without `pix-out`
 maturity fails, and so does the reverse; same for `charge` and
 `bolepix-receivables`.
 
-### 1. Scaffold from the anchor
+### 1. Create the five files and the packs
 
-Copy `agents/bills-agent` to `agents/<name>` and delete what the kind does not
-need, following the table in [reference/anatomy.md](reference/anatomy.md). Do
-not edit `agents/bills-agent` or `agents/collections-agent`.
+`agents/<name>/` is a directory of files. Start it and install:
 
-Then:
+```sh
+mkdir -p agents/<name>/scenarios agents/<name>/evals/adversarial
+cp agents/hello-agent/tsconfig.json agents/<name>/tsconfig.json
+cp agents/bills-agent/.env.example agents/<name>/.env.example
+```
 
-- `package.json`: `"name": "@codespar/<name>"`, keep `"private": true`,
-  `"type": "module"`, the `scripts` block and the dependency
-  `"@codespar/agent-core": "0.1.0"`. Drop the `consent` script for a
-  non-payer.
-- Run `npm install` at the repository ROOT so the workspace links the new
-  package (installing inside `agents/<name>` does not bring the root
-  toolchain).
-- Rename the test-only env prefix `BILLS_` (`BILLS_STATE_DIR`,
-  `BILLS_RUNS_DIR`, `BILLS_KILL_AFTER_DISPATCH`, `BILLS_STUB_REFUSE`) in
-  `src/setup.ts` to your own prefix, and use the new names in `test/`.
+`agents/<name>/package.json` — the scripts are the shared binary, nothing else:
+
+```json
+{
+  "name": "@codespar/<name>",
+  "version": "0.1.0",
+  "private": true,
+  "description": "...",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "codespar-agent start",
+    "check": "codespar-agent check",
+    "eval": "codespar-agent eval",
+    "resume": "codespar-agent resume",
+    "rerun": "codespar-agent rerun",
+    "reconcile": "codespar-agent reconcile",
+    "approve": "codespar-agent approve",
+    "deny": "codespar-agent deny",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --pool=forks --maxWorkers=1 --root ../.. agents/<name>"
+  },
+  "dependencies": { "@codespar/agent-core": "0.1.0", "@codespar/agent-runtime": "0.1.0" }
+}
+```
+
+A collector adds `"poll"` and `"webhook"`; a payer adds `"consent"`. Then run
+`npm install` at the repository ROOT, so the workspace links the new package
+(installing inside `agents/<name>` does not bring the root toolchain).
+
+The files to write are the five of section 5 (steps 2 to 5 below), the packs
+(step 6), the docs (steps 7 and 8) and one module (step 9). Nothing else. The
+state directory `.codespar/`, the proof bundles under `runs/`, and the
+test-only environment variables (`<NAME>_STATE_DIR`, `<NAME>_RUNS_DIR`,
+`<NAME>_KILL_AFTER_DISPATCH`, `<NAME>_STUB_REFUSE`, where `<NAME>` is your
+agent's name upper-cased without the `-agent` suffix) all follow from the
+directory; you never name them.
 
 ### 2. Write `agent.yaml` (schema 1)
 
@@ -119,10 +157,10 @@ stay under a threshold; never to claim a payment unless the tool result says
 `read`; `local_tools` are the agent's own read-only helpers. Each entry has
 `name`, `effect`, `description`, `input_schema` (JSON Schema). Names are
 unique. The shapes are a snapshot written against the `mcp` pin, not fetched
-at runtime (the CI has no key and no network). Implement one handler per tool
-in `src/modules/<module>.ts` and register them in `setup.ts` `handlers`; a
-payment/charge handler calls `ctx.engine.draft(...)` and hands the result to
-`ctx.onExecution(...)`, nothing else.
+at runtime (the CI has no key and no network). One handler per tool, returned
+by your kit's `handlers` (step 9); a payment/charge handler calls
+`ctx.engine.draft(...)` and hands the result to `ctx.onExecution(...)`,
+nothing else.
 
 ### 5. Write `guardrails.json` and `mandate.example.json`
 
@@ -163,22 +201,41 @@ production". `runbook.md`: the forty-second script. `.env.example`: exactly
 `CODESPAR_API_KEY` and `ANTHROPIC_API_KEY`, nothing else (staging's
 `CODESPAR_API_URL` goes in a comment).
 
-### 9. Wire the root and run the gates
+### 9. Write `src/kit.ts`, the only code you own
 
-- Root `package.json` `typecheck`: append `&& tsc --noEmit -p agents/<name>/tsconfig.json`.
-- `.github/workflows/ci.yml`, step "adversarial suite + scenarios": add
-  `npm run eval --workspace=agents/<name>`.
-- Root `README.md`, table "What is here": one row.
+One module, exporting one handle. A read-only agent spreads `defaultKit` and
+adds its handlers, and that is the whole file:
 
-Then, at the repository root, all four must pass:
+```ts
+import { defineAgent, defaultKit } from "@codespar/agent-runtime";
+import { listThings } from "./things.js";
 
+export const agent = defineAgent(import.meta.url, {
+  ...defaultKit,
+  handlers: () => ({ list_things: listThings }),
+});
 ```
-npm run check                                   # every workspace + the plugin manifests
-npm run eval --workspace=agents/<name>          # section 9 suite + every scenario in every mode
-npm run typecheck
-npm test
-node scripts/secret-scan.mjs all
-```
+
+A payer or a collector replaces more of it. `AgentKit` in
+`packages/agent-runtime/src/kit.ts` is the whole seam and every field is
+documented there; `agents/bills-agent/src/kit.ts` (payer) and
+`agents/collections-agent/src/kit.ts` (collector) are the two worked
+examples. What you may set, and nothing else is yours:
+
+| Field | What it is | Who needs it |
+|---|---|---|
+| `buildRail` | The rail, the mandate, and for a collector the sandbox payer | payer, collector |
+| `handlers` | One `ToolHandler` per entry of `tools.json` | everyone |
+| `policyExtension` | A deterministic policy the core runs at every gate | an agent with an envelope |
+| `labels` | The words the console prints: the prompt, the approval question, `recibo` vs `registro` | everyone |
+| `usage` | The text `--help` prints | everyone |
+| `describeExecution`, `oneShotPayload` | The console lines and the `--json` body | everyone |
+| `settlement` | `immediate` (money out) or `await-payer` (money in, `poll`/`webhook`) | collector |
+| `presentInstrument`, `announceOutcome` | The QR the payer reads, the one message per outcome | collector |
+| `ensureMandate`, `consent` | The consent that mints the mandate | payer |
+| `warmUp`, `runEventsCase`, `rerunPlan` | What the section 9 suite and `rerun` need per agent | see `evals.md` |
+
+### 10. Wire the root and run the gates
 
 Only then say it is done. If the spec (`docs/spec-v5.1.1.md`) and the API
 disagree while you build, follow the API and add a numbered entry to

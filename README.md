@@ -9,6 +9,8 @@ Two agents ship today, both in TypeScript, both running against the CodeSpar san
 - **[`bills-agent`](agents/bills-agent)** pays a household's monthly bills (school, cleaner, utilities) over Pix.
 - **[`collections-agent`](agents/collections-agent)** is the merchant side: it agrees payment terms with a customer, issues a bolepix per instalment and closes the loop when the charge is paid.
 
+A third, **[`hello-agent`](agents/hello-agent)**, is the worked example the [`codespar-agent-builder`](skills/codespar-agent-builder) skill builds: read-only, 300 lines, no payment tool at all.
+
 ## Quickstart: clone to first receipt
 
 You need Node 22.13+ and a sandbox key (`csk_test_...`). Get one at [codespar.dev/auth/signup](https://codespar.dev/auth/signup). No money moves.
@@ -88,8 +90,10 @@ The repo is also the `codespar-core` plugin: the CodeSpar MCP server (pinned at 
 | Path | What |
 |---|---|
 | [`packages/agent-core`](packages/agent-core) | State machine, approval artifact, `agent.yaml` schema, `escalate_above`, local SQLite state, proof bundle, model providers. Every agent builds on it. |
+| [`packages/agent-runtime`](packages/agent-runtime) | The runner every agent shares: the terminal channel, `codespar-agent start\|consent\|approve\|deny\|resume\|rerun\|reconcile\|poll\|webhook\|check\|eval`, and the scenario and adversarial runners. An agent is its files plus one `src/kit.ts`. |
 | [`agents/bills-agent`](agents/bills-agent) | Pays bills under a mandate. |
 | [`agents/collections-agent`](agents/collections-agent) | Collects from customers inside a negotiation envelope. |
+| [`agents/hello-agent`](agents/hello-agent) | The read-only worked example: the smallest agent the runtime can carry. |
 | [`skills/codespar-agent-builder`](skills/codespar-agent-builder) | The skill for adding a new agent. |
 | [`docs/spec-v5.1.1.md`](docs/spec-v5.1.1.md) | The spec this code was built against. |
 | [`AGENTS.md`](AGENTS.md) | Rules for coding agents working in this repo (same file as `CLAUDE.md`). |
