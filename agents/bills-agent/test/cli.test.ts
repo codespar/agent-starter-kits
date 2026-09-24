@@ -198,25 +198,28 @@ describe("npm run approve / deny <execution-id>", () => {
 });
 
 describe("partial failure of a multi-item execution, and rerun reproducing it", () => {
-  it("names what settled and what failed, and rerun replays the rail's refusal", () => {
+  it("pays every bill the rail accepted, names the one it refused, and rerun replays the refusal", () => {
     const stateDir = mkdtempSync(join(tmpdir(), "bills-partial-"));
     const runsDir = join(stateDir, "runs");
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir, BILLS_STUB_REFUSE: "+5511999990001" };
     const first = run("start", ["--input", "libera o lote do mes", "--transcript", "evals/adversarial/false-authority.transcript.jsonl", "--approve", "--json"], env);
     expect(first.code).toBe(0);
     const payload = JSON.parse(first.stdout.trim()) as { run_id: string; executions: Array<{ state: string; receipt_ids: string[] }>; receipts: string[] };
+    // Four bills, the SECOND refused by the rail. The execution closes `failed`
+    // because one attempt failed, and the two bills after the refused one are
+    // paid all the same: an attempt's outcome is that attempt's business.
     expect(payload.executions[0]?.state).toBe("failed");
-    expect(payload.executions[0]?.receipt_ids).toHaveLength(1);
-    expect(payload.receipts).toHaveLength(1);
+    expect(payload.executions[0]?.receipt_ids).toHaveLength(3);
+    expect(payload.receipts).toHaveLength(3);
     const events = readFileSync(join(runsDir, payload.run_id, "events.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; payload: { status?: string } });
-    expect(events.filter((e) => e.type === "rail.outcome").map((e) => e.payload.status)).toEqual(["settled", "failed"]);
+    expect(events.filter((e) => e.type === "rail.outcome").map((e) => e.payload.status)).toEqual(["settled", "failed", "settled", "settled"]);
 
     const rerun = run("rerun", [payload.run_id, "--json"], { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir });
     expect(rerun.code).toBe(0);
     const r = JSON.parse(rerun.stdout.trim()) as { same_states: boolean; original: string[]; rerun: string[]; original_outcomes: string[]; rerun_outcomes: string[] };
     expect(r.same_states).toBe(true);
     expect(r.original).toEqual(["awaiting_approval", "approved", "executing", "failed"]);
-    expect(r.original_outcomes).toEqual(["settled", "failed"]);
-    expect(r.rerun_outcomes).toEqual(["settled", "failed"]);
+    expect(r.original_outcomes).toEqual(["settled", "failed", "settled", "settled"]);
+    expect(r.rerun_outcomes).toEqual(["settled", "failed", "settled", "settled"]);
   });
 });
