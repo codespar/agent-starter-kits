@@ -121,9 +121,20 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
       }
     }
 
-    const draft = await ctx.engine.draft({
-      items: [{ payee: line.alias, amount: line.amount_minor, description: `${batch.label}: ${line.reference}`, due_date: batch.due }],
-    });
+    // `draft` REFUSES by returning, but it THROWS on a line the core cannot
+    // read at all (a non-positive amount, a malformed due date). That is a
+    // bug in the payables file rather than a refusal, and it still must not
+    // take the rest of the payroll down with it: the line carries the
+    // message and the siblings run.
+    let draft: Awaited<ReturnType<typeof ctx.engine.draft>>;
+    try {
+      draft = await ctx.engine.draft({
+        items: [{ payee: line.alias, amount: line.amount_minor, description: `${batch.label}: ${line.reference}`, due_date: batch.due }],
+      });
+    } catch (err) {
+      lines.push({ ...describe(line), execution_id: null, state: "unreadable_line", reason: err instanceof Error ? err.message : String(err), dispatch: "refused" });
+      continue;
+    }
     if (!draft.ok) {
       // Refused before an execution exists: nothing to claim, and the next
       // run of this batch tries the line again, which is right — the mandate

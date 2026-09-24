@@ -179,6 +179,22 @@ describe("batch-payout: a batch is a loop of executions", () => {
     }
   });
 
+  it("a line the core cannot read at all is one line's problem, not the batch's", async () => {
+    const s = open(mkdtempSync(join(tmpdir(), "supplier-batch-h-")));
+    try {
+      const batch = findBatch("comissoes-2026-10")!;
+      // `draft` throws on a non-positive amount, which is a bug in the payables
+      // file rather than a refusal. The second line must still be paid.
+      const broken = { ...batch, lines: [{ ...batch.lines[0]!, amount_minor: 0 }, batch.lines[1]!] };
+      const report = await runBatch(broken, { engine: s.engine, onExecution: approveAndRun(s) });
+      expect(report.lines.map((l) => l.dispatch)).toEqual(["refused", "settled"]);
+      expect(report.lines[0]!.state).toBe("unreadable_line");
+      expect(report.settled_minor).toBe(48000);
+    } finally {
+      s.close();
+    }
+  });
+
   it("the lines of a batch come from the payables file, so a model cannot write them", async () => {
     const s = open(mkdtempSync(join(tmpdir(), "supplier-batch-f-")));
     try {
