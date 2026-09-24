@@ -4,7 +4,7 @@
  * payee keys are masked the way a bank statement masks them.
  */
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { Mandate } from "./mandate.js";
 import type { RailReceipt } from "./rail.js";
 import type { ApprovalArtifact } from "./types.js";
@@ -80,6 +80,28 @@ export class ProofBundle {
     const { raw: _raw, ...safe } = receipt;
     writeFileSync(join(this.dir, relative), JSON.stringify({ ...safe, payment: { ...safe.payment, payee: safe.payment.payee ? maskPayee(safe.payment.payee) : null } }, null, 2) + "\n");
     return relative;
+  }
+
+  /** The masked mandate as it stood when the run started. Absent on a bundle whose run never got that far. */
+  readMandateSnapshot(): Record<string, unknown> | undefined {
+    const path = join(this.dir, "mandate.snapshot.json");
+    return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>) : undefined;
+  }
+
+  /** One receipt by its file name, as `listReceipts()` returns it. */
+  readReceipt(file: string): Record<string, unknown> | undefined {
+    const path = join(this.dir, "receipts", basename(file));
+    return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>) : undefined;
+  }
+
+  /**
+   * Section 11: `verify.json` is the output of `codespar audit replay`, which
+   * is not a registered command of the CLI, so nothing here writes it and
+   * nothing here reimplements the hash-chain check. The reader exists so a
+   * bundle that gains one later is noticed rather than ignored.
+   */
+  hasVerify(): boolean {
+    return existsSync(join(this.dir, "verify.json"));
   }
 
   listReceipts(): string[] {

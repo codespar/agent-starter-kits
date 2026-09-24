@@ -9,6 +9,7 @@ import { readDotEnv } from "./setup.js";
 import { check } from "./commands/check.js";
 import { decide } from "./commands/decide.js";
 import { runEval } from "./commands/eval.js";
+import { inspect } from "./commands/inspect.js";
 import { poll } from "./commands/poll.js";
 import { reconcile } from "./commands/reconcile.js";
 import { rerun } from "./commands/rerun.js";
@@ -16,7 +17,7 @@ import { resume } from "./commands/resume.js";
 import { start } from "./commands/start.js";
 import { webhook } from "./commands/webhook.js";
 
-const COMMANDS = ["start", "consent", "approve", "deny", "resume", "rerun", "reconcile", "poll", "webhook", "check", "eval"] as const;
+const COMMANDS = ["start", "consent", "approve", "deny", "resume", "rerun", "reconcile", "inspect", "poll", "webhook", "check", "eval"] as const;
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   const rest = [...argv];
@@ -59,6 +60,8 @@ async function run(agent: Agent, command: string, argv: string[]): Promise<numbe
       return rerun(agent, argv);
     case "reconcile":
       return reconcile(agent, argv);
+    case "inspect":
+      return inspect(agent, argv);
     case "check":
       return check(agent, argv);
     case "eval":
