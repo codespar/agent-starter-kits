@@ -55,7 +55,7 @@ Read from `agent.yaml`, field `maturity`:
 
 What the agent applies on its own, before the mandate (`guardrails.json`): the escalation thresholds (R$ 1.500,00 per payment, first payment to each payee, 22:00–07:00), a 24-hour velocity window per payee against fractioning, and "the core's total wins" when the model states another.
 
-Not in this kit yet: WhatsApp, batch payouts, `npm run inspect`.
+Not in this kit yet: WhatsApp, batch payouts.
 
 ## Commands
 

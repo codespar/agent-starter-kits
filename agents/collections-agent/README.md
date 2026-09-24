@@ -54,7 +54,7 @@ Read from `agent.yaml`, field `maturity`:
 
 What the agent applies on its own (`guardrails.json`): the envelope (15% maximum discount, up to 3 instalments, due dates within 90 days, R$ 50,00 minimum instalment, collection hours 08:00–20:00 in America/Sao_Paulo), the escalation threshold (R$ 3.000,00 per agreement in `mandate`), and "the core's total wins" when the model states another.
 
-Not in this kit yet: WhatsApp, a policy signed by the API for the receiving side (section 16 of the spec, candidate to product), `npm run inspect`.
+Not in this kit yet: WhatsApp, a policy signed by the API for the receiving side (section 16 of the spec, candidate to product).
 
 ## Commands
 
