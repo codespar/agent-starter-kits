@@ -50,12 +50,12 @@ const kit: AgentKit = {
   npm start                                                    interactive terminal (you are the payer)
   npm start -- --input "oi, recebi a mensagem do acordo 1042"    one turn (add --approve/--deny to decide, --json for machine output)
   npm start -- --scenario <name>                               run a scenario pack (see scenarios/)
-  npm start -- --channel whatsapp                              the conversation channel, house simulator (no network, no Meta account)
-  npm start -- --channel whatsapp --scripted                   the same, with the debtor's turns replayed from channels/whatsapp/
+  npm start -- --channel whatsapp --conversation <name>        the conversation channel (needs npm run whatsapp:emulator at the repo root)
+  npm start -- --channel whatsapp --conversation <name> --scripted   the same, with the debtor's turns replayed from channels/whatsapp/
 options: --mode human|mandate  --provider anthropic|replay  --transcript <file>  --rail stub|api  --user <id>
          --wait <seconds>  --simulate-payer  --payer pays|expires|never (stub only)  --json
          --now <ISO 8601>  pin the run to that instant (collection hours, due dates, timestamps); env CODESPAR_AGENT_NOW is the same thing
-whatsapp: --backend simulator|cloud-api  default simulator; cloud-api needs your own Meta credentials and no test ever calls it
+whatsapp: --backend simulator|cloud-api  default simulator, which is the local emulator; cloud-api is the same code pointed at Meta and needs your own credentials
           --conversation <name>          which channels/whatsapp/<name>.json binds the contact and the agreement
           --scripted                     replay that file's turns instead of reading them from the keyboard`,
 

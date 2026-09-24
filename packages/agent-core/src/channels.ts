@@ -10,7 +10,8 @@
  *
  * `terminal` is every agent's: `npm start` opens it and needs no account.
  * `whatsapp` is the second channel, and an agent that declares it ships the
- * conversations the house simulator drives, under `channels/whatsapp/`.
+ * conversations the local Cloud API emulator drives, under
+ * `channels/whatsapp/`.
  */
 import { z } from "zod";
 
@@ -24,8 +25,8 @@ export const E164 = /^\+[1-9]\d{6,14}$/;
  * A scripted conversation, which is what an agent ships for a channel whose
  * other side is a person rather than a keyboard.
  *
- * It exists for two readers. The house simulator drives it with no network
- * and no account, which is what makes the WhatsApp gate runnable in the CI;
+ * It exists for two readers. A local emulator of the Cloud API drives it with
+ * no Meta account, which is what makes the WhatsApp gate runnable in the CI;
  * and `npm run check` parses it, so a conversation that no longer names a
  * contact or an agreement fails the manifest gate instead of failing a run.
  *

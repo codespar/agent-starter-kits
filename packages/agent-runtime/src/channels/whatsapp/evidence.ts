@@ -17,15 +17,19 @@
  * one layer earlier, because a value inferred inside a signed record reads as
  * observed and is worse than an absent one.
  *
- * WHY THE SIMULATOR CANNOT PRODUCE ONE. Everything here is a claim about what
- * a provider observed. A simulated conversation was observed by nobody: its
- * message id is a counter, its timestamp is our own clock and its contact is
- * a fixture. Signing that as evidence would be a false declaration — the same
- * false declaration the API's own schema warns about for a partner that
- * declares `other` for a WhatsApp act. So `evidenceFor` returns a REFUSAL for
- * any backend that is not live, with the reason on it, and the caller either
- * submits without evidence or does not submit at all. That is not a gap in
- * the seam; it is the seam working.
+ * WHY THE EMULATOR CANNOT PRODUCE ONE. Everything here is a claim about what a
+ * provider observed. A conversation carried by an emulator on the developer's
+ * own machine was observed by nobody: its message id was minted locally, its
+ * timestamp came from a clock we move ourselves, and no phone was involved.
+ * Signing that as evidence would be a false declaration — the same one the
+ * API's own schema warns about for a partner that declares `other` for a
+ * WhatsApp act. So `evidenceFor` returns a REFUSAL for any backend that is not
+ * live, with the reason on it, and the caller either submits without evidence
+ * or does not submit at all. That is not a gap in the seam; it is the seam
+ * working.
+ *
+ * `live` is not a flag anyone sets: it is whether the base URL is Meta's host.
+ * A run cannot claim to be live by being configured to say so.
  */
 import type { InboundMessage } from "../types.js";
 
@@ -77,7 +81,9 @@ export function evidenceFor(input: EvidenceInput): EvidenceResult {
   if (!input.live) {
     return {
       attestable: false,
-      reason: "the house simulator observed this act, and a simulated observation is not evidence: the message id is a counter, the timestamp is this process's clock and the contact is a fixture",
+      reason:
+        "this act was observed by an emulator on this machine, and a simulated observation is not evidence: " +
+        "the message id was minted locally, the timestamp came from a clock we move ourselves, and no phone was involved",
     };
   }
   if (!OPAQUE_ID.test(input.message.id)) return { attestable: false, reason: `the provider message id does not fit the API's opaque-id shape: ${input.message.id.slice(0, 24)}` };

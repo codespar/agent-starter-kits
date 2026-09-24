@@ -29,7 +29,7 @@ import type { ChannelBackend, InboundMessage, OutboundBody, SentMessage } from "
 export interface CloudApiConfig {
   /**
    * Where the Graph API lives. Meta's own by default, and the local emulator's
-   * when the run is against the house simulator — which is the whole point of
+   * when the run is against the local emulator — which is the whole point of
    * having it be a field: the two backends are THE SAME CODE with a different
    * base URL, so the simulator exercises the adapter instead of standing in
    * for it. A mock of our own would only ever agree with us.

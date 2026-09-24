@@ -23,16 +23,16 @@ const REAL: InboundMessage = {
   timestamp: AT("2026-09-23T17:00:00Z"),
 };
 
-describe("what the house simulator may attest", () => {
+describe("what an emulated conversation may attest", () => {
   it("refuses, and says why in a sentence somebody can act on", () => {
-    const result = evidenceFor({ live: false, message: { ...REAL, id: "sim_in_0001" }, now: NOW });
+    const result = evidenceFor({ live: false, message: { ...REAL, id: "wamid.sim.9f1c" }, now: NOW });
     expect(result.attestable).toBe(false);
     if (result.attestable) return;
-    expect(result.reason).toContain("simulator");
-    expect(result.reason).toContain("counter");
+    expect(result.reason).toContain("emulator");
+    expect(result.reason).toContain("no phone was involved");
   });
 
-  it("refuses even when the simulated message wears a provider-shaped id", () => {
+  it("refuses even when the emulated message wears a provider-shaped id, because the id is not what decides", () => {
     expect(evidenceFor({ live: false, message: REAL, now: NOW }).attestable).toBe(false);
   });
 });

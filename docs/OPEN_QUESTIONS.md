@@ -331,8 +331,8 @@ Two things the fix had to keep apart, because they want opposite answers. A line
 
 # The WhatsApp channel (wave 4), against spec v5.2
 
-Same rule. Entries 41 to 45 come from building `channels/whatsapp` and the
-house simulator on 2026-09-24. Input for v5.3.
+Same rule. Entries 41 to 46 come from building `channels/whatsapp` and
+running it against a local Cloud API emulator on 2026-09-24. Input for v5.3.
 
 ## 41. Where a channel lives: the runner owns the behaviour, the agent owns the conversations
 

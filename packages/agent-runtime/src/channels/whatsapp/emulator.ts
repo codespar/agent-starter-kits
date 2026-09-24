@@ -105,9 +105,9 @@ export class EmulatorDriver {
   }
 
   /** The priced timeline, which is the emulator's own reason for existing. Read for the console, never asserted on. */
-  state(key: string): Promise<{ priced?: { total?: number } } | undefined> {
+  state(key: string): Promise<{ priced?: { total?: number; currency?: string } } | undefined> {
     return this.call(`/_sim/state?key=${encodeURIComponent(key)}`).then(
-      (v) => v as { priced?: { total?: number } },
+      (v) => v as { priced?: { total?: number; currency?: string } },
       () => undefined,
     );
   }

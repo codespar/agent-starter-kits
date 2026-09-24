@@ -16,7 +16,7 @@ import { defaultAsk } from "../terminal.js";
 import { knownSubjects } from "../channels/index.js";
 import { converse } from "../channels/whatsapp/run.js";
 import { WhatsAppChannel } from "../channels/whatsapp/index.js";
-import { WhatsAppCloudApi, loadCloudApiConfig, type CloudApiConfig } from "../channels/whatsapp/cloud-api.js";
+import { toGraphNumber, WhatsAppCloudApi, loadCloudApiConfig, type CloudApiConfig } from "../channels/whatsapp/cloud-api.js";
 import { EmulatorDriver, EmulatorUnreachableError, EMULATOR_DEFAULTS, EMULATOR_ENV, WhatsAppEmulator } from "../channels/whatsapp/emulator.js";
 import type { ChannelBackend } from "../channels/types.js";
 
@@ -53,6 +53,8 @@ export async function startWhatsApp(options: StartWhatsAppOptions): Promise<numb
   }
 
   let backend: ChannelBackend;
+  let driver: EmulatorDriver | undefined;
+  let sessionKey: string | undefined;
   if (options.backend === "cloud-api") {
     const { config, missing } = loadCloudApiConfig(process.env);
     if (!config) {
@@ -78,10 +80,12 @@ export async function startWhatsApp(options: StartWhatsAppOptions): Promise<numb
       apiVersion: EMULATOR_DEFAULTS.apiVersion,
       webhookPort: Number(env[EMULATOR_ENV.webhookPort]?.trim() || EMULATOR_DEFAULTS.webhookPort),
     };
+    driver = new EmulatorDriver(url);
+    sessionKey = `${config.phoneNumberId}:${toGraphNumber(script.contact)}`;
     backend = new WhatsAppEmulator({
       config,
       conversation: { contact: script.contact },
-      driver: new EmulatorDriver(url),
+      driver,
       say,
       render: say,
       ...(options.scripted ? { script } : { ask: defaultAsk }),
@@ -124,6 +128,18 @@ export async function startWhatsApp(options: StartWhatsAppOptions): Promise<numb
     ...(options.simulatePayer !== undefined ? { simulatePayer: options.simulatePayer } : {}),
   });
 
+  // What the emulator is actually for, and the one number this repo cannot
+  // compute: what the conversation would have cost under Meta's rules. Read for
+  // the console only — never asserted on, because it is their engine's answer
+  // and not a contract of ours.
+  let cost: { total: number; currency: string } | undefined;
+  if (driver && sessionKey) {
+    const state = (await driver.state(sessionKey).catch(() => undefined)) as
+      | { priced?: { total?: number; currency?: string } }
+      | undefined;
+    if (typeof state?.priced?.total === "number") cost = { total: state.priced.total, currency: state.priced.currency ?? "BRL" };
+  }
+
   const log = channel.log();
   const refused = log.filter((l) => l.refused).map((l) => ({ rule: l.refused!.rule, detail: l.refused!.detail }));
   const channelSummary = {
@@ -135,6 +151,7 @@ export async function startWhatsApp(options: StartWhatsAppOptions): Promise<numb
     messages_out: log.filter((l) => l.direction === "out" && !l.refused).length,
     refused,
     log: relative(process.cwd(), `${s.bundle.dir}/channel.jsonl`),
+    ...(cost ? { simulated_cost: cost } : {}),
   };
 
   if (options.json) {
@@ -148,6 +165,7 @@ export async function startWhatsApp(options: StartWhatsAppOptions): Promise<numb
     stdout.write(JSON.stringify({ ...payload, channel: channelSummary }) + "\n");
   } else {
     say(`conversa em ${channelSummary.log} — ${channelSummary.messages_in} recebida(s), ${channelSummary.messages_out} enviada(s)${refused.length ? `, ${refused.length} recusada(s)` : ""}`);
+    if (cost) say(`custo simulado desta conversa nas regras da Meta: ${cost.total.toFixed(4)} ${cost.currency} (conta do emulador, nao nossa)`);
   }
 
   return result.executions.some((e) => e.state === "executing") ? 3 : 0;
