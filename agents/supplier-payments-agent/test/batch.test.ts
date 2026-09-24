@@ -152,6 +152,33 @@ describe("batch-payout: a batch is a loop of executions", () => {
     }
   });
 
+  it("a channel that throws on one line does not cancel the lines after it", async () => {
+    const s = open(mkdtempSync(join(tmpdir(), "supplier-batch-g-")));
+    try {
+      const run = approveAndRun(s);
+      let seen = 0;
+      const report = await runBatch(findBatch("folha-2026-10")!, {
+        engine: s.engine,
+        onExecution: async (e) => {
+          seen += 1;
+          if (seen === 2) throw new Error("channel exploded");
+          return run(e);
+        },
+      });
+      expect(report.lines.map((l) => l.dispatch)).toEqual(["settled", "uncertain", "settled"]);
+      // The third line reached the rail, and the second is reported, not swallowed.
+      expect(report.failed).toEqual(["bruno"]);
+      expect(report.settled_minor).toBe(360000);
+      // Its claim was taken before the throw, so a re-run will not open a second execution for it.
+      const stuck = report.lines[1]!.execution_id!;
+      const again = await runBatch(findBatch("folha-2026-10")!, { engine: s.engine, onExecution: run });
+      expect(again.lines.map((l) => l.dispatch)).toEqual(["already_settled", "in_progress", "already_settled"]);
+      expect(again.lines[1]!.execution_id).toBe(stuck);
+    } finally {
+      s.close();
+    }
+  });
+
   it("the lines of a batch come from the payables file, so a model cannot write them", async () => {
     const s = open(mkdtempSync(join(tmpdir(), "supplier-batch-f-")));
     try {

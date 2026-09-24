@@ -113,9 +113,10 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     const key = claimKey(mandateId, batch.ref, line.alias);
     const held = ctx.engine.claimed(key);
     if (held) {
-      const verdict = priorVerdict(ctx.engine.get(held));
+      const prior = ctx.engine.get(held);
+      const verdict = priorVerdict(prior);
       if (verdict) {
-        lines.push({ ...describe(line), execution_id: held, state: ctx.engine.get(held)?.state ?? "unknown", reason: null, dispatch: verdict });
+        lines.push({ ...describe(line), execution_id: held, state: prior?.state ?? "unknown", reason: null, dispatch: verdict });
         continue;
       }
     }
@@ -136,8 +137,26 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     // "in progress" and refuses to duplicate. Claiming after would leave a
     // settled payment unclaimed, and that is the double payment.
     ctx.engine.claim(key, draft.execution.id);
-    const execution = await ctx.onExecution(draft.execution);
-    lines.push({ ...describe(line), execution_id: execution.id, state: execution.state, reason: execution.reason ?? null, dispatch: dispatchOf(execution) });
+    try {
+      const execution = await ctx.onExecution(draft.execution);
+      lines.push({ ...describe(line), execution_id: execution.id, state: execution.state, reason: execution.reason ?? null, dispatch: dispatchOf(execution) });
+    } catch (err) {
+      // The channel threw. Nothing about the siblings changed, so the batch
+      // carries on — a throw that escaped this loop would cancel every line
+      // after it, which is the failure this module exists to not have. The
+      // line is reported `uncertain` and NOT as a refusal, because a throw
+      // does not say whether the rail was reached; the claim is already
+      // taken, so the next run reads the execution's state and refuses to
+      // open a second one while it is still open.
+      const current = ctx.engine.get(draft.execution.id);
+      lines.push({
+        ...describe(line),
+        execution_id: draft.execution.id,
+        state: current?.state ?? draft.execution.state,
+        reason: err instanceof Error ? err.message : String(err),
+        dispatch: "uncertain",
+      });
+    }
   }
 
   const settledMinor = lines.filter((l) => l.dispatch === "settled").reduce((sum, l) => sum + l.amount_minor, 0);
