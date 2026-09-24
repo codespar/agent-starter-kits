@@ -174,11 +174,40 @@ Also measured: on the shared sandbox the instrument registers in about 5 s (PROC
 
 The seven adversarial transcripts all play the model that obeys the attack (five of them call `codespar_pay`, one calls `codespar_wallet` and `codespar_manage_connections`); every call is refused with `tool_not_allowed` before any handler, `tools_called` is empty, no execution exists. That is the read-only column of the section 9 table in `skills/codespar-agent-builder/reference/evals.md`.
 
-**Why `hello-agent` is not in the tree.** The lane's rule was to keep it only if it fit in 200 lines. It is about 1,700: roughly 1,060 are the runner copied from `agents/bills-agent` (`src/adversarial.ts`, `src/scenarios.ts`, `src/setup.ts`, `src/main.ts`, `src/commands/*`, `channels/terminal/`), 240 are its tests, and about 400 are what the skill actually asks a coding agent to write (manifest, prompt, tools, guardrails, mandate, docs, two scenarios, seven cases, one fixture, one handler). It exists in full at commit `1762fef` of this branch, green, and can be restored with `git checkout 1762fef -- agents/hello-agent` plus the two root lines (`typecheck` in `package.json`, the eval step in `.github/workflows/ci.yml`).
+**`hello-agent` is in the tree — CLOSED 2026-09-23 (#13).** The lane's rule was
+to keep it only if it fit in 200 lines, and it was about 1,700: roughly 1,060
+were the runner copied from `agents/bills-agent`, 240 its tests, and about 400
+what the skill actually asks a coding agent to write. With the runner shared it
+was rebuilt from the updated `SKILL.md` alone and is **300 lines** over every
+file it owns — manifest, prompt, tools, guardrails, mandate, two scenario
+packs, seven adversarial cases, the docs, `package.json`, `tsconfig.json` and
+one 33-line `src/kit.ts` that spreads `defaultKit` and replaces two things, the
+tool it offers and the `webhook-replay` case. `npm run check` is green and its
+eval is 7 adversarial cases + 2 scenario runs, both in the CI. It ships no
+`test/` directory: `check` and `eval` are its gates, and the runner's own
+behaviour is covered by the two bigger agents' suites.
 
 **What the run showed the skill, and what it leaves for v5.3:**
 
-a. **The runner is copied per agent.** Every agent carries its own ~1,000-line copy of the eval runner, the terminal channel and the commands, with a handful of agent-specific edits (the tool handlers, the env prefix, one payee alias in the `events` case). That is why a "200-line agent" is not possible today. Candidate for v5.3: the runner moves into `@codespar/agent-core` (or a `@codespar/agent-kit` package) and an agent becomes `agent.yaml` + prompt + tools + guardrails + mandate + handlers + cases. Until then the skill says exactly which files to copy verbatim and which to adapt (`reference/anatomy.md`).
+a. **The runner was copied per agent — CLOSED 2026-09-23 (#13).** Every agent
+carried its own ~1,000-line copy of the eval runner, the terminal channel, the
+setup and the commands, with a handful of agent-specific edits. That is why a
+"200-line agent" was not possible. It now lives once, in
+`packages/agent-runtime` (2,044 lines including the bin), behind one binary,
+`codespar-agent <command>`, parameterised by the agent directory. What is
+genuinely per-agent is one module, `src/kit.ts`, against the `AgentKit` seam:
+the rail adapter, the tool handlers, the `policyExtension`, the console
+labels, the one-shot JSON body, and for a receiving agent the sandbox payer
+and the one message per outcome. Measured over `src/` plus `channels/`:
+`bills-agent` 1,397 → 419 lines, `collections-agent` 1,874 → 483. Nothing else
+changed: both agents' process-level tests, `cli.test.ts` and evals pass with
+their expectations untouched (8 + 11 and 8 + 15), and the suite is the same 189
+tests. `npm run check` now refuses `agents/*/src/main.ts`,
+`agents/*/src/commands/`, `channels/` and a copied `setup.ts`, `scenarios.ts`
+or `adversarial.ts` with `agent_carries_runtime`: "runtime-owned; delete it".
+**v5.3 §5 (anatomy)** says which files are agent-owned and which are
+runtime-owned; `skills/codespar-agent-builder/reference/anatomy.md` carries the
+same two tables.
 
 b. **The root names every agent twice.** `package.json` `typecheck` lists one `tsc -p` per agent and the CI's eval step lists one `npm run eval` per agent; `npm run check` and `npm test` glob. The skill's step 9 says to add both lines; a `scripts/typecheck.mjs` over the workspaces would remove the step.
 

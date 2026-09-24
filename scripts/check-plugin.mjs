@@ -12,6 +12,9 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGIN_NAME = "codespar-core";
 const MANIFESTS = [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".cursor-plugin/plugin.json", "plugin.json", "mcp.json", ".mcp.json", ".agents/plugins/marketplace.json"];
 const SKILLS_DIR = "skills";
+const AGENTS_DIR = "agents";
+/** Paths that belong to `packages/agent-runtime`. An agent holding one has forked the runner. */
+const RUNTIME_OWNED = ["src/commands", "src/main.ts", "channels/terminal", "channels/webhook", "src/setup.ts", "src/scenarios.ts", "src/adversarial.ts"];
 const RULES_DIR = "rules";
 const AGENTS_MD = "AGENTS.md";
 const CLAUDE_MD = "CLAUDE.md";
@@ -117,6 +120,16 @@ export function checkPlugin(root = ROOT) {
       }
     }
     if (!dirs.includes("codespar-agent-builder")) error("skill_missing", `${SKILLS_DIR}/codespar-agent-builder is the skill the plugin ships`);
+  }
+
+  // The runner lives once, in packages/agent-runtime (#13). An agent that carries a copy is a fork nobody will keep in step.
+  if (existsSync(join(root, AGENTS_DIR))) {
+    for (const dir of readdirSync(join(root, AGENTS_DIR)).filter((d) => statSync(join(root, AGENTS_DIR, d)).isDirectory())) {
+      for (const owned of RUNTIME_OWNED) {
+        const rel = `${AGENTS_DIR}/${dir}/${owned}`;
+        if (existsSync(join(root, rel))) error("agent_carries_runtime", `${rel} is runtime-owned; delete it. The runner is packages/agent-runtime — the agent's scripts call \`codespar-agent <command>\`, and what is genuinely per-agent goes in src/kit.ts.`);
+      }
+    }
   }
 
   // Rules (Cursor) and the root AGENTS.md the plugin points at.
