@@ -47,9 +47,10 @@ acordo quitado" closes it. The channel has two backends behind one interface,
 and they are **the same code with a different base URL**.
 
 The house simulator is [`dyvit-wa-sim`](https://github.com/fabianocruz/whatsapp-simulator)
-(MIT), a local emulator of the WhatsApp Cloud API. It is not ours and it is not
-a dependency: `npm run whatsapp:emulator` clones it at a pinned sha and runs it
-on `127.0.0.1:4290`. Start it in one terminal, run the agent in another:
+(MIT), a local emulator of the WhatsApp Cloud API, published to npm as
+`@dyvit/whatsapp-simulator-cli`. It is not ours and it is not a dependency:
+`npm run whatsapp:emulator` fetches the pinned version with `npx` and runs it on
+`127.0.0.1:4290`. Start it in one terminal, run the agent in another:
 
 ```sh
 npm run whatsapp:emulator                                 # terminal 1

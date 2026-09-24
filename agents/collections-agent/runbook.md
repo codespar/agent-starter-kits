@@ -31,7 +31,7 @@ npm run start:collections -- --channel whatsapp --conversation acordo-1042 --sim
 ```
 
 The conversation goes through a local emulator of the WhatsApp Cloud API
-(`dyvit-wa-sim`, MIT, cloned at a pinned sha): you type as Joana, the store
+(`dyvit-wa-sim`, MIT, at a pinned npm version): you type as Joana, the store
 answers, the copy-and-paste arrives as its own message (which is how a person
 actually pays — a code inside a picture cannot be copied), and "recebemos,
 acordo quitado" closes it. No Meta account, no credential. For the phone frame,

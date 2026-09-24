@@ -16,7 +16,8 @@ nothing else.
 - The WhatsApp channel (`src/channels/`): one adapter over two backends that
   are the SAME code with a different base URL — a local Cloud API emulator
   ([`dyvit-wa-sim`](https://github.com/fabianocruz/whatsapp-simulator), MIT,
-  cloned at a pinned sha by `npm run whatsapp:emulator`) and Meta's own host.
+  run at a pinned npm version by `npm run whatsapp:emulator`) and Meta's own
+  host.
   `live` is derived from that host, which is what the consent-evidence builder
   refuses on. The rules live in the adapter, above both — the collection
   hours, the bound contact, the secrecy of the debt, the document rule, the

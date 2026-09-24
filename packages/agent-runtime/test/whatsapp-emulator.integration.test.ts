@@ -3,7 +3,7 @@
  * do, which is the more useful half.
  *
  * These run against `dyvit-wa-sim` (https://github.com/fabianocruz/whatsapp-simulator,
- * MIT) at the sha `scripts/whatsapp-emulator.mjs` pins. They SKIP when it is
+ * MIT) at the version `scripts/whatsapp-emulator.mjs` pins. They SKIP when it is
  * not listening, so `npm test` is green on a machine that never started it; the
  * CI starts it, and `npm run whatsapp:gate` fails loudly rather than skipping,
  * so nothing important hides behind a skip.

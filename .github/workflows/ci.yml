@@ -19,16 +19,14 @@ jobs:
           cache: npm
       - run: npm ci
       # The WhatsApp channel talks to dyvit-wa-sim, a local Cloud API emulator
-      # from https://github.com/fabianocruz/whatsapp-simulator (MIT). It is NOT
-      # a dependency of this workspace — its packages are not on npm and it is a
-      # pnpm workspace while this repo is an npm one — so it is a clone at a
-      # pinned sha, started here and nowhere near `npm ci`. No Meta account, no
-      # credential, no traffic that leaves the runner.
-      - name: whatsapp emulator (dyvit-wa-sim, pinned sha)
-        env:
-          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      # published as @dyvit/whatsapp-simulator-cli (MIT, from
+      # https://github.com/fabianocruz/whatsapp-simulator). It is NOT a
+      # dependency of this workspace — it is a development tool nothing in
+      # `packages/` or `agents/` imports — so npx fetches the PINNED version
+      # here, nowhere near `npm ci`. No Meta account, no credential, and once
+      # it is fetched no traffic that leaves the runner.
+      - name: whatsapp emulator (dyvit-wa-sim, pinned version)
         run: |
-          corepack enable || true
           node scripts/whatsapp-emulator.mjs --prepare
           node scripts/whatsapp-emulator.mjs > /tmp/whatsapp-emulator.log 2>&1 &
           for i in $(seq 1 40); do curl -sf http://127.0.0.1:4290/health && break || sleep 1; done

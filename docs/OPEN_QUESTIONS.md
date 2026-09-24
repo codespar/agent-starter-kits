@@ -357,7 +357,7 @@ next to the manifest and the guardrails, because the check parses it and the
 core is what the check can import.
 
 A third thing lives outside both: the EMULATOR the channel talks to, which is
-somebody else's repository at a pinned sha. See §42.
+somebody else's package at a pinned version. See §42.
 
 One correction that belongs here: §21 and the `collections-agent` README call
 the webhook receiver `channels/webhook/`. There is no such directory and there
@@ -382,12 +382,29 @@ shape and posts back the same `x-hub-signature-256`-signed webhooks, so the
 different base URL (`live` is derived from the host, not from a flag). That is
 the thing worth proving, and a mock cannot prove it.
 
-It is not a dependency of this workspace: its packages are not published to npm
-(checked 2026-09-24 — `@dyvit/whatsapp-simulator-cli` and `@dyvit/whatsapp-pricing`
-both 404) and it is a pnpm workspace while this repo is an npm one. So it is a
-CLONE AT A PINNED SHA in a cache directory, started by
-`scripts/whatsapp-emulator.mjs` and by one CI step. `npm ci` never sees it.
-Pinned because a moving `main` would fail our gate on somebody else's commit.
+It is not a dependency of this workspace: it is a development tool nothing in
+`packages/` or `agents/` imports, so `npm ci` has no reason to fetch it and a
+contributor who never runs the WhatsApp gate never downloads it. Until
+2026-09-24 it could not have been one anyway — its packages 404'd on npm and it
+is a pnpm workspace while this repo is an npm one — so this lane kept a CLONE AT
+A PINNED SHA in a cache directory. The CLI went up that day, and
+`scripts/whatsapp-emulator.mjs` and the one CI step now run
+`@dyvit/whatsapp-simulator-cli` AT A PINNED VERSION through `npx`, which caches
+it outside the tree. Pinned because a moving `latest` would fail our gate on
+somebody else's release. A cache directory left by the old mechanism
+(`~/.cache/codespar-whatsapp-simulator`) is dead and can be deleted by hand.
+
+One wrinkle belongs here rather than in §46, because it is about PACKAGING and
+not about what the emulator does. **In 0.1.0 the published bin is a no-op.**
+`dist/cli.js` runs `main()` only when `import.meta.url` equals
+`pathToFileURL(process.argv[1]).href`, and a bin is a symlink, so invoked
+through `npx` — or through any `node_modules/.bin` — the two never match and the
+process exits 0 having started no server. That is the worst shape a failure can
+take: a command that passes and a port that is dead. So the script uses `npx`
+to FETCH the pinned version and then runs the module file it resolved to,
+checking the version in the resolved `package.json` against the pin so a stray
+global install cannot quietly take over. `resolveCli` goes the day that guard
+is fixed upstream. Reported here, not patched: same rule as the five gaps.
 
 Two things remain STUBS on our side and are named rather than implied.
 
@@ -508,10 +525,13 @@ which is why the gate uses it, and a scripted run in `human` mode without
 is at. **Open:** a second channel for the operator, or an explicit statement
 that the interactive simulator is a demo and `--scripted` is the real path.
 
-## 46. What the emulator does not do, measured against the pinned sha
+## 46. What the emulator does not do, measured against the pinned version
 
-Driving the whole `collections-agent` flow through `dyvit-wa-sim` at
-`2f1f8bc120ddbc1bfa23386622f9a93f3fdeb980` found five gaps. Each is the exact
+Driving the whole `collections-agent` flow through `dyvit-wa-sim` found five
+gaps. They were first measured at `2f1f8bc120ddbc1bfa23386622f9a93f3fdeb980`,
+the sha this lane pinned while the tool was not yet on npm, and re-measured
+unchanged at `@dyvit/whatsapp-simulator-cli@0.1.0`, the version it pins now.
+Each is the exact
 payload that failed, so this section and
 `packages/agent-runtime/test/whatsapp-emulator.integration.test.ts` say the
 same thing twice — the tests are written to go RED the day a gap is closed,
