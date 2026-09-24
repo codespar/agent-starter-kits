@@ -1,7 +1,10 @@
 # Anatomy of an agent
 
-Spec section 5, as `agents/bills-agent` ships it. The third column says what
-to do with each file when you scaffold `agents/<name>` from that directory.
+Spec section 5. An agent is a directory of files plus one module; the runner
+is `packages/agent-runtime` and is shared. The third column says what to do
+with each entry when you build `agents/<name>`.
+
+## Agent-owned
 
 | Path | What | For the new agent |
 |---|---|---|
@@ -10,43 +13,47 @@ to do with each file when you scaffold `agents/<name>` from that directory.
 | `tools.json` | Closed list of tools: `meta_tools` (`codespar_*`) and `local_tools`. | WRITE. Minimal. |
 | `guardrails.json` | What the agent applies alone, before the mandate. | WRITE. `approval` and `escalate_above` mirror the manifest. |
 | `mandate.example.json` | Caps, allowlist, named payees, expiry. | WRITE. `agent_id` is the agent's name. |
+| `scenarios/*.json` + `*.transcript.jsonl` | Section 12 packs. | WRITE at least `happy-path`. See `evals.md`. |
+| `evals/adversarial/*.json` + `*.transcript.jsonl` | Section 9 cases. | WRITE seven cases. See `evals.md`. |
+| `evals/eval.yaml` | `extends: ../agent.yaml` plus metrics. | COPY verbatim. |
 | `AGENTS.md`, `CLAUDE.md` | Rules for the coding agent. Identical. | WRITE one, copy the other. |
 | `README.md` | What it proves, what is sandbox, what it applies alone, commands. | WRITE. Never "verifiable by a third party". |
 | `runbook.md` | The forty-second script. | WRITE. |
 | `.env.example` | `CODESPAR_API_KEY` and `ANTHROPIC_API_KEY`. Only. | COPY verbatim; only the comment lines may change. |
-| `package.json` | Workspace package, scripts, `@codespar/agent-core` dependency. | ADAPT: `name`, `description`; drop `consent` for a non-payer. |
+| `package.json` | Workspace package; every script is `codespar-agent <command>`. | ADAPT: `name`, `description`, the scripts your kind needs. |
 | `tsconfig.json` | Extends `../../tsconfig.base.json`. | COPY verbatim. |
-| `evals/eval.yaml` | `extends: ../agent.yaml` plus metrics. | COPY verbatim. |
-| `evals/adversarial/*.json` + `*.transcript.jsonl` | Section 9 cases. | WRITE seven cases. See `evals.md`. |
-| `scenarios/*.json` + `*.transcript.jsonl` | Section 12 packs. | WRITE at least `happy-path`. See `evals.md`. |
-| `channels/terminal/index.ts` | The terminal channel of `npm start`: describes what the core decided, asks on `awaiting_approval`, runs `approved`. | ADAPT: the `formatBRL` import (from your fixture file) and the two banner strings. The logic stays. |
-| `src/main.ts` | `npm start`, `--input`, `--scenario`, `--json`, `--now` (a pinned clock for the guardrails; `CODESPAR_AGENT_NOW` from the environment). | ADAPT: the usage text; a non-payer removes the embedded-consent block (lines that import `./modules/embedded-consent.js` and the `if (railKind === "api" && !loadLocalMandate(...))` branch) and its `createCodeSparClient`/`loadMandate` imports. |
-| `src/setup.ts` | Wires manifest, guardrails, tools, state, rail, status source, signer, bundle, provider. | ADAPT: the `handlers` map (your tool handlers), the module imports, the `BILLS_` env prefix, and for a non-payer the `railKind === "api"` branch (a read-only agent has no rail: force `stub` and load `mandate.example.json`). |
-| `src/bills.ts` | The deterministic fixture the demo reads (`BILLS`, `MONTH`, `formatBRL`). | REPLACE with your own fixture file (keep a `formatBRL` for the channel). |
-| `src/modules/pix-out.ts` | The tool handlers: `codespar_pay` drafts through the engine, `codespar_ledger` and `list_bills` read. | REPLACE with `src/modules/<your-module>.ts`: one handler per tool of `tools.json`. |
-| `src/modules/embedded-consent.ts` | The partner-surface consent that mints the mandate with a test key. | KEEP for a payer (the mandate is born here); DELETE for a collector or a read-only agent. |
-| `src/adversarial.ts` | Section 9 runner: loads cases, replays the worst model, checks transitions. | COPY; ADAPT only `runEventsCase` (it drafts `{ payee: "escola", amount: 1000 }`: use an alias of YOUR mandate) and the `bills-adv-` temp-dir prefix. |
-| `src/scenarios.ts` | Section 12 runner. | COPY; ADAPT only the `bills-` temp-dir prefix. |
-| `src/commands/check.ts` | `npm run check`. | COPY verbatim. |
-| `src/commands/eval.ts` | `npm run eval`. | COPY verbatim. |
-| `src/commands/approve.ts`, `deny.ts`, `decide.ts` | The human decision as its own command. | COPY verbatim. |
-| `src/commands/resume.ts`, `reconcile.ts`, `rerun.ts` | Restart, reconciliation, replay. | COPY verbatim (`rerun.ts`: adapt the `bills-rerun-` prefix). |
-| `src/commands/consent.ts` | `npm run consent`. | KEEP for a payer; DELETE otherwise. |
-| `test/check.test.ts` | `check` passes on the shipped agent and fails on each contradiction. | COPY; the copy list inside `copyAgent()` is generic. |
-| `test/adversarial.test.ts` | Every case passes; the `required` list is the seven names. | COPY; ADAPT the assertions that name bills-agent states (`tools_refused`, `fractioning` states). |
-| `test/scenarios.test.ts` | Every scenario in every mode; every event and receipt carries an actor. | COPY; ADAPT the `required` list to your scenarios and drop the `happy-path` two-mode assertion if your agent has one mode. |
-| `test/cli.test.ts` | `--json` on stdout only, restart-then-resume, rerun, approve/deny. | COPY for a payer (rename the `BILLS_` env vars); a read-only agent keeps the `--json` and `check` blocks only. |
-| `test/provider.test.ts` | `resolveProvider` treats the placeholder key as no key. | COPY verbatim. |
+| `src/kit.ts` | The one module: the rail, the handlers, the policy extension, the labels. | WRITE. `agents/hello-agent/src/kit.ts` is about thirty lines, most of them one adversarial case. |
+| `src/<fixture>.ts`, `src/modules/<module>.ts` | Your deterministic fixture and your tool handlers. | WRITE. A small agent keeps both in one file. |
+| `test/*.test.ts` | Your own tests, if you want more than `eval`. | OPTIONAL. Copy from `agents/bills-agent/test`. |
 | `.codespar/`, `runs/` | Local state, the signed mandate, proof bundles. Gitignored. | Never commit. |
 
-## What the copied runner gives you for free
+## Runtime-owned — do not copy any of it into your agent
+
+| Path | What |
+|---|---|
+| `packages/agent-runtime/bin.mjs` | `codespar-agent`, the one binary your scripts call. |
+| `packages/agent-runtime/src/cli.ts` | The command table. |
+| `packages/agent-runtime/src/setup.ts` | Manifest, guardrails, tools, prompt, state, signer, bundle, provider, pinned clock. |
+| `packages/agent-runtime/src/terminal.ts` | The terminal channel: the banner, the approval question, the transitions, the receipt path. |
+| `packages/agent-runtime/src/commands/*.ts` | `start`, `consent`, `approve`, `deny`, `resume`, `rerun`, `reconcile`, `poll`, `webhook`, `check`, `eval`. |
+| `packages/agent-runtime/src/scenarios.ts` | The section 12 runner and the pack schema. |
+| `packages/agent-runtime/src/adversarial.ts` | The section 9 runner and the case schema. |
+| `packages/agent-runtime/src/poll.ts` | Looking at a receivable until the payer acts. |
+| `packages/agent-runtime/src/webhook.ts` | The trigger receiver: signature, duplicates, out-of-order. |
+| `packages/agent-runtime/src/kit.ts` | `AgentKit`: the seam, documented field by field. |
+
+`npm run check` refuses `agents/*/src/main.ts` and `agents/*/src/commands/`:
+a runner inside an agent is a fork of the shared one, and every fix would
+have to be re-applied to it.
+
+## What the runner gives you for free
 
 - `npm run check` (the manifest gate, `checkAgent` in the core).
 - `npm run eval` (the section 9 suite plus every scenario in every mode, replay provider, no network).
 - `npm start -- --input "..." [--approve|--deny] [--json] [--now <ISO>]`, `--scenario <name>`, interactive `npm start`. A gate that runs a one-shot passes `--now` so an hours guardrail reads a pinned instant, not the hour the CI happens to run at.
-- `npm run approve|deny <execution-id>`, `npm run resume`, `npm run reconcile`, `npm run rerun <run-id>`.
+- `npm run approve|deny <execution-id>`, `npm run resume`, `npm run reconcile`, `npm run rerun <run-id>`, and for a collector `npm run poll` and `npm run webhook`.
 - The proof bundle under `runs/<run-id>/` (transcript, approvals, mandate snapshot, events, receipts), every line stamped with `actor`.
-- The `csk_test_` guard, the replay provider when `ANTHROPIC_API_KEY` is empty, and `--json` on stdout with people on stderr.
+- The `csk_test_` guard, the replay provider when `ANTHROPIC_API_KEY` is empty or still holds the `.env.example` placeholder, and `--json` on stdout with people on stderr.
 
 ## The tool-handler contract
 

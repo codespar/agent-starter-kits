@@ -3,7 +3,7 @@
  * and the skill carries the frontmatter a coding agent needs. The same check
  * `npm run check` runs first; here it is broken one way at a time.
  */
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -15,6 +15,7 @@ function copyPlugin(): string {
   // The skill names files of the anchor agent; the copy keeps them without the runner's node_modules.
   cpSync(join(ROOT, "agents", "bills-agent"), join(dir, "agents", "bills-agent"), { recursive: true, filter: (src) => !src.includes("node_modules") && !src.includes("/.codespar") && !src.includes("/runs") });
   cpSync(join(ROOT, "agents", "collections-agent"), join(dir, "agents", "collections-agent"), { recursive: true, filter: (src) => !src.includes("node_modules") && !src.includes("/.codespar") && !src.includes("/runs") });
+  cpSync(join(ROOT, "agents", "hello-agent"), join(dir, "agents", "hello-agent"), { recursive: true, filter: (src) => !src.includes("node_modules") && !src.includes("/.codespar") && !src.includes("/runs") });
   return dir;
 }
 
@@ -45,6 +46,19 @@ describe("the codespar-core plugin manifests", () => {
     writeFileSync(skill, original);
     rmSync(join(dir, "skills", "codespar-agent-builder", "reference", "evals.md"));
     expect(codes(dir)).toContain("skill_reference_missing");
+  });
+
+  it("fail when an agent carries a copy of the runner", () => {
+    const dir = copyPlugin();
+    mkdirSync(join(dir, "agents", "hello-agent", "src", "commands"), { recursive: true });
+    writeFileSync(join(dir, "agents", "hello-agent", "src", "commands", "resume.ts"), "export {};\n");
+    expect(codes(dir)).toContain("agent_carries_runtime");
+    const message = checkPlugin(dir).findings.find((f: { code: string }) => f.code === "agent_carries_runtime")?.message as string;
+    expect(message).toContain("runtime-owned; delete it");
+
+    const again = copyPlugin();
+    writeFileSync(join(again, "agents", "hello-agent", "src", "main.ts"), "export {};\n");
+    expect(codes(again)).toContain("agent_carries_runtime");
   });
 
   it("fail when the MCP pin drifts from the manifest's, when the two spellings of mcp.json differ, or when the root AGENTS.md and CLAUDE.md diverge", () => {

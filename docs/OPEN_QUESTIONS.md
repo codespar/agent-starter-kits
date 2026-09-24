@@ -4,7 +4,7 @@ Kept as the prompt asks: when the spec and the real API diverge, the code follow
 
 ## 1. `cli:` pin — the spec says `@codespar/cli@0.6.0`; npm publishes 0.13.0
 
-`agent.yaml` pins `cli: "@codespar/cli@0.13.0"` (verified on npm on 2026-09-23; 0.6.0 is stale, and 0.12.1, the pin of the first delivery, predates the agent commands). 0.13.0 ships the three commands section 14.5 asks for, with the shapes its `--help` prints: `codespar agent run <dir> [--input <text>] [--approve|--deny]`, `codespar eval <dir>` and `codespar mandate revoke <id> [--reason <text>]`. The READMEs show them with `npx -y @codespar/cli@0.13.0`. The manifest schema accepts any exact version; the check only refuses an unpinned one. The `mcp` pin `@codespar/mcp@0.5.8` matches; `@codespar/sdk` is pinned at 0.16.5 in `packages/agent-core/package.json` (the spec's plan measured 0.16.2; 0.16.4 was the first pin, 0.16.5 adds the sandbox payer route to the OpenAPI document, section 31c). Decision taken 2026-09-23 (#3). Later the same day both pins moved to `@codespar/cli@0.14.0` and `@codespar/sdk@0.16.5`, the versions npm published that day; 0.14.0 adds `init --template bills-agent|collections-agent`. **v5.2:** update section 14.4 and the example in 4.3.
+`agent.yaml` pins `cli: "@codespar/cli@0.13.0"` (verified on npm on 2026-09-23; 0.6.0 is stale, and 0.12.1, the pin of the first delivery, predates the agent commands). 0.13.0 ships the three commands section 14.5 asks for, with the shapes its `--help` prints: `codespar agent run <dir> [--input <text>] [--approve|--deny]`, `codespar eval <dir>` and `codespar mandate revoke <id> [--reason <text>]`. The READMEs show them with `npx -y @codespar/cli@0.13.0`. The manifest schema accepts any exact version; the check only refuses an unpinned one. The `mcp` pin `@codespar/mcp@0.5.8` matches; `@codespar/sdk` is pinned at 0.16.6 in `packages/agent-core/package.json` (the spec's plan measured 0.16.2; 0.16.4 was the first pin, 0.16.5 added the sandbox payer route to the OpenAPI document, section 31c, and 0.16.6 types `consumer_id` on the charge create, section 31a). Decision taken 2026-09-23 (#3). Later the same day both pins moved to `@codespar/cli@0.14.0` and `@codespar/sdk@0.16.5`, the versions npm published that day; 0.14.0 adds `init --template bills-agent|collections-agent`. The sdk pin moved once more, to 0.16.6, with #13. **v5.2:** update section 14.4 and the example in 4.3.
 
 ## 2. `actor` has no field on the wire
 
@@ -145,7 +145,7 @@ An agreement in N instalments is N `POST /v1/charges`, one per parcela, each wit
 
 ## 31. Three walls between "the charge exists" and "the cycle closes", found on the second staging run
 
-a. **`consumer_id` is required on `POST /v1/charges`, and the SDK's typed body does not name it.** The REST route has no session to default it from (`prepareBolepixIntent` reads `input.consumer_id`, else `ctx.agentId`, which a REST call does not carry); without it the shared-sandbox receiver stand-in is never engaged and the API refuses with "no Celcoin receiving identity", which reads like a missing account and is a missing field. The kit sends the policy's `consumer_id` (the merchant, `actor.on_behalf_of`), widening the SDK type at the call site. **v5.3 / SDK:** `consumer_id` on the create's typed body and in the route doc.
+a. **`consumer_id` is required on `POST /v1/charges`, and the SDK's typed body did not name it — CLOSED 2026-09-23 (#13).** The REST route has no session to default it from (`prepareBolepixIntent` reads `input.consumer_id`, else `ctx.agentId`, which a REST call does not carry); without it the shared-sandbox receiver stand-in is never engaged and the API refuses with "no Celcoin receiving identity", which reads like a missing account and is a missing field. The kit sends the policy's `consumer_id` (the merchant, `actor.on_behalf_of`), which used to need a cast at the call site. **Resolved:** `@codespar/sdk@0.16.6` types `consumer_id` on the create's body, the pin in `packages/agent-core/package.json` moved to it, and the `as unknown as` widening in `api/charge-rail.ts` is gone. What remains for v5.3 is the route doc, which still does not say the field is required.
 
 b. **`GET /v1/charges/{id}` does not accept the caller's `idempotency_key` as the id**, against its own doc ("accepts EITHER the id the create returned OR the caller's own idempotency_key"): `GET /v1/charges/att_858db6e517d37d60e89b388694db4eec_0` → `404 charge_not_found` while `GET /v1/charges/0e88108e-…` answered the charge. The kit's lookup now goes by the charge id the create returned and falls back to the key only when no id was recorded (the create's answer was lost). A poll keyed on the key alone never sees the instrument register: that is what left the 17:54 run `executing`. Enterprise: either the read resolves the key or the doc stops saying so.
 
@@ -174,11 +174,40 @@ Also measured: on the shared sandbox the instrument registers in about 5 s (PROC
 
 The seven adversarial transcripts all play the model that obeys the attack (five of them call `codespar_pay`, one calls `codespar_wallet` and `codespar_manage_connections`); every call is refused with `tool_not_allowed` before any handler, `tools_called` is empty, no execution exists. That is the read-only column of the section 9 table in `skills/codespar-agent-builder/reference/evals.md`.
 
-**Why `hello-agent` is not in the tree.** The lane's rule was to keep it only if it fit in 200 lines. It is about 1,700: roughly 1,060 are the runner copied from `agents/bills-agent` (`src/adversarial.ts`, `src/scenarios.ts`, `src/setup.ts`, `src/main.ts`, `src/commands/*`, `channels/terminal/`), 240 are its tests, and about 400 are what the skill actually asks a coding agent to write (manifest, prompt, tools, guardrails, mandate, docs, two scenarios, seven cases, one fixture, one handler). It exists in full at commit `1762fef` of this branch, green, and can be restored with `git checkout 1762fef -- agents/hello-agent` plus the two root lines (`typecheck` in `package.json`, the eval step in `.github/workflows/ci.yml`).
+**`hello-agent` is in the tree — CLOSED 2026-09-23 (#13).** The lane's rule was
+to keep it only if it fit in 200 lines, and it was about 1,700: roughly 1,060
+were the runner copied from `agents/bills-agent`, 240 its tests, and about 400
+what the skill actually asks a coding agent to write. With the runner shared it
+was rebuilt from the updated `SKILL.md` alone and is **300 lines** over every
+file it owns — manifest, prompt, tools, guardrails, mandate, two scenario
+packs, seven adversarial cases, the docs, `package.json`, `tsconfig.json` and
+one 33-line `src/kit.ts` that spreads `defaultKit` and replaces two things, the
+tool it offers and the `webhook-replay` case. `npm run check` is green and its
+eval is 7 adversarial cases + 2 scenario runs, both in the CI. It ships no
+`test/` directory: `check` and `eval` are its gates, and the runner's own
+behaviour is covered by the two bigger agents' suites.
 
 **What the run showed the skill, and what it leaves for v5.3:**
 
-a. **The runner is copied per agent.** Every agent carries its own ~1,000-line copy of the eval runner, the terminal channel and the commands, with a handful of agent-specific edits (the tool handlers, the env prefix, one payee alias in the `events` case). That is why a "200-line agent" is not possible today. Candidate for v5.3: the runner moves into `@codespar/agent-core` (or a `@codespar/agent-kit` package) and an agent becomes `agent.yaml` + prompt + tools + guardrails + mandate + handlers + cases. Until then the skill says exactly which files to copy verbatim and which to adapt (`reference/anatomy.md`).
+a. **The runner was copied per agent — CLOSED 2026-09-23 (#13).** Every agent
+carried its own ~1,000-line copy of the eval runner, the terminal channel, the
+setup and the commands, with a handful of agent-specific edits. That is why a
+"200-line agent" was not possible. It now lives once, in
+`packages/agent-runtime` (2,044 lines including the bin), behind one binary,
+`codespar-agent <command>`, parameterised by the agent directory. What is
+genuinely per-agent is one module, `src/kit.ts`, against the `AgentKit` seam:
+the rail adapter, the tool handlers, the `policyExtension`, the console
+labels, the one-shot JSON body, and for a receiving agent the sandbox payer
+and the one message per outcome. Measured over `src/` plus `channels/`:
+`bills-agent` 1,397 → 419 lines, `collections-agent` 1,874 → 483. Nothing else
+changed: both agents' process-level tests, `cli.test.ts` and evals pass with
+their expectations untouched (8 + 11 and 8 + 15), and the suite is the same 189
+tests. `npm run check` now refuses `agents/*/src/main.ts`,
+`agents/*/src/commands/`, `channels/` and a copied `setup.ts`, `scenarios.ts`
+or `adversarial.ts` with `agent_carries_runtime`: "runtime-owned; delete it".
+**v5.3 §5 (anatomy)** says which files are agent-owned and which are
+runtime-owned; `skills/codespar-agent-builder/reference/anatomy.md` carries the
+same two tables.
 
 b. **The root names every agent twice.** `package.json` `typecheck` lists one `tsc -p` per agent and the CI's eval step lists one `npm run eval` per agent; `npm run check` and `npm test` glob. The skill's step 9 says to add both lines; a `scripts/typecheck.mjs` over the workspaces would remove the step.
 
