@@ -4,12 +4,13 @@
 
 Agents that move money under a mandate. The person signs the limits once (cap per payment, cap per month, named payees, expiry), the agent proposes payments, and deterministic code decides what actually runs. Every payment ends in an approval record and a receipt.
 
-Two agents ship today, both in TypeScript, both running against the CodeSpar sandbox:
+Three agents ship today, all in TypeScript, all running against the CodeSpar sandbox:
 
 - **[`bills-agent`](agents/bills-agent)** pays a household's monthly bills (school, cleaner, utilities) over Pix.
 - **[`collections-agent`](agents/collections-agent)** is the merchant side: it agrees payment terms with a customer, issues a bolepix per instalment and closes the loop when the charge is paid.
+- **[`supplier-payments-agent`](agents/supplier-payments-agent)** is the company side: suppliers, sales commissions and payroll, paid in batches. A batch is a loop of executions, one per line, so a refusal on one payee does not stop the others and re-running it pays nobody twice.
 
-A third, **[`hello-agent`](agents/hello-agent)**, is the worked example the [`codespar-agent-builder`](skills/codespar-agent-builder) skill builds: read-only, 300 lines, no payment tool at all.
+A fourth, **[`hello-agent`](agents/hello-agent)**, is the worked example the [`codespar-agent-builder`](skills/codespar-agent-builder) skill builds: read-only, 300 lines, no payment tool at all.
 
 ## Quickstart: clone to first receipt
 
@@ -64,11 +65,12 @@ Same code, same states, same receipts. Start with `human`, switch when you trust
 |---|---|
 | Pix payments out (`bills-agent`) | Sandbox |
 | Bolepix charges with a sandbox payer (`collections-agent`) | Sandbox |
+| Batch payouts, one execution per line (`supplier-payments-agent`) | Sandbox |
 | Mandate revocation checked against the API before every payment (`bills-agent`) | Live in the sandbox |
 | Receipts sealed with HMAC | Proves the payment to whoever runs the agent |
 | Approval artifacts signed with a local dev key | Stub: the API does not sign approval lists yet |
 
-Not here yet: WhatsApp as a channel (terminal only for now), batch payouts, Ed25519-signed receipts. Each agent's README lists its own stubs. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) tracks every place the code and the spec diverge.
+Not here yet: WhatsApp as a channel (terminal only for now), Ed25519-signed receipts. Each agent's README lists its own stubs. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) tracks every place the code and the spec diverge.
 
 The kits use Pix and bolepix. The CodeSpar API also settles USDC over x402; see the [docs](https://codespar.dev/docs).
 
@@ -93,6 +95,7 @@ The repo is also the `codespar-core` plugin: the CodeSpar MCP server (pinned at 
 | [`packages/agent-runtime`](packages/agent-runtime) | The runner every agent shares: the terminal channel, `codespar-agent start\|consent\|approve\|deny\|resume\|rerun\|reconcile\|poll\|webhook\|check\|eval`, and the scenario and adversarial runners. An agent is its files plus one `src/kit.ts`. |
 | [`agents/bills-agent`](agents/bills-agent) | Pays bills under a mandate. |
 | [`agents/collections-agent`](agents/collections-agent) | Collects from customers inside a negotiation envelope. |
+| [`agents/supplier-payments-agent`](agents/supplier-payments-agent) | Pays suppliers, commissions and payroll in batches, under one mandate. |
 | [`agents/hello-agent`](agents/hello-agent) | The read-only worked example: the smallest agent the runtime can carry. |
 | [`skills/codespar-agent-builder`](skills/codespar-agent-builder) | The skill for adding a new agent. |
 | [`docs/spec-v5.1.1.md`](docs/spec-v5.1.1.md) | The spec this code was built against. |

@@ -44,14 +44,23 @@ written.
 - `turns[].decision`: `approve` (default), `deny`, `none`.
 - `turns[].before_decision` / `before_execute`: `revoke_mandate` or `pause_all`, applied through the local status stub so the core catches it at the next gate.
 - `turns[].rail_uncertain: true`: the stub rail answers `uncertain` once; the run ends with a reconcile.
+- `stub_refuse_payees: [...]` (pack level, not per turn): the stub rail declines these payees, by their pinned key, for the whole run. The only way a pack can script the RAIL refusing — an allowlist refusal never reaches the rail, and a cap refusal is a different thing. `partial-batch-failure` is what it exists for.
 - `expect` keys per mode (`human`, `mandate`) or `both`: `states`, `trails` (the `to` of every transition), `reasons`, `triggers`, `receipts`, `refused_before_draft`, `settled_total`. All optional; only what you name is compared.
 - `now` defaults to `2026-09-23T18:00:00.000Z`; each step ticks one second.
 
 Names the bills-agent ships and the spec asks of a payer: `happy-path`,
 `cap-exceeded`, `beneficiary-not-allowed`, `prompt-injection`,
 `escalated-above-threshold`, `mandate-revoked`. A collector adds
-`charge-expired` and `instalments`. A read-only agent needs `happy-path` and
+`charge-expired` and `instalments`. A payer that runs batches adds
+`partial-batch-failure`. A read-only agent needs `happy-path` and
 `prompt-injection` (expect `states: []`, `receipts: 0` in both).
+
+`expect.states`, `trails` and `reasons` are arrays over the executions of the
+run, in order, so an agent whose handler drafts several executions declares
+them all. That is what makes a partial failure assertable:
+`["settled", "failed", "settled"]` says in one line that the refusal did not
+stop the lines after it, and a single multi-item execution could only ever
+say `["failed"]`.
 
 ## Adversarial case (`evals/adversarial/<name>.json`)
 

@@ -36,13 +36,16 @@ from memory. As of the anchor agent's manifest:
 
 ```yaml
 mcp: "@codespar/mcp@0.5.8"
-cli: "@codespar/cli@0.13.0"
+cli: "@codespar/cli@0.14.0"
 ```
 
-Read the current values from `agents/bills-agent/agent.yaml` at the moment
-you scaffold; `docs/OPEN_QUESTIONS.md` section 1 says why they are what they
-are. Updating a pin is its own PR with the suite green, not a side effect of
-your agent.
+**Read the current values from `agents/bills-agent/agent.yaml` at the moment
+you scaffold, not from this block.** The example above goes stale by design:
+it was `0.13.0` here while the anchor already carried `0.14.0`, which is a
+trap for anyone who copies the reference instead of the anchor.
+`docs/OPEN_QUESTIONS.md` section 1 says why the pins are what they are.
+Updating a pin is its own PR with the suite green, not a side effect of your
+agent.
 
 ## Published events
 
