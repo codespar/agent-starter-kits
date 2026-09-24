@@ -100,11 +100,23 @@ keep them in one execution when they must move together.
 
 The difference is not stylistic, so decide it on the mechanism. A multi-item
 execution has ONE `idempotency_key`, ONE approval artifact and ONE terminal
-state: `ExecutionEngine.dispatch` stops its attempt loop at the first `failed`
-outcome, and `close()` reaches `settled` only when every attempt settled. So
-if the rail declines item 2 of 4, the execution ends `failed`, item 1 has been
-paid inside a `failed` row, and items 3 and 4 were never dispatched. That is
-right for an order that is one purchase, and wrong for a payroll.
+state; N executions have N of each. Both dispatch every attempt and name every
+one — the core used to stop at the first refusal, which made the choice look
+like a choice between "the list is attested" and "a refusal does not stop the
+others"; that was a defect and it is fixed.
+
+So decide on what the LIST is. One execution when the lines are approved as a
+unit and a person reads them in one go ("pague as contas de outubro"): what is
+attested is the list, as one artifact with one `items_hash` over it. N
+executions when each line is independently approvable and the batch can be
+large (a payroll, a supplier run): line 57 with a wrong key is fixed and re-run
+alone, without sending the other 199 back through approval.
+
+What N executions cost: nothing binds the SET. Each line carries its own
+`items_hash`, but a bundle where the agent ran three of four approved lines
+does not say a fourth existed. Until issue #21's `batch_hash` lands, an agent
+of that shape claims "each line is attested" and not more. See
+`docs/OPEN_QUESTIONS.md` § 40.
 
 Looping costs you two things you must then handle yourself:
 

@@ -333,6 +333,7 @@ export class ExecutionEngine {
    */
   private async dispatch(execution: Execution<"executing">, payments: RailPayment[]): Promise<Execution> {
     const outcomes: ItemOutcome[] = [...execution.outcomes];
+    const unknown: string[] = [];
     this.deps.store.updateOutbox(execution.idempotency_key, "sent", undefined, this.clock().toISOString());
 
     for (const [index, payment] of payments.entries()) {
@@ -343,11 +344,15 @@ export class ExecutionEngine {
       this.record("rail.outcome", execution.id, { attempt_id: payment.attempt_id, status: outcome.status, ...railAnswer(outcome) });
       if (outcome.status === "uncertain") {
         this.record("rail.uncertain", execution.id, { attempt_id: payment.attempt_id, code: outcome.code, message: outcome.message });
-        return this.leaveUnresolved({ ...execution, outcomes }, `attempt ${payment.attempt_id}: ${outcome.code} — outcome unknown, kept for reconciliation`);
+        // No outcome is recorded because there is none. The siblings are still
+        // sent: an unknown answer about THIS payee says nothing about the next
+        // one, and the execution stays open until reconciliation settles it.
+        unknown.push(`attempt ${payment.attempt_id}: ${outcome.code} — outcome unknown, kept for reconciliation`);
+        continue;
       }
       if (outcome.status === "failed") {
         outcomes.push({ index, attempt_id: payment.attempt_id, status: "failed", code: outcome.code, error: `${outcome.code}: ${outcome.message}` });
-        break;
+        continue;
       }
       if (outcome.status === "accepted") {
         // A receivable was issued; the payer decides the rest. Nothing settles here.
@@ -358,20 +363,28 @@ export class ExecutionEngine {
       outcomes.push({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: outcome.transaction_id, ...(outcome.receipt_id ? { receipt_id: outcome.receipt_id } : {}) });
       await this.ingestSettlement(execution, index, payment, outcome.receipt_id, PAYMENT_SUCCEEDED);
     }
-    return this.close({ ...execution, outcomes }, payments.length);
+    return this.close({ ...execution, outcomes }, payments.length, unknown.join("; ") || undefined);
   }
 
   /**
    * Closes an `executing` execution from its recorded outcomes: stays while a
-   * receivable is accepted and unpaid, failed if any attempt failed, settled
-   * when every attempt settled, otherwise unresolved.
+   * receivable is accepted and unpaid, stays while any attempt has no outcome
+   * at all, failed if any attempt failed, settled when every attempt settled.
+   *
+   * The order matters. An execution does not close while one of its attempts
+   * is unknown, even when another one failed: "some of this moved and one of
+   * them we cannot see" is not a closed outcome, and closing it as `failed`
+   * would report a batch as finished while a payment may still be in flight.
    */
-  private close(execution: Execution<"executing">, attempts: number): Execution {
+  private close(execution: Execution<"executing">, attempts: number, unknownDetail?: string): Execution {
     const at = this.clock().toISOString();
     const updated: Execution<"executing"> = { ...execution, updated_at: at };
     const accepted = execution.outcomes.filter((o) => o.status === "accepted");
     if (accepted.length > 0) {
       return this.leaveAwaiting(updated, `${accepted.length} receivable(s) issued and unpaid: ${accepted.map((o) => o.transaction_id ?? o.attempt_id).join(", ")}`);
+    }
+    if (execution.outcomes.length < attempts) {
+      return this.leaveUnresolved(updated, unknownDetail ?? `${execution.outcomes.length} of ${attempts} attempt(s) have an outcome`);
     }
     const failed = execution.outcomes.find((o) => o.status === "failed");
     if (failed) {
@@ -496,8 +509,12 @@ export class ExecutionEngine {
       if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
       if (!seen || seen.status === "uncertain" || seen.status === "in_flight") {
         if (prior) continue; // the receivable is known to exist; the rail just did not answer this time
-        unresolved = `attempt ${payment.attempt_id}: ${seen ? seen.status : "unknown to the rail"}; a human decides, nothing is re-sent`;
-        break;
+        // One attempt the rail cannot answer for does not stop us learning
+        // about the others. A lookup moves no money, so there is nothing to
+        // be careful about here, and stopping would mean a later attempt's
+        // settlement is never recorded at all.
+        unresolved ??= `attempt ${payment.attempt_id}: ${seen ? seen.status : "unknown to the rail"}; a human decides, nothing is re-sent`;
+        continue;
       }
       const replace = (outcome: ItemOutcome) => {
         const at = outcomes.findIndex((o) => o.index === index);
@@ -511,7 +528,6 @@ export class ExecutionEngine {
       }
       if (seen.status === "failed") {
         replace({ index, attempt_id: payment.attempt_id, status: "failed", code: seen.code, error: `${seen.code}: ${seen.message}` });
-        if (!prior) break;
         continue;
       }
       replace({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: seen.transaction_id, ...(seen.receipt_id ? { receipt_id: seen.receipt_id } : {}) });

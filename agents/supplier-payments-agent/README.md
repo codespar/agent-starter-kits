@@ -2,7 +2,7 @@
 
 [![rail: pix-out](https://img.shields.io/badge/rail-pix--out-2E8B57)](agent.yaml) [![capability: batch-payout](https://img.shields.io/badge/capability-batch--payout-1E6FBA)](agent.yaml) [![maturity: sandbox](https://img.shields.io/badge/maturity-sandbox-orange)](agent.yaml) [![approval: human | mandate](https://img.shields.io/badge/approval-human_%7C_mandate-555)](agent.yaml)
 
-An agent that pays a company's suppliers, sales commissions and payroll over Pix, inside one mandate finance signs once: a cap per payout, a cap per month, named payees, one year of validity. It runs a batch as a **loop of executions, one per line** — so a refusal on one payee does not stop the others, and running the same batch again pays nobody twice. It is born in `approval: human`, which is where most companies are, and what that mode leaves behind is the part a confirmation code never gives you: the list somebody approved, attested and bound to the mandate.
+An agent that pays a company's suppliers, sales commissions and payroll over Pix, inside one mandate finance signs once: a cap per payout, a cap per month, named payees, one year of validity. It runs a batch as a **loop of executions, one per line** — so a refused payee is a fact about that payee, a wrong line is fixed and re-run alone, and running the same batch again pays nobody twice. It is born in `approval: human`, which is where most companies are, and what that mode leaves behind is the part a confirmation code never gives you: each line somebody approved, attested and bound to the mandate.
 
 ## Quickstart
 
@@ -26,16 +26,14 @@ Three lines, three approvals, three receipts under `runs/<run-id>/receipts/`. Ru
 
 The spec's sentence is the whole design: *um lote é um laço de execuções sob um mandato, com um `attempt_id` por chamada: uma recusa não derruba as outras, e repetir não paga duas vezes.*
 
-A multi-item execution cannot give you that. It settles only when **every** attempt settles, and its dispatch loop stops at the first refusal. Measured on the stub rail, a four-line payout whose second payee the rail declined ended like this: the execution `failed`, one payee had been paid, and **the two lines after the refused one were never dispatched at all**. In a payroll that is two people not paid because a supplier's key was wrong.
-
-One execution per line instead:
+Both shapes deliver it, now that the core dispatches every attempt and names every one. (It did not: until the fix in PR #22 a multi-item execution stopped at the first refusal, so a four-line payout whose second payee the rail declined paid one and never dispatched the other two. That was a defect, not a property of the shape.) The trade is about what the **list** is, and a payroll wants one execution per line:
 
 | Property | Where it comes from |
 |---|---|
 | One refusal does not stop the others | The loop in `src/modules/batch-payout.ts` `continue`s and never breaks. Each line reaches its own terminal state. |
 | One `attempt_id` per call | The core derives it from each execution's own `idempotency_key`, so the rail's own idempotence covers each line separately. |
 | Repeating pays nobody twice | A durable claim pairs (mandate, batch, line) with the execution covering it. Settled is skipped, still-open is never re-opened, and only an execution that ended without moving money is retried. |
-| The approved list stays attested | One approval artifact per line, each with its own `items_hash` bound to the mandate version. `runs/<run-id>/approval.json` holds them in approval order; the batch is the set of them. |
+| Each approved line stays attested | One approval artifact per line, each with its own `items_hash` bound to the mandate version. `runs/<run-id>/approval.json` holds them in approval order. What is NOT attested is the set: a bundle where three of four approved lines ran does not say a fourth existed. Issue #21 (`batch_hash` over the ordered lines) closes that; until then this agent claims the line and not the list. |
 
 The claim is taken **before** the channel can run the execution. Claiming afterwards would leave a settled payout unclaimed if the process died in between, and that is exactly the double payment. A crash the other way round leaves a claim on an open execution, which the next run reports as `in_progress` and refuses to duplicate — the operator closes it with `npm run approve`, `npm run resume` or `npm run reconcile`.
 
