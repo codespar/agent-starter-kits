@@ -8,6 +8,7 @@
   "scripts": {
     "start": "codespar-agent start",
     "check": "codespar-agent check",
+    "inspect": "codespar-agent inspect",
     "eval": "codespar-agent eval",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

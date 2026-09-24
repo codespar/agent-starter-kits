@@ -20,7 +20,7 @@ import { itemsHash, sha256Hex } from "./hash.js";
 import { newId } from "./ids.js";
 import { mandateExpired, payeeAllowed, resolveBeneficiary, windowCap, windowStart, type Mandate } from "./mandate.js";
 import type { Manifest } from "./manifest.js";
-import type { PaymentRail, RailPayment } from "./rail.js";
+import type { PaymentRail, RailOutcome, RailPayment } from "./rail.js";
 import type { MandateStatusReport, MandateStatusSource } from "./revocation.js";
 import { isTerminal, transition, type Execution, type ExecutionState } from "./state-machine.js";
 import type { StateStore } from "./state/store.js";
@@ -337,9 +337,10 @@ export class ExecutionEngine {
 
     for (const [index, payment] of payments.entries()) {
       if (outcomes.some((o) => o.index === index)) continue;
-      this.record("rail.dispatch", execution.id, { attempt_id: payment.attempt_id, payee: payment.payee, amount: payment.amount_minor, rail: this.deps.rail.name });
+      // The dispatch line is the request. `idempotency_key` is what makes a retry the same payment, so the bundle names it next to the attempt.
+      this.record("rail.dispatch", execution.id, { attempt_id: payment.attempt_id, payee: payment.payee, amount: payment.amount_minor, rail: this.deps.rail.name, idempotency_key: execution.idempotency_key });
       const outcome = await this.deps.rail.pay(payment);
-      this.record("rail.outcome", execution.id, { attempt_id: payment.attempt_id, status: outcome.status, ...(outcome.status === "failed" || outcome.status === "uncertain" ? { code: outcome.code } : {}) });
+      this.record("rail.outcome", execution.id, { attempt_id: payment.attempt_id, status: outcome.status, ...railAnswer(outcome) });
       if (outcome.status === "uncertain") {
         this.record("rail.uncertain", execution.id, { attempt_id: payment.attempt_id, code: outcome.code, message: outcome.message });
         return this.leaveUnresolved({ ...execution, outcomes }, `attempt ${payment.attempt_id}: ${outcome.code} — outcome unknown, kept for reconciliation`);
@@ -437,6 +438,7 @@ export class ExecutionEngine {
       this.record("receipt.saved", executionId, { receipt_id: receiptId, path });
     }
   }
+
 
   /**
    * Fetches into the bundle the receipts of settled attempts the bundle does
@@ -781,5 +783,21 @@ export class ExecutionEngine {
     const execution = this.deps.store.getExecution(executionId);
     if (!execution) throw new Error(`unknown execution ${executionId}`);
     return execution;
+  }
+}
+
+/**
+ * What the rail answered about one attempt, as the bundle records it: the
+ * identifiers a reader follows the money by, and never `raw`, which carries
+ * whatever the provider chose to echo back.
+ */
+function railAnswer(outcome: RailOutcome): Record<string, unknown> {
+  switch (outcome.status) {
+    case "accepted":
+      return { transaction_id: outcome.transaction_id, sandbox: outcome.sandbox };
+    case "settled":
+      return { transaction_id: outcome.transaction_id, receipt_id: outcome.receipt_id, money_moved: outcome.money_moved, sandbox: outcome.sandbox };
+    default:
+      return { code: outcome.code, message: outcome.message };
   }
 }

@@ -53,6 +53,12 @@ have to be re-applied to it.
 - `npm start -- --input "..." [--approve|--deny] [--json] [--now <ISO>]`, `--scenario <name>`, interactive `npm start`. A gate that runs a one-shot passes `--now` so an hours guardrail reads a pinned instant, not the hour the CI happens to run at.
 - `npm run approve|deny <execution-id>`, `npm run resume`, `npm run reconcile`, `npm run rerun <run-id>`, and for a collector `npm run poll` and `npm run webhook`.
 - The proof bundle under `runs/<run-id>/` (transcript, approvals, mandate snapshot, events, receipts), every line stamped with `actor`.
+- `npm run inspect <run-id> [--json] [--html <file>]`, which reads that bundle
+  back as a timeline. A new agent gets it for nothing: `inspect` reads the
+  bundle and nothing else — no kit, no state.db, no network — so it never has
+  to learn what your agent pays for. Add the script to `package.json`
+  (`"inspect": "codespar-agent inspect"`) and the row to your README's command
+  table; there is no code to write.
 - The `csk_test_` guard, the replay provider when `ANTHROPIC_API_KEY` is empty or still holds the `.env.example` placeholder, and `--json` on stdout with people on stderr.
 
 ## The tool-handler contract

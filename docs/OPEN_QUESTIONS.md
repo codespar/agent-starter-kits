@@ -238,3 +238,53 @@ Section 14 asks for a devcontainer "so the five-minute contract holds without lo
 - **Template repository.** Marking the repository as a GitHub template is a setting only the owner flips (`gh api -X PATCH repos/codespar/agent-starter-kits -f is_template=true`); "Use this template" and the Codespace both start from `main`, so a template copy inherits the devcontainer.
 
 **Not yet measured:** a timed five-minute run from the Codespaces creation page to a verified receipt, by a lane without context (the same rule as 19c). The container build in the CI proves the image, the install and the replay path; it does not prove the wall clock of the first Codespace creation, which includes GitHub's own provisioning.
+
+## 36. `verify.json` stays unwritten, and the reason is not "not done yet"
+
+Section 11 lists seven files in the proof bundle. Six are written; `verify.json` is not, and this section is what `npm run inspect` points at instead of leaving the absence to be guessed at.
+
+`verify.json` is defined by the spec itself as "a saída de `codespar audit replay` para o intervalo do run: a mesma verificação de hash chain da CLI, gravada no bundle, **sem uma segunda implementação**" (section 11). Section 14.5 records that `audit` is not a registered command of `@codespar/cli` — the registered list the spec records is `charge`, `connect`, `create`, `init`, `issue`, `ledger`, `list`, `login`, `logout`, `logs`, `mandate`, `servers`, `sessions`, `ship`, `spend`, `tail`, `tools`, `whoami`, plus the agent commands 0.14.0 added — and section 14.6 puts `audit export` / `audit replay` under "trabalho na CLI, sem prazo".
+
+So there are exactly two ways to produce the file, and the spec closes both:
+
+- **Shell out to `codespar audit replay`.** The command does not exist. A bundle writer that calls it would fail on every run, and gating it on "if the CLI happens to have it" makes the bundle's contents depend on which CLI version is installed, which is the opposite of what a proof bundle is for.
+- **Verify the chain locally.** That is the second implementation the spec forbids, and the prohibition is the right one: two implementations of a hash-chain check that disagree is worse than one that is absent, because the bundle would then carry a verdict nobody can trace to the verifier of record.
+
+What is written instead: nothing, and `inspect` says so. Every rendering — terminal, `--json`, `--html` — carries `verify.present: false` and a one-sentence note naming `codespar audit replay` and the prohibition. `ProofBundle.hasVerify()` exists and reads the file, so a bundle that gains one the day the CLI ships the command is noticed rather than ignored; nothing in this repository writes it.
+
+**Decides:** whoever schedules `audit replay` on the CLI. Until then the receipt's own `chain` field is in the bundle (`receipts/*.json`), unverified, which is the honest state: the chain is recorded, and the check that would confirm it has no home yet. **v5.3:** say in section 11 that `verify.json` is conditional on the CLI command, rather than listing it beside six files that always exist.
+
+## 37. What `npm run inspect` needed that the bundle was not writing (wave 3)
+
+Building the timeline of section 11 measured the bundle against the question it is supposed to answer, and found three gaps and one leak. All four are fixed in `packages/agent-core` (`ProofBundle`, `ExecutionEngine`) with tests in `packages/agent-core/test/bundle.test.ts`.
+
+a. **The rail's answer was a status and nothing else.** `rail.outcome` recorded `attempt_id` and `status`, plus `code` on a refusal. The transaction id, the receipt id and whether money moved were only ever recoverable by joining a later `commerce.payment.succeeded` event, and on a refusal the rail's own message was written only for an `uncertain` outcome, never for a `failed` one — so "what did the rail say" could not be answered from the line that recorded the answer. Now `rail.outcome` carries `transaction_id`, `receipt_id`, `money_moved` and `sandbox` when the rail took the attempt, and `code` plus `message` when it refused. It deliberately does NOT carry the outcome's `raw`: that is the provider's own echo, and the bundle makes no promise about what a provider puts in it.
+
+b. **The call that went out did not name its idempotency key.** The key was in the `approved -> executing` transition's `detail`, as prose (`"idempotency_key idk_…"`). It is the correlation that makes a retry the same payment rather than a second one, so `rail.dispatch` now names it as a field.
+
+c. **`run.json` named the mandate and not the version.** Section 11 says "modo, trilho, id do mandato", and the version was one file away in `mandate.snapshot.json`. Since "under which version of the mandate" is one of the four questions `inspect` exists to answer, `run.json` carries `mandate_version` beside `mandate_id`.
+
+d. **`receipt.saved` recorded an absolute path.** Every bundle written on a developer's machine carried `/Users/<name>/…/runs/<run-id>/receipts/<id>.json` in its event log: not a secret, but the machine and the account of whoever ran the agent, in a folder whose whole purpose is to be handed to somebody else. `ProofBundle.receipt()` now returns the path inside the bundle (`receipts/<id>.json`) and that is what is recorded.
+
+**Still raw on disk, masked on the way out, and left that way on purpose.** `events.jsonl` and `approval.json` hold the payee key unmasked, while `mandate.snapshot.json` and `receipts/*.json` mask it. Two reasons not to change it in this wave:
+
+- `agents/bills-agent/src/kit.ts` `rerunPlan` reads the raw `payee` out of `rail.dispatch` to tell the stub rail which payee to refuse, so `npm run rerun` of a run with a refused payee correlates on that exact value. Masking the field breaks the replay of a refusal, which is a contract of section 10.
+- `approval.json` carries `items_hash`, the hash of the canonical list. Masking the items in the bundle copy would leave a file whose hash cannot be recomputed from its own contents. (The spec's own artifact shape in section 4.2 lists `beneficiary`, `amount` and `currency` and no `payee`, which suggests the cleaner fix is at the artifact, not at the bundle writer.)
+
+What `inspect` does instead: it masks on the way out, with the bundle's own `maskPayee`, which is idempotent on its own output so a value the snapshot already masked passes through unchanged. It masks the payee field AND the free text around it, because an escalation detail names the payee it escalated on (`first payment to Escola Aurora (financeiro@…) under this mandate`) and masking the field alone would leave the key readable one line below. It also reports the conversation as counts and never as text: `transcript.jsonl` holds a debtor's own words, and a timeline meant to be handed over is not the place to re-publish them. **Open, for whoever owns the artifact:** drop `payee` from the approval artifact's items (section 4.2 already omits it), then mask the event log's payee and give `rerunPlan` the attempt id to correlate on instead. **v5.3:** say in section 11 which files mask and which do not, rather than "o bundle … mascara dados pessoais" over the folder as a whole.
+
+## 38. Scenario coverage against the section 12 table, measured (wave 3)
+
+`npm run scenarios` (`scripts/scenario-matrix.mjs`) runs every scenario of every agent in every mode it declares, through the replay provider and the stub rail, and fails on a wrong final state — the states, trails, reasons, escalation triggers and receipt counts the scenario file declares, never the wording of a reply. It discovers agents from `agents/*/agent.yaml` rather than listing them, so a fourth agent is in the matrix the day it lands. The CI runs it as its own step beside the three `npm run eval` calls.
+
+**Today: 28 runs across three agents, all green.** Against the section 12 table, minus `partial-batch-failure` (which section 12 itself assigns to the `supplier-payments-agent`, another lane's):
+
+| Agent | Of the table | Extra | Missing |
+|---|---|---|---|
+| `bills-agent` | 6/7 | — | `charge-expired` |
+| `collections-agent` | 7/7 | `instalments` | none |
+| `hello-agent` | 2/7 | — | `cap-exceeded`, `beneficiary-not-allowed`, `charge-expired`, `escalated-above-threshold`, `mandate-revoked` |
+
+Neither gap is a gap. `charge-expired` is a receivable expiring, which a payer agent cannot have; section 12 already marks it "Do `collections-agent`". `hello-agent` is read-only and cannot pay, so it has no cap to exceed, no allowlist to violate, no threshold to escalate past and no mandate whose revocation would change anything — its two scenarios are the two that mean something for an agent that only reads. The matrix therefore PRINTS the coverage and GATES on the final states, rather than requiring a row an agent cannot honestly have.
+
+**The clock:** every scenario file pins its own instant (`scenario.now`, default `2026-09-23T18:00:00Z`, ticking a second per read), so the matrix reads the same at 03:00 as at 15:00 and needed no `--now` of its own — the exposure of section 34 is on the one-shots, not here. The bills one-shot in the CI is left without a pin deliberately: `escalate_above` is evaluated only in `mandate` mode (`ExecutionEngine.policy`), and that gate runs in `human`.

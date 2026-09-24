@@ -29,6 +29,14 @@ jobs:
           npm run eval --workspace=agents/bills-agent
           npm run eval --workspace=agents/collections-agent
           npm run eval --workspace=agents/hello-agent
+      # Section 12: one row per scenario per mode, every agent, discovered from
+      # `agents/*/agent.yaml` rather than listed — a fourth agent is in the
+      # matrix the day it lands. The gate is the FINAL STATE the scenario
+      # declares (states, trails, reasons, triggers, receipts), never the
+      # wording of a reply. The clock comes from each scenario's own `now`
+      # (#16), so the matrix reads the same at 03:00 as at 15:00.
+      - name: scenario matrix (section 12), every scenario of every agent
+        run: npm run scenarios
       - name: one command, machine output
         run: |
           cd agents/bills-agent

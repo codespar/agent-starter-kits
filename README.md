@@ -56,7 +56,7 @@ approval: mandate   # the agent pays inside the signed limits; escalate_above se
 
 Same code, same states, same receipts. Start with `human`, switch when you trust it.
 
-**Every run leaves a proof bundle** in `runs/<run-id>/`: transcript, approval artifacts, mandate snapshot, every state transition with who acted, and the receipts. Keys and payee details are masked.
+**Every run leaves a proof bundle** in `runs/<run-id>/`: transcript, approval artifacts, mandate snapshot, every state transition with who acted, and the receipts. Keys and payee details are masked. `npm run inspect <run-id>` reads it back as a timeline — who proposed what, who approved it under which version of the mandate, which call went out, what the rail answered, which receipts came back — in the terminal, as JSON with `--json`, or as one self-contained HTML page with `--html`.
 
 ## What runs today
 

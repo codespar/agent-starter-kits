@@ -7,4 +7,5 @@ export * from "./poll.js";
 export * from "./webhook.js";
 export * from "./scenarios.js";
 export * from "./adversarial.js";
+export * from "./inspect.js";
 export { main } from "./cli.js";
