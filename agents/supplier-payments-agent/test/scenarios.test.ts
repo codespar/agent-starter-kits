@@ -43,7 +43,7 @@ describe("section 12: scenario packs, on the replay provider", () => {
       expect(run.executions).toHaveLength(3);
       const artifacts = JSON.parse(readFileSync(join(run.bundle_dir, "approval.json"), "utf8")) as Array<{ execution_id: string; items: unknown[]; items_hash: string; approver: { type: string } }>;
       expect(artifacts).toHaveLength(3);
-      // The approved list is attested line by line: one item per artifact, one hash each, and a person decided every one.
+      // The approved list is attested line by line: one item per artifact, one hash each, and a person decided every one. The set they belong to is bound too (batch.test.ts).
       for (const a of artifacts) {
         expect(a.items).toHaveLength(1);
         expect(a.approver.type).toBe("person");

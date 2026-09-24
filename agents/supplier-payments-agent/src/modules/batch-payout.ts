@@ -12,18 +12,28 @@
  * `idempotency_key`, `attempt_id`, approval artifact with its own
  * `items_hash`, and terminal state, so a refusal is a fact about ONE payee
  * and line 57 with a wrong key is fixed and re-run ALONE, without sending the
- * other 199 back through approval. What it costs is that nothing binds the
- * SET: each line is attested, the set is not, until issue #21's `batch_hash`
- * lands. This module claims the first and not the second.
+ * other 199 back through approval.
  *
- * The three properties this module owns, and where each one lives:
+ * What that used to cost was the SET: each line was attested and the list was
+ * not, so four lines approved and three run left a bundle that did not say a
+ * fourth existed. `batch_hash` is what closes it (issue #21). The list is
+ * hashed ONCE, before any line is drafted, over the same resolved items the
+ * drafts will carry, and every line is drafted with that hash plus its own
+ * position and the list's length. Each artifact of the batch therefore says
+ * "line 2 of 4 of this exact list", and a bundle holding three of them says
+ * so out loud.
+ *
+ * The four properties this module owns, and where each one lives:
  *
  *   one refusal does not stop the others  -> the loop `continue`s, never
  *                                            breaks, and never throws past
  *                                            the line it is on
  *   one attempt_id per call               -> the core derives it from each
  *                                            execution's own idempotency key
- *   repeating pays nobody twice           -> the claim below
+ *   repeating pays nobody twice           -> the per-line claim below
+ *   the approved list is bound as a set   -> `batch_hash`, and the set claim
+ *                                            that refuses a run whose list
+ *                                            changed after it was approved
  *
  * The claim is what survives a re-run. Execution ids are random, so a second
  * run of the same batch would mint fresh ids, fresh idempotency keys and
@@ -35,11 +45,13 @@
  * is in progress and is never re-opened, and only a line whose execution
  * ended without moving money is retried.
  */
-import { isTerminal, type Execution, type ToolContext } from "@codespar/agent-core";
+import { batchHash, isTerminal, type Execution, type ExecutionItem, type ProposedItem, type ToolContext } from "@codespar/agent-core";
 import { batchTotal, formatBRL, type Batch, type PayableLine } from "../payables.js";
 
 /** What happened to one line of the batch. `dispatch` is the part an operator reads first. */
 export interface BatchLineReport {
+  /** This line's position in the presented list, from 0. The same index its artifact carries. */
+  index: number;
   alias: string;
   beneficiary: string;
   amount: string;
@@ -51,9 +63,27 @@ export interface BatchLineReport {
   dispatch: "settled" | "refused" | "awaiting_decision" | "uncertain" | "already_settled" | "in_progress";
 }
 
+/**
+ * Why a whole batch was refused before any line was drafted. Today there is
+ * one ground and it is the set binding: the list presented under this
+ * `batch_ref` is not the list some line of it was already approved under.
+ */
+export interface BatchSetRefusal {
+  reason: "batch_set_changed";
+  detail: string;
+  approved_batch_hash: string;
+  presented_batch_hash: string;
+  approved_count: number;
+  presented_count: number;
+}
+
 export interface BatchReport {
   batch: string;
   label: string;
+  /** The hash of the ordered lines as presented here. Every artifact this run mints carries it. */
+  batch_hash: string;
+  /** How many lines were presented. `lines` below holds exactly this many, refused or not. */
+  line_count: number;
   lines: BatchLineReport[];
   settled_minor: number;
   settled: string;
@@ -63,6 +93,8 @@ export interface BatchReport {
   skipped: string[];
   total_minor: number;
   total: string;
+  /** Present when the SET was refused: nothing was drafted, nothing was sent, no line moved. */
+  refused?: BatchSetRefusal;
 }
 
 /**
@@ -73,6 +105,38 @@ export interface BatchReport {
  */
 function claimKey(mandateId: string, batchRef: string, alias: string): string {
   return `batch:${mandateId}:${batchRef}:${alias}`;
+}
+
+/**
+ * The claim that names the SET rather than a line: which execution was the
+ * first this batch ref ever drafted, and therefore which `batch_hash` the
+ * lines of this ref were approved under. A later run that presents a
+ * different list reads it and refuses.
+ *
+ * It is keyed `batchset:` and not `batch:` so it cannot collide with a line's
+ * claim whatever a payee is called — an alias can hold any character, and a
+ * separator a line could contain is not a separator.
+ */
+function setClaimKey(mandateId: string, batchRef: string): string {
+  return `batchset:${mandateId}:${batchRef}`;
+}
+
+/**
+ * The one place a line becomes a proposal. Both the hash computed before the
+ * loop and the draft inside it go through here, so the list that was hashed
+ * and the list that is drafted cannot drift into being two lists.
+ */
+function proposalFor(batch: Batch, line: PayableLine): ProposedItem {
+  return { payee: line.alias, amount: line.amount_minor, description: `${batch.label}: ${line.reference}`, due_date: batch.due };
+}
+
+/**
+ * The batch's lines as the core resolves them, in order. `preview` does not
+ * throw, so a line the core would refuse still occupies its position: a batch
+ * holding a broken line must not hash as the shorter batch without it.
+ */
+function presentedItems(batch: Batch, ctx: ToolContext): ExecutionItem[] {
+  return ctx.engine.preview(batch.lines.map((line) => proposalFor(batch, line)));
 }
 
 /**
@@ -103,22 +167,47 @@ function dispatchOf(execution: Execution): BatchLineReport["dispatch"] {
 }
 
 /**
- * Runs the batch. Every exit from an individual line is a `continue`: a
- * refusal, a claim already held, even a malformed line is a fact recorded
- * about that line and about nothing else.
+ * Runs the batch. One gate stands before the loop and refuses the whole run:
+ * the set. Inside the loop nothing does — every exit from an individual line
+ * is a `continue`, so a refusal, a claim already held, even a malformed line
+ * is a fact recorded about that line and about nothing else.
+ *
+ * The two levels are the point. A line is refusable alone because a payroll
+ * line is one payee's business; a LIST that is not the list somebody approved
+ * is nobody's line to decide, so it never reaches the loop.
  */
 export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchReport> {
   const mandateId = ctx.engine.mandate.id;
   const lines: BatchLineReport[] = [];
 
-  for (const line of batch.lines) {
+  // The set is hashed HERE: before any line is drafted, over the whole
+  // ordered list, so the hash every artifact carries is the hash of the list
+  // as it was presented and not of the lines that happened to survive.
+  const presented = batchHash(presentedItems(batch, ctx));
+  const setKey = setClaimKey(mandateId, batch.ref);
+
+  const refusal = setRefusal(batch, presented, ctx, setKey);
+  if (refusal) {
+    // A refused SET drafts nothing, so there is no per-line story to tell:
+    // every line is reported refused under the one reason, which is also what
+    // keeps the counts adding up to the list that was presented.
+    ctx.engine.note("batch.set_refused", null, { batch_ref: batch.ref, ...refusal });
+    return summarise(
+      batch,
+      presented,
+      batch.lines.map((line, index) => ({ ...describe(line, index), execution_id: null, state: refusal.reason, reason: refusal.detail, dispatch: "refused" as const })),
+      refusal,
+    );
+  }
+
+  for (const [index, line] of batch.lines.entries()) {
     const key = claimKey(mandateId, batch.ref, line.alias);
     const held = ctx.engine.claimed(key);
     if (held) {
       const prior = ctx.engine.get(held);
       const verdict = priorVerdict(prior);
       if (verdict) {
-        lines.push({ ...describe(line), execution_id: held, state: prior?.state ?? "unknown", reason: null, dispatch: verdict });
+        lines.push({ ...describe(line, index), execution_id: held, state: prior?.state ?? "unknown", reason: null, dispatch: verdict });
         continue;
       }
     }
@@ -130,20 +219,31 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     // message and the siblings run.
     let draft: Awaited<ReturnType<typeof ctx.engine.draft>>;
     try {
+      // The binding travels with the draft: the core stamps it on the
+      // execution and every artifact minted for it carries it, so what a
+      // person approved is a named position in a named list and not a
+      // payment that happens to be near three others.
       draft = await ctx.engine.draft({
-        items: [{ payee: line.alias, amount: line.amount_minor, description: `${batch.label}: ${line.reference}`, due_date: batch.due }],
+        items: [proposalFor(batch, line)],
+        batch: { ref: batch.ref, batch_hash: presented, index, count: batch.lines.length },
       });
     } catch (err) {
-      lines.push({ ...describe(line), execution_id: null, state: "unreadable_line", reason: err instanceof Error ? err.message : String(err), dispatch: "refused" });
+      lines.push({ ...describe(line, index), execution_id: null, state: "unreadable_line", reason: err instanceof Error ? err.message : String(err), dispatch: "refused" });
       continue;
     }
     if (!draft.ok) {
       // Refused before an execution exists: nothing to claim, and the next
       // run of this batch tries the line again, which is right — the mandate
       // may have been re-signed by then.
-      lines.push({ ...describe(line), execution_id: null, state: "refused_before_draft", reason: draft.reason, dispatch: "refused" });
+      lines.push({ ...describe(line, index), execution_id: null, state: "refused_before_draft", reason: draft.reason, dispatch: "refused" });
       continue;
     }
+
+    // The set claim names the first execution this ref ever drafted, and
+    // through it the list that execution was presented inside. Taken here and
+    // not before the loop: a run that drafted nothing approved nothing, and
+    // has no set to bind a later run to.
+    if (!ctx.engine.claimed(setKey)) ctx.engine.claim(setKey, draft.execution.id);
 
     // Claimed BEFORE the channel can run it, so a crash between here and the
     // rail leaves a claim on an OPEN execution, which the rule above reads as
@@ -152,7 +252,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     ctx.engine.claim(key, draft.execution.id);
     try {
       const execution = await ctx.onExecution(draft.execution);
-      lines.push({ ...describe(line), execution_id: execution.id, state: execution.state, reason: execution.reason ?? null, dispatch: dispatchOf(execution) });
+      lines.push({ ...describe(line, index), execution_id: execution.id, state: execution.state, reason: execution.reason ?? null, dispatch: dispatchOf(execution) });
     } catch (err) {
       // The channel threw. Nothing about the siblings changed, so the batch
       // carries on — a throw that escaped this loop would cancel every line
@@ -163,7 +263,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
       // open a second one while it is still open.
       const current = ctx.engine.get(draft.execution.id);
       lines.push({
-        ...describe(line),
+        ...describe(line, index),
         execution_id: draft.execution.id,
         state: current?.state ?? draft.execution.state,
         reason: err instanceof Error ? err.message : String(err),
@@ -172,11 +272,52 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     }
   }
 
+  return summarise(batch, presented, lines);
+}
+
+/**
+ * Is the list in front of us the list some line of this ref was already
+ * approved under? The set claim names the first execution this ref drafted,
+ * and that execution carries the hash it was presented with. A run that finds
+ * a different one is running a list that changed after a person decided on
+ * it, and there is no reading of that a payroll should act on.
+ *
+ * What it does NOT know is WHY the hash moved. A line left the list, an
+ * amount moved, or the mandate was re-signed and now pins a different key for
+ * one of these payees — all three change the same hash, because all three
+ * change where money goes. The refusal names what it measured, offers both
+ * ways out, and asserts no cause it cannot see.
+ *
+ * `undefined` when nothing is held (a first run: there is no approved set to
+ * contradict) or when the held execution is gone from the store (a claim
+ * taken by a run that died before it drafted — it attested nothing).
+ */
+function setRefusal(batch: Batch, presented: string, ctx: ToolContext, setKey: string): BatchSetRefusal | undefined {
+  const held = ctx.engine.claimed(setKey);
+  const approved = held ? ctx.engine.get(held)?.batch : undefined;
+  if (!approved || approved.batch_hash === presented) return undefined;
+  return {
+    reason: "batch_set_changed",
+    detail:
+      `${batch.ref} was approved as a list of ${approved.count} line(s) hashing to ${approved.batch_hash}; ` +
+      `the list here is ${batch.lines.length} line(s) hashing to ${presented}. The set a person decided on is not the set in front of us, ` +
+      `so no line of it runs. A line left the list, an amount moved, or the mandate now pins a different key for one of these payees: ` +
+      `whichever it was, restore the approved list, or present the new one under a batch_ref of its own.`,
+    approved_batch_hash: approved.batch_hash,
+    presented_batch_hash: presented,
+    approved_count: approved.count,
+    presented_count: batch.lines.length,
+  };
+}
+
+function summarise(batch: Batch, presented: string, lines: BatchLineReport[], refused?: BatchSetRefusal): BatchReport {
   const settledMinor = lines.filter((l) => l.dispatch === "settled").reduce((sum, l) => sum + l.amount_minor, 0);
   const total = batchTotal(batch);
   return {
     batch: batch.ref,
     label: batch.label,
+    batch_hash: presented,
+    line_count: batch.lines.length,
     lines,
     settled_minor: settledMinor,
     settled: formatBRL(settledMinor),
@@ -184,11 +325,12 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     skipped: lines.filter((l) => l.dispatch === "already_settled" || l.dispatch === "in_progress").map((l) => l.alias),
     total_minor: total,
     total: formatBRL(total),
+    ...(refused ? { refused } : {}),
   };
 }
 
-function describe(line: PayableLine): Pick<BatchLineReport, "alias" | "beneficiary" | "amount" | "amount_minor"> {
-  return { alias: line.alias, beneficiary: line.name, amount: formatBRL(line.amount_minor), amount_minor: line.amount_minor };
+function describe(line: PayableLine, index: number): Pick<BatchLineReport, "index" | "alias" | "beneficiary" | "amount" | "amount_minor"> {
+  return { index, alias: line.alias, beneficiary: line.name, amount: formatBRL(line.amount_minor), amount_minor: line.amount_minor };
 }
 
 /**

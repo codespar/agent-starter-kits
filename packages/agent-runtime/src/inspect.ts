@@ -18,7 +18,7 @@
  * text: a debtor's own words are in `transcript.jsonl` and are not this
  * command's to re-publish.
  */
-import { maskPayee, type ApprovalArtifact, type ProofBundle } from "@codespar/agent-core";
+import { maskPayee, type ApprovalArtifact, type ExecutionBatch, type ProofBundle } from "@codespar/agent-core";
 import { formatMinor } from "./default-kit.js";
 
 export interface InspectItem {
@@ -77,12 +77,16 @@ export interface InspectExecution {
   total_minor: number | null;
   /** What the model claimed the total was. Recorded, never used to pay. */
   model_claimed_total: number | null;
+  /** The batch this execution is one line of, when it is one: which list, and where in it. */
+  batch: ExecutionBatch | null;
   approval: {
     approval_id: string;
     approver: ApprovalArtifact["approver"];
     approved_at: string;
     expires_at: string;
     items_hash: string;
+    /** The set binding as the ARTIFACT carries it, which is the signed copy. */
+    batch: ExecutionBatch | null;
     mandate: { id: string; version: number };
     escalation: { trigger: string; detail: string } | null;
   } | null;
@@ -102,6 +106,31 @@ export interface InspectReceipt {
   money_moved: boolean | null;
   sandbox: boolean | null;
   at: string | null;
+}
+
+/**
+ * One batch the run touched, assembled from the `batch_hash` its executions
+ * carry. This is what lets a reader see "3 of 4 lines" instead of three
+ * timelines with nothing to compare against: `count` is what the list held
+ * when it was presented for approval, and everything below is measured
+ * against it.
+ *
+ * Keyed by (ref, batch_hash) and not by ref alone. A bundle that holds two
+ * lists under one ref is a bundle where the list changed, and collapsing
+ * them into one header would hide exactly the thing `batch_hash` exists to
+ * show.
+ */
+export interface InspectBatch {
+  ref: string;
+  batch_hash: string;
+  /** Lines the list held when it was presented. */
+  count: number;
+  /** The lines this bundle holds an execution for, by their position in the list. */
+  lines: Array<{ index: number; execution_id: string; final_state: string; attested: boolean }>;
+  /** How many of the lines carry an approval artifact. The "3" of "3 of 4". */
+  attested: number;
+  /** Positions of the presented list this bundle holds no execution for at all. */
+  missing: number[];
 }
 
 export interface InspectReport {
@@ -127,6 +156,8 @@ export interface InspectReport {
     beneficiaries: Array<{ alias: string; name: string; payee: string }>;
   } | null;
   executions: InspectExecution[];
+  /** The batches this run's executions belong to. Empty for a run that ran no batch. */
+  batches: InspectBatch[];
   /** Events the run holds that belong to no execution: a proposal refused before it was drafted, a tool outside `tools.json`. */
   run_events: Array<{ at: string; type: string; detail: string }>;
   receipts: InspectReceipt[];
@@ -210,6 +241,23 @@ function rawPayeesOf(events: Event[], approvals: ApprovalArtifact[]): string[] {
   return out;
 }
 
+/**
+ * A batch binding as the bundle holds it, refusing anything that is not one.
+ * A bundle is a file somebody may have edited, so "line 5 of 3" is read as no
+ * binding at all rather than rendered as a count a reader would then trust.
+ */
+function batchBinding(raw: unknown): ExecutionBatch | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const b = raw as Record<string, unknown>;
+  const ref = str(b["ref"]);
+  const hash = str(b["batch_hash"]);
+  const index = num(b["index"]);
+  const count = num(b["count"]);
+  if (!ref || !hash || index === null || count === null) return null;
+  if (!Number.isInteger(index) || !Number.isInteger(count) || count < 1 || index < 0 || index >= count) return null;
+  return { ref, batch_hash: hash, index, count };
+}
+
 function item(raw: unknown, currency: string): InspectItem {
   const i = (raw ?? {}) as Record<string, unknown>;
   return {
@@ -271,6 +319,7 @@ export function assembleTimeline(bundle: ProofBundle): InspectReport {
       items: [],
       total_minor: null,
       model_claimed_total: null,
+      batch: null,
       approval: null,
       transitions: [],
       attempts: [],
@@ -305,6 +354,7 @@ export function assembleTimeline(bundle: ProofBundle): InspectReport {
         execution.total_minor = num(p["total"]);
         execution.model_claimed_total = num(p["model_claimed_total"]);
         execution.mode = str(p["mode"]);
+        execution.batch = batchBinding(p["batch"]);
         break;
       }
       case "execution.transition": {
@@ -402,11 +452,13 @@ export function assembleTimeline(bundle: ProofBundle): InspectReport {
       approved_at: artifact.approved_at,
       expires_at: artifact.expires_at,
       items_hash: artifact.items_hash,
+      batch: batchBinding(artifact.batch),
       mandate: artifact.mandate,
       escalation: artifact.escalation ? { trigger: artifact.escalation.trigger, detail: redact(artifact.escalation.detail) ?? "" } : null,
     };
     // A run whose event log was truncated still knows what was approved.
     if (execution.items.length === 0) execution.items = artifact.items.map((i) => item(i, currency));
+    if (!execution.batch) execution.batch = batchBinding(artifact.batch);
   }
 
   for (const [id, attempts] of attemptsBy) executionOf(id).attempts = [...attempts.values()];
@@ -457,6 +509,7 @@ export function assembleTimeline(bundle: ProofBundle): InspectReport {
         }
       : null,
     executions: [...executions.values()],
+    batches: assembleBatches([...executions.values()]),
     run_events: runEvents,
     receipts,
     conversation: {
@@ -467,6 +520,31 @@ export function assembleTimeline(bundle: ProofBundle): InspectReport {
     },
     verify: { present: bundle.hasVerify(), note: VERIFY_NOTE },
   };
+}
+
+/**
+ * The batches of a run, from the bindings its executions carry. A line is
+ * `attested` when the bundle holds its approval artifact: a line a person
+ * DENIED has an execution and no artifact, and a line dropped before it ran
+ * has neither, so the two are counted apart and both are visible.
+ */
+function assembleBatches(executions: InspectExecution[]): InspectBatch[] {
+  const batches = new Map<string, InspectBatch>();
+  for (const execution of executions) {
+    const binding = execution.batch;
+    if (!binding) continue;
+    const key = `${binding.ref}\u0000${binding.batch_hash}`;
+    const entry = batches.get(key) ?? { ref: binding.ref, batch_hash: binding.batch_hash, count: binding.count, lines: [], attested: 0, missing: [] };
+    entry.lines.push({ index: binding.index, execution_id: execution.execution_id, final_state: execution.final_state, attested: execution.approval !== null });
+    batches.set(key, entry);
+  }
+  for (const entry of batches.values()) {
+    entry.lines.sort((a, b) => a.index - b.index);
+    entry.attested = entry.lines.filter((l) => l.attested).length;
+    const held = new Set(entry.lines.map((l) => l.index));
+    entry.missing = [...Array(entry.count).keys()].filter((i) => !held.has(i));
+  }
+  return [...batches.values()];
 }
 
 // ---- the terminal rendering --------------------------------------------
@@ -496,6 +574,7 @@ function executionLines(execution: InspectExecution): Array<{ at: string; label:
   const approval = execution.approval;
   if (approval) {
     const wrapped = [`${approval.approval_id} · items_hash ${approval.items_hash}`, `under mandate ${approval.mandate.id} v${approval.mandate.version} · the artifact expires ${clock(approval.expires_at)}`];
+    if (approval.batch) wrapped.push(`line ${approval.batch.index + 1} of ${approval.batch.count} of batch ${approval.batch.ref} · batch_hash ${approval.batch.batch_hash}`);
     if (approval.escalation) wrapped.push(`escalated by ${approval.escalation.trigger}: ${approval.escalation.detail}`);
     lines.push({ at: approval.approved_at, label: "approved", text: approverLabel(approval.approver), wrapped });
   }
@@ -525,6 +604,36 @@ function executionLines(execution: InspectExecution): Array<{ at: string; label:
   return lines.sort((a, b) => (a.at === b.at ? 0 : a.at < b.at ? -1 : 1));
 }
 
+/**
+ * The batch header, in the words a reader needs: how many lines the approved
+ * list held, how many of them this bundle attests, and which positions it
+ * holds nothing for. "3 of 4 lines attested" is the sentence; the rest of the
+ * block says which 3 and which 4th.
+ */
+export function batchSummary(batch: InspectBatch): string {
+  const bits = [`${batch.attested} of ${batch.count} line(s) attested`];
+  if (batch.lines.length !== batch.attested) bits.push(`${batch.lines.length} with an execution`);
+  if (batch.missing.length) bits.push(`no execution for line(s) ${batch.missing.map((i) => i + 1).join(", ")}`);
+  return bits.join(" · ");
+}
+
+/** One row per position of the presented list, present in the bundle or not. */
+export function batchLineRows(batch: InspectBatch): string[] {
+  const byIndex = new Map(batch.lines.map((l) => [l.index, l]));
+  return [...Array(batch.count).keys()].map((i) => {
+    const line = byIndex.get(i);
+    const where = `line ${i + 1} of ${batch.count}`;
+    if (!line) return `${where}  — no execution in this bundle: approved as part of this list, and nothing here says it ran`;
+    return `${where}  ${line.execution_id}  ${line.final_state}  ${line.attested ? "approval artifact present" : "no approval artifact"}`;
+  });
+}
+
+/** `execution exe_x — settled` gains ` · folha-2026-10 line 2 of 3` when it is one line of a batch. */
+function executionHeading(execution: InspectExecution): string {
+  const b = execution.batch;
+  return `execution ${execution.execution_id} — ${execution.final_state}${b ? ` · ${b.ref} line ${b.index + 1} of ${b.count}` : ""}`;
+}
+
 export function renderText(report: InspectReport): string {
   const out: string[] = [];
   const r = report.run;
@@ -537,9 +646,16 @@ export function renderText(report: InspectReport): string {
     if (m.beneficiaries.length) out.push(`  named payees: ${m.beneficiaries.map((b) => `${b.name} <${b.payee}>`).join(", ")}`);
   }
 
+  for (const batch of report.batches) {
+    out.push("");
+    out.push(`batch ${batch.ref} — ${batchSummary(batch)}`);
+    out.push(`  batch_hash ${batch.batch_hash}`);
+    for (const row of batchLineRows(batch)) out.push(`  ${row}`);
+  }
+
   for (const execution of report.executions) {
     out.push("");
-    out.push(`execution ${execution.execution_id} — ${execution.final_state}`);
+    out.push(executionHeading(execution));
     for (const line of executionLines(execution)) {
       out.push(`  ${clock(line.at)}  ${line.label.padEnd(10)}  ${line.text}`);
       for (const w of line.wrapped) out.push(`  ${" ".repeat(8)}  ${" ".repeat(10)}  ${w}`);
@@ -593,6 +709,17 @@ export function renderHtml(report: InspectReport): string {
     m && m.beneficiaries.length ? `<p class="lede">named payees: ${m.beneficiaries.map((b) => `${esc(b.name)} <code>${esc(b.payee)}</code>`).join(", ")}</p>` : "",
   ].join("\n");
 
+  // The batch header comes before the timelines it is a header FOR: a reader
+  // must know the list held four lines before reading the three that ran.
+  const batches = report.batches
+    .map((batch) => {
+      const rows = batchLineRows(batch)
+        .map((row) => `<tr><td>${esc(row)}</td></tr>`)
+        .join("\n");
+      return `<section><h2>batch ${esc(batch.ref)} <span class="state">${esc(batchSummary(batch))}</span></h2><p class="lede">batch_hash <code>${esc(batch.batch_hash)}</code></p><table>${rows}</table></section>`;
+    })
+    .join("\n");
+
   const executions = report.executions
     .map((execution) => {
       const rows = executionLines(execution)
@@ -601,7 +728,9 @@ export function renderHtml(report: InspectReport): string {
           return `<tr><td class="t">${esc(clock(line.at))}</td><td class="k"><span class="tag tag-${esc(line.label.replace(/\s+/g, "-"))}">${esc(line.label)}</span></td><td>${esc(line.text)}${extra}</td></tr>`;
         })
         .join("\n");
-      return `<section><h2>execution ${esc(execution.execution_id)} <span class="state state-${esc(execution.final_state)}">${esc(execution.final_state)}</span></h2><table>${rows}</table></section>`;
+      const b = execution.batch;
+      const where = b ? `<span class="state">${esc(`${b.ref} line ${b.index + 1} of ${b.count}`)}</span>` : "";
+      return `<section><h2>execution ${esc(execution.execution_id)} <span class="state state-${esc(execution.final_state)}">${esc(execution.final_state)}</span> ${where}</h2><table>${rows}</table></section>`;
     })
     .join("\n");
 
@@ -656,6 +785,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 <body>
 <main>
 ${header}
+${batches}
 ${executions}
 ${runEvents}
 <section><h2>receipts (${report.receipts.length})</h2>${receipts}</section>

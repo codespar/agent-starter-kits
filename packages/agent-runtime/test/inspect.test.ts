@@ -232,3 +232,105 @@ describe("the renderings", () => {
     expect(html).toContain("&lt;img onerror=alert(1)&gt;");
   });
 });
+
+/**
+ * Issue #21. A bundle of a batch holds N timelines, and before this there was
+ * nothing in it to compare them against: three lines read as three lines.
+ * The header is what makes them "3 of 4", and the fourth is either a line a
+ * person denied — an execution with no artifact — or a line that never ran at
+ * all, which is the one nothing used to say existed.
+ */
+const BATCH_HASH = "sha256:" + "a1".repeat(32);
+
+/** A four-line payroll of which this bundle holds three: line 2 denied, line 3 never drafted. */
+function batchBundle(): ProofBundle {
+  const dir = mkdtempSync(join(tmpdir(), "inspect-batch-"));
+  const bundle = new ProofBundle(dir, "run_fixture_batch_def456");
+  bundle.meta({ run_id: "run_fixture_batch_def456", agent: "supplier-payments-agent@0.1.0", mode: "human", rail: "stub", mandate_id: "cm_fixture", mandate_version: 1 });
+
+  const binding = (index: number) => ({ ref: "folha-2026-10", batch_hash: BATCH_HASH, index, count: 4 });
+  const drafted = (id: string, index: number, at: string) => ({ run_id: "run_fixture_batch_def456", execution_id: id, type: "execution.drafted", payload: { items: [{ beneficiary: `Line ${index}`, payee: `line${index}@exemplo.com.br`, amount: 1000, currency: "BRL" }], total: 1000, model_claimed_total: null, mode: "human", batch: binding(index) }, at, actor: AGENT });
+  const moved = (id: string, from: string, to: string, at: string) => ({ run_id: "run_fixture_batch_def456", execution_id: id, type: "execution.transition", payload: { from, to, at, actor: AGENT }, at, actor: AGENT });
+
+  writeFileSync(
+    join(bundle.dir, "approval.json"),
+    JSON.stringify(
+      [0, 3].map((index) => ({
+        approval_id: `apr_line_${index}`,
+        execution_id: `exe_line_${index}`,
+        mode: "human",
+        approver: { type: "person", id: "usr_operator", channel: "terminal" },
+        approved_at: "2026-09-23T18:00:10.000Z",
+        expires_at: "2026-09-23T18:15:10.000Z",
+        mandate: { id: "cm_fixture", version: 1 },
+        items: [{ beneficiary: `Line ${index}`, payee: `line${index}@exemplo.com.br`, amount: 1000, currency: "BRL" }],
+        items_hash: `sha256:line${index}`,
+        batch: binding(index),
+        actor: PERSON,
+        signature: { alg: "HMAC-SHA256", key_id: "local-dev-stub", value: "0".repeat(64) },
+      })),
+    ),
+  );
+
+  for (const event of [
+    drafted("exe_line_0", 0, "2026-09-23T18:00:09.000Z"),
+    moved("exe_line_0", "approved", "settled", "2026-09-23T18:00:11.000Z"),
+    drafted("exe_line_1", 1, "2026-09-23T18:00:12.000Z"),
+    moved("exe_line_1", "awaiting_approval", "denied", "2026-09-23T18:00:13.000Z"),
+    drafted("exe_line_3", 3, "2026-09-23T18:00:14.000Z"),
+    moved("exe_line_3", "approved", "settled", "2026-09-23T18:00:15.000Z"),
+  ]) {
+    bundle.event(event as unknown as Record<string, unknown>);
+  }
+  return bundle;
+}
+
+describe("a batch read back as a set", () => {
+  it("counts the lines the list held, the ones attested, and the one that is not here at all", () => {
+    const report = assembleTimeline(batchBundle());
+    expect(report.batches).toHaveLength(1);
+    const batch = report.batches[0]!;
+    expect(batch).toMatchObject({ ref: "folha-2026-10", batch_hash: BATCH_HASH, count: 4, attested: 2, missing: [2] });
+    // A denied line has an execution and no artifact; line 3 of the list has neither.
+    expect(batch.lines.map((l) => [l.index, l.final_state, l.attested])).toEqual([
+      [0, "settled", true],
+      [1, "denied", false],
+      [3, "settled", true],
+    ]);
+  });
+
+  it("puts the header before the timelines and says which line each execution is", () => {
+    const text = renderText(assembleTimeline(batchBundle()));
+    expect(text).toContain("batch folha-2026-10 — 2 of 4 line(s) attested · 3 with an execution · no execution for line(s) 3");
+    expect(text).toContain(`batch_hash ${BATCH_HASH}`);
+    expect(text).toContain("line 3 of 4  — no execution in this bundle");
+    expect(text).toContain("execution exe_line_0 — settled · folha-2026-10 line 1 of 4");
+    // The header comes first: a reader learns the list held four before reading the three.
+    expect(text.indexOf("batch folha-2026-10")).toBeLessThan(text.indexOf("execution exe_line_0"));
+    // And the approval line of each timeline names the binding next to the items_hash.
+    expect(text).toContain(`line 1 of 4 of batch folha-2026-10 · batch_hash ${BATCH_HASH}`);
+  });
+
+  it("the HTML says the same thing and stays one standalone file", () => {
+    const html = renderHtml(assembleTimeline(batchBundle()));
+    expect(html).toContain("2 of 4 line(s) attested");
+    expect(html).toContain("no execution for line(s) 3");
+    expect(html).toContain(BATCH_HASH);
+    expect(html).not.toMatch(/<script/i);
+    expect(html).not.toMatch(/https?:\/\//i);
+  });
+
+  it("reads a binding that cannot be true as no binding, rather than rendering a count nobody should trust", () => {
+    const bundle = batchBundle();
+    // A bundle is a file somebody may have edited. "line 9 of 4" is not a set.
+    bundle.event({ run_id: "run_fixture_batch_def456", execution_id: "exe_line_9", type: "execution.drafted", payload: { items: [], total: 0, model_claimed_total: null, mode: "human", batch: { ref: "folha-2026-10", batch_hash: BATCH_HASH, index: 9, count: 4 } }, at: "2026-09-23T18:00:16.000Z", actor: AGENT });
+    const report = assembleTimeline(bundle);
+    expect(report.batches[0]!.lines.map((l) => l.index)).toEqual([0, 1, 3]);
+    expect(report.executions.find((e) => e.execution_id === "exe_line_9")!.batch).toBeNull();
+  });
+
+  it("a run with no batch grows no header", () => {
+    expect(assembleTimeline(fixtureBundle()).batches).toEqual([]);
+    expect(renderText(assembleTimeline(fixtureBundle()))).not.toContain("batch_hash");
+  });
+});
