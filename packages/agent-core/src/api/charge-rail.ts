@@ -34,6 +34,16 @@ export type ChargeView = ApiSuccess<ApiOperation<"/v1/charges/{chargeId}", "get"
  */
 const ISSUANCE_UNCONFIRMED: ApiErrorCode<ApiOperation<"/v1/charges/{chargeId}", "get">> = "issuance_unconfirmed";
 
+/** The read's other 409: the reference matched more than one charge. Terminal for that reference; the API answers by the charge id. */
+const REFERENCE_AMBIGUOUS: ApiErrorCode<ApiOperation<"/v1/charges/{chargeId}", "get">> = "charge_reference_ambiguous";
+
+type ChargeRead =
+  | { kind: "view"; view: ChargeView }
+  | { kind: "missing" }
+  | { kind: "in_flight" }
+  | { kind: "failed"; outcome: Extract<RailOutcome, { status: "failed" }> }
+  | { kind: "uncertain"; outcome: Extract<RailOutcome, { status: "uncertain" }> };
+
 /**
  * When the charge settled, if the answer says so. `settled_at` is a column of
  * the charge row, but the SDK's type for the read does not carry it, so this
@@ -118,22 +128,34 @@ export class CodeSparChargeRail implements PaymentRail {
     const byId = transactionId ? await this.read(transactionId) : { kind: "missing" as const };
     if (byId.kind === "view") return outcomeOf(byId.view);
     if (byId.kind === "in_flight") return { status: "in_flight" };
-    if (byId.kind === "uncertain") return byId.outcome;
+    if (byId.kind === "failed" || byId.kind === "uncertain") return byId.outcome;
     const byKey = await this.read(attemptId);
     if (byKey.kind === "view") return outcomeOf(byKey.view);
     if (byKey.kind === "in_flight") return { status: "in_flight" };
-    if (byKey.kind === "uncertain") return byKey.outcome;
+    if (byKey.kind === "failed" || byKey.kind === "uncertain") return byKey.outcome;
     return undefined;
   }
 
-  private async read(chargeRef: string): Promise<{ kind: "view"; view: ChargeView } | { kind: "missing" } | { kind: "in_flight" } | { kind: "uncertain"; outcome: Extract<RailOutcome, { status: "uncertain" }> }> {
+  /**
+   * A 409 is branched on its code, never on the status alone: only `issuance_unconfirmed` means "still issuing".
+   * `charge_reference_ambiguous` is terminal for the reference and fails explicitly instead of being polled forever,
+   * and a 409 whose code this kit does not read is a failure too.
+   */
+  private async read(chargeRef: string): Promise<ChargeRead> {
     try {
       const view = await this.api.get("/v1/charges/{chargeId}", { path: { chargeId: chargeRef } });
       return { kind: "view", view };
     } catch (err) {
       const failure = describeApiError(err);
       if (failure.status === 404) return { kind: "missing" };
-      if (failure.status === 409) return { kind: "in_flight" };
+      if (failure.status === 409) {
+        if (failure.code === ISSUANCE_UNCONFIRMED) return { kind: "in_flight" };
+        const message =
+          failure.code === REFERENCE_AMBIGUOUS
+            ? `the reference ${chargeRef} matches more than one charge, and the API answers for the charge id only; which one is this attempt's is not assumed, so reconcile it by the charge id`
+            : `GET /v1/charges/${chargeRef} answered 409 with a code this kit does not read (${failure.code}); it is not read as a charge still issuing`;
+        return { kind: "failed", outcome: { status: "failed", code: failure.code, message } };
+      }
       return { kind: "uncertain", outcome: { status: "uncertain", code: failure.code, message: failure.message } };
     }
   }
