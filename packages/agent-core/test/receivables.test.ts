@@ -373,7 +373,7 @@ describe("CodeSparChargeRail.read: a 409 is branched on its code, never on the s
     expect(out).not.toEqual({ status: "in_flight" });
   });
 
-  it("through the engine: an issued receivable whose read turns ambiguous closes failed with the code in the detail, instead of staying executing", async () => {
+  it("through the engine: an issued receivable whose read turns ambiguous closes failed (charge_reference_ambiguous), instead of staying executing", async () => {
     const w = wired(conflict("charge_reference_ambiguous"));
     const h = receivables({ dispatchTo: w.rail });
     const d = await h.engine.draft({ items: [{ payee: "acordo-1", amount: 108000, due_date: "2026-09-30", description: "acordo 1042, a vista" }] });
@@ -382,7 +382,35 @@ describe("CodeSparChargeRail.read: a 409 is branched on its code, never on the s
     expect(issued).toMatchObject({ state: "executing", reason: "awaiting_settlement" });
     const closed = await withFetch(w.fetchStub, () => h.engine.reconcile(issued.id));
     expect(closed.state).toBe("failed");
-    expect(closed.reason).toBe("rail_failed");
-    expect(closed.detail).toContain("charge_reference_ambiguous");
+    expect(closed.reason).toBe("charge_reference_ambiguous");
+    expect(closed.history.at(-1)).toMatchObject({ from: "executing", to: "failed", reason: "charge_reference_ambiguous" });
+  });
+
+  it("reconcile, never reissue: resume and reconcile send nothing for it, and a new charge to the same payee is refused before it reaches the API", async () => {
+    const w = wired(conflict("charge_reference_ambiguous"));
+    const h = receivables({ dispatchTo: w.rail });
+    const d = await h.engine.draft({ items: [{ payee: "acordo-1", amount: 108000, due_date: "2026-09-30" }] });
+    if (!d.ok) throw new Error("refused");
+    const issued = await withFetch(w.fetchStub, () => h.engine.execute(d.execution.id));
+    const closed = await withFetch(w.fetchStub, () => h.engine.reconcile(issued.id));
+    expect(closed.reason).toBe("charge_reference_ambiguous");
+    const creates = () => w.seen.filter((r) => r.method === "POST" && r.path === "/v1/charges").length;
+    expect(creates()).toBe(1);
+    const requestsBefore = w.seen.length;
+
+    // `resume` walks `executing` only, and both entry points return a terminal execution untouched.
+    expect(h.engine.list({ state: "executing" })).toHaveLength(0);
+    expect(await withFetch(w.fetchStub, () => h.engine.resumePending(closed.id))).toMatchObject({ state: "failed", reason: "charge_reference_ambiguous" });
+    expect(await withFetch(w.fetchStub, () => h.engine.reconcile(closed.id))).toMatchObject({ state: "failed", reason: "charge_reference_ambiguous" });
+    expect(w.seen.length).toBe(requestsBefore);
+
+    // The same debt asked for again: denied at draft, nothing sent.
+    const again = await withFetch(w.fetchStub, () => h.engine.draft({ items: [{ payee: "acordo-1", amount: 108000, due_date: "2026-10-15" }] }));
+    expect(again).toMatchObject({ ok: true, execution: { state: "denied", reason: "charge_reference_ambiguous" } });
+    expect(creates()).toBe(1);
+
+    // Another payee is not held up by it.
+    const other = await withFetch(w.fetchStub, () => h.engine.draft({ items: [{ payee: OTHER, amount: 5000, due_date: "2026-09-30" }] }));
+    expect(other).toMatchObject({ ok: true, execution: { state: "approved" } });
   });
 });
