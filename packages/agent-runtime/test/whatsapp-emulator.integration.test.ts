@@ -14,16 +14,16 @@
  *   response shape, the signed webhook, the controllable clock. If one of these
  *   breaks, our channel breaks.
  *
- *   What the emulator does NOT do, which our channel has to cover itself. Those
- *   assertions are written to FAIL the day the emulator closes the gap — which
- *   is what we want, because the pin means it can only change when we move it,
- *   and the failure is the notification. They are a spec for the repo's owner,
- *   not a complaint: `docs/OPEN_QUESTIONS.md` §46 carries the same list in
- *   prose with the payloads.
+ *   What 0.2.0 closed of the five gaps §46 of `docs/OPEN_QUESTIONS.md` measured
+ *   against 0.1.1. These were pinned as GAP tests that asserted the OLD
+ *   behaviour; each is now asked of the published binary in the form that
+ *   would go red if the gap reopened — the refusal is checked for what it did
+ *   NOT do (record, webhook) as well as for what it answered, because a 400
+ *   that still recorded the message would be the old gap wearing a new status.
  */
 import { describe, expect, it } from "vitest";
-import { EmulatorDriver } from "../src/channels/whatsapp/emulator.js";
-import { buildSendRequest, type CloudApiConfig } from "../src/channels/whatsapp/cloud-api.js";
+import { EMULATOR_DEFAULTS, EmulatorDriver } from "../src/channels/whatsapp/emulator.js";
+import { buildSendRequest, WhatsAppCloudApi, type CloudApiConfig } from "../src/channels/whatsapp/cloud-api.js";
 
 const URL_BASE = process.env["WHATSAPP_SIM_URL"] ?? "http://127.0.0.1:4290";
 
@@ -68,8 +68,12 @@ async function raw(path: string, init?: RequestInit) {
 }
 
 describe.skipIf(!up)("what our adapter depends on, and the emulator provides", () => {
+  // Free-form text goes only inside a window the person opened, at Meta and on
+  // 0.2.0 alike, so these two open one first. Before 0.2.0 they passed without
+  // it, which was gap (a) hiding inside the tests of what works.
   it("answers our text send with the Cloud API's own response shape", async () => {
     const id = pnid();
+    await new EmulatorDriver(URL_BASE).inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
     const result = await send(id, { kind: "text", text: "Oi, Joana!" });
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ messaging_product: "whatsapp" });
@@ -80,7 +84,9 @@ describe.skipIf(!up)("what our adapter depends on, and the emulator provides", (
 
   it("takes the Pix copy-and-paste as a plain text message: the string that pays goes through unchanged", async () => {
     const brcode = "00020126580014br.gov.bcb.pix0136stub-chg_abc5204000053039865802BR5909CODESPAR6009SAO PAULO62070503***6304STUB";
-    const result = await send(pnid(), { kind: "instrument", instrument: "pix_copy_paste", value: brcode });
+    const id = pnid();
+    await new EmulatorDriver(URL_BASE).inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
+    const result = await send(id, { kind: "instrument", instrument: "pix_copy_paste", value: brcode });
     expect(result.status).toBe(200);
   });
 
@@ -108,14 +114,29 @@ describe.skipIf(!up)("what our adapter depends on, and the emulator provides", (
   });
 });
 
-/**
- * The gaps. Each one is the exact payload that failed, so the assertion doubles
- * as the report. They are written against the PINNED sha: a green run here
- * means the gap is still open, and a red one means it was closed and our own
- * cover for it can be reconsidered.
- */
-describe.skipIf(!up)("what the emulator does not do, measured", () => {
-  it("GAP: accepts a free-form message outside the 24h window that Meta refuses with 131047 — and it already knows", async () => {
+/** Every webhook the emulator has dispatched, in order. The index a redelivery names is the position here. */
+async function deliveries(): Promise<Array<{ body: unknown; replayOf?: number }>> {
+  return ((await raw("/_sim/webhooks")).body as { deliveries: Array<{ body: unknown; replayOf?: number }> }).deliveries;
+}
+
+async function post(path: string, body: unknown) {
+  return raw(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+}
+
+type Conversation = { messages: Array<{ id: string; bodyPreview?: string; status?: string }>; priced: { total: number; byMessageId: Record<string, { reasonCode: string }> } };
+
+async function conversation(key: string): Promise<Conversation> {
+  return (await raw(`/_sim/state?key=${encodeURIComponent(key)}`)).body as unknown as Conversation;
+}
+
+/** The inbound messages one delivery carries, the way Meta shapes them. */
+function inboundOf(delivery: { body: unknown }) {
+  const body = delivery.body as { entry?: Array<{ changes?: Array<{ value?: { messages?: Array<Record<string, unknown>> } }> }> };
+  return body.entry?.[0]?.changes?.[0]?.value?.messages ?? [];
+}
+
+describe.skipIf(!up)("the five gaps 0.2.0 closed, asked of the binary", () => {
+  it("(a) refuses a free-form message outside the 24h window with Meta's 131047, records nothing and fires no webhook", async () => {
     const id = pnid();
     const driver = new EmulatorDriver(URL_BASE);
     await driver.pin(new Date("2026-09-23T17:00:00.000Z"));
@@ -123,82 +144,172 @@ describe.skipIf(!up)("what the emulator does not do, measured", () => {
     expect((await send(id, { kind: "text", text: "dentro da janela" })).status).toBe(200);
 
     await driver.advanceHours(26);
+    const before = await conversation(`${id}:${TO}`);
+    const hooksBefore = (await deliveries()).length;
     const outside = await send(id, { kind: "text", text: "Recebemos, acordo quitado." });
-    // The real Cloud API answers 400 with error 131047 and sends nothing.
-    expect(outside.status).toBe(200);
+    expect(outside.status).toBe(400);
+    const error = (outside.body as { error: { code: number; error_data: { details: string } } }).error;
+    expect(error.code).toBe(131047);
+    expect(error.error_data.details).toMatch(/window/);
+    // Refused, not recorded-and-refused: no message and no webhook.
+    const after = await conversation(`${id}:${TO}`);
+    expect(after.messages.map((m) => m.id)).toEqual(before.messages.map((m) => m.id));
+    expect(after.messages.some((m) => m.bodyPreview === "Recebemos, acordo quitado.")).toBe(false);
+    expect((await deliveries()).length).toBe(hooksBefore);
 
-    // And this is what makes it a one-line fix rather than a feature: the
-    // pricing engine has ALREADY decided the message is invalid there.
-    const state = (await raw(`/_sim/state?key=${id}:${TO}`)).body as {
-      messages: Array<{ id: string }>;
-      priced: { byMessageId: Record<string, { reasonCode: string }> };
-    };
-    const last = state.messages[state.messages.length - 1]!;
-    expect(state.priced.byMessageId[last.id]!.reasonCode).toBe("INVALID_NON_TEMPLATE_OUTSIDE_CSW");
+    // The rule, not a blanket refusal: a template in the same shut window goes.
+    expect((await send(id, { kind: "template", template: "acordo_quitado", language: "pt_BR", variables: ["acordo-1042"] })).status).toBe(200);
   });
 
-  it("GAP: has no way to redeliver or reorder a webhook, so duplicate and out-of-order delivery cannot be driven", async () => {
-    for (const path of ["/_sim/replay", "/_sim/webhooks/replay", "/_sim/redeliver"]) {
-      const { status } = await raw(path, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-      expect(status, path).toBe(404);
-    }
-    // `GET /_sim/webhooks` is a read-only log; nothing re-dispatches from it.
-    const { status, body } = await raw("/_sim/webhooks");
-    expect(status).toBe(200);
-    expect(Array.isArray((body as { deliveries: unknown[] }).deliveries)).toBe(true);
-  });
-
-  it("GAP: an inbound interactive reply degrades to an empty text message, so a debtor cannot tap a button", async () => {
-    const id = pnid();
-    const { status, body } = await raw("/_sim/inbound", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        phone_number_id: id,
-        from: `+${TO}`,
-        type: "interactive",
-        interactive: { type: "button_reply", button_reply: { id: "avista", title: "À vista" } },
-      }),
-    });
-    expect(status).toBe(200);
-    const message = (body as { message: { contentType: string; bodyPreview: string } }).message;
-    // The interactive payload is dropped: outbound buttons work, the reply to one does not exist.
-    expect(message.contentType).toBe("text");
-    expect(message.bodyPreview).toBe("");
-  });
-
-  it("GAP: only `sent` and `delivered` are ever emitted, so a channel cannot observe a read receipt or a failure", async () => {
-    const id = pnid();
-    await send(id, { kind: "text", text: "uma mensagem" });
-    const { body } = await raw("/_sim/webhooks");
-    const statuses = (body as { deliveries: Array<{ body: unknown }> }).deliveries
-      .map((d) => d.body as { entry?: Array<{ id?: string; changes?: Array<{ value?: { statuses?: Array<{ status: string }> } }> }> })
-      .filter((b) => b.entry?.[0]?.id === id)
-      .flatMap((b) => b.entry?.[0]?.changes?.[0]?.value?.statuses ?? [])
-      .map((s) => s.status);
-    expect(statuses).toEqual(["sent", "delivered"]);
-  });
-
-  it("GAP: a `+` on one side and none on the other splits one person into two conversations", async () => {
+  it("(a) and our adapter reads that refusal as the window rule, which is what lets the poll answer it with a template", async () => {
     const id = pnid();
     const driver = new EmulatorDriver(URL_BASE);
-    // Our driver strips the `+` precisely to avoid this; done by hand here, it splits.
-    await raw("/_sim/inbound", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone_number_id: id, from: `+${TO}`, text: "oi" }),
-    });
-    await send(id, { kind: "text", text: "resposta" });
-    const miss = await raw(`/_sim/state?key=${id}:not-a-conversation`);
-    const keys = (miss.body as { keys: string[] }).keys;
-    expect(keys).toContain(`${id}:+${TO}`);
-    expect(keys).toContain(`${id}:${TO}`);
+    await driver.pin(new Date("2026-09-23T17:00:00.000Z"));
+    await driver.inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
+    await driver.advanceHours(26);
+    const backend = new WhatsAppCloudApi({ config: config(id), conversation: { contact: `+${TO}` }, say: () => undefined });
+    const sent = await backend.deliver(`+${TO}`, { kind: "text", text: "Recebemos, acordo quitado." });
+    expect(sent.state).toBe("failed");
+    expect(sent.refused?.rule).toBe("session_window_closed");
+    expect(sent.refused?.detail).toContain("131047");
+  });
 
-    // With our driver, which strips it, there is one conversation and the window opens.
-    const same = pnid();
-    await driver.inbound({ phoneNumberId: same, from: `+${TO}`, text: "oi" });
-    await send(same, { kind: "text", text: "resposta" });
-    const keysAfter = ((await raw(`/_sim/state?key=${same}:not-a-conversation`)).body as { keys: string[] }).keys;
-    expect(keysAfter.filter((k) => k.startsWith(`${same}:`))).toEqual([`${same}:${TO}`]);
+  it("(b) redelivers one webhook: the same body, marked `replayOf`, appended under a NEW index", async () => {
+    const id = pnid();
+    await new EmulatorDriver(URL_BASE).inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
+    const list = await deliveries();
+    const index = list.length - 1;
+    expect(JSON.stringify(list[index]!.body)).toContain(id);
+
+    const { status, body } = await post(`/_sim/webhooks/${index}/redeliver`, {});
+    expect(status).toBe(200);
+    expect((body as { delivery: { replayOf: number } }).delivery.replayOf).toBe(index);
+
+    // Gotcha one: the redelivery is itself a delivery, at the end of the list.
+    const after = await deliveries();
+    expect(after.length).toBe(list.length + 1);
+    expect(after[after.length - 1]!.replayOf).toBe(index);
+    // A duplicate, which is what Meta sends: same message id, not a second message.
+    expect(after[after.length - 1]!.body).toEqual(list[index]!.body);
+  });
+
+  it("(b) replays several in the order asked, duplicates included, so out-of-order delivery can be driven", async () => {
+    const id = pnid();
+    await new EmulatorDriver(URL_BASE).inbound({ phoneNumberId: id, from: `+${TO}`, text: "primeira" });
+    const a = (await deliveries()).length - 1;
+    await new EmulatorDriver(URL_BASE).inbound({ phoneNumberId: id, from: `+${TO}`, text: "segunda" });
+    const b = (await deliveries()).length - 1;
+    const before = (await deliveries()).length;
+
+    const { status } = await post("/_sim/replay", { indexes: [b, a, a] });
+    expect(status).toBe(200);
+    const replayed = (await deliveries()).slice(before);
+    expect(replayed.map((d) => d.replayOf)).toEqual([b, a, a]);
+    expect(replayed.map((d) => (inboundOf(d)[0]!["text"] as { body: string }).body)).toEqual(["segunda", "primeira", "primeira"]);
+  });
+
+  it("(b) gotcha two: a missing index mid-replay answers 404, and the ones BEFORE it were already redelivered", async () => {
+    const id = pnid();
+    await new EmulatorDriver(URL_BASE).inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
+    const a = (await deliveries()).length - 1;
+    const before = (await deliveries()).length;
+    const missing = before + 1000;
+
+    const { status, body } = await post("/_sim/replay", { indexes: [a, missing, a] });
+    expect(status).toBe(404);
+    expect((body as { error: { message: string } }).error.message).toMatch(/there are \d+/);
+    // Not atomic: the first went out, the third did not.
+    const after = await deliveries();
+    expect(after.length).toBe(before + 1);
+    expect(after[after.length - 1]!.replayOf).toBe(a);
+  });
+
+  it("(b) and our receiver hands a redelivered message on once, which is what Meta's at-least-once delivery needs of it", async () => {
+    const id = pnid();
+    const backend = new WhatsAppCloudApi({ config: { ...config(id), webhookPort: EMULATOR_DEFAULTS.webhookPort }, conversation: { contact: `+${TO}` }, say: () => undefined });
+    await backend.open();
+    try {
+      await new EmulatorDriver(URL_BASE).inbound({ phoneNumberId: id, from: `+${TO}`, text: "fechado, pago à vista" });
+      const index = (await deliveries()).length - 1;
+      const redelivered = await post(`/_sim/webhooks/${index}/redeliver`, {});
+      // Signed like the original, so it reached us and was verified — the drop below is ours, not a bad signature.
+      expect((redelivered.body as { delivery: { status: number } }).delivery.status).toBe(200);
+      expect((await backend.next())?.text).toBe("fechado, pago à vista");
+      const second = await Promise.race([backend.next(), new Promise((resolve) => setTimeout(() => resolve("nothing"), 300))]);
+      expect(second).toBe("nothing");
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it("(c) keys a conversation on the digits: `+55…` inbound and `55…` outbound are one person, and a `+` key still finds it", async () => {
+    const id = pnid();
+    // By hand, with the `+` Meta never sends and the emulator's own default uses.
+    await post("/_sim/inbound", { phone_number_id: id, from: `+${TO}`, text: "oi" });
+    await send(id, { kind: "text", text: "resposta" });
+    const keys = ((await raw(`/_sim/state?key=${id}:not-a-conversation`)).body as { keys: string[] }).keys;
+    expect(keys.filter((k) => k.startsWith(`${id}:`))).toEqual([`${id}:${TO}`]);
+    const withPlus = await conversation(`${id}:+${TO}`);
+    expect(withPlus.messages.map((m) => m.bodyPreview)).toEqual(["oi", "resposta"]);
+    // And the inbound webhook carries `from` the way Meta does, without the `+`.
+    const mine = (await deliveries()).filter((d) => JSON.stringify(d.body).includes(id)).flatMap(inboundOf);
+    expect(mine.map((m) => m["from"])).toEqual([TO]);
+  });
+
+  it("(d) emits `read` and `failed` on demand; a failure carries 131026 and leaves the bill", async () => {
+    const id = pnid();
+    const key = `${id}:${TO}`;
+    const driver = new EmulatorDriver(URL_BASE);
+    await driver.pin(new Date("2026-09-23T17:00:00.000Z"));
+    await driver.inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
+    await driver.advanceHours(26);
+    // Two templates outside the window, both billed, so the total can visibly rise and then fall.
+    const template = { kind: "template" as const, template: "acordo_quitado", language: "pt_BR", variables: ["acordo-1042"] };
+    const first = ((await send(id, template)).body as { messages: Array<{ id: string }> }).messages[0]!.id;
+    await send(id, template);
+    const billed = (await conversation(key)).priced.total;
+    expect(billed).toBeGreaterThan(0);
+
+    const statusesFor = async (message: string) =>
+      (await deliveries())
+        .map((d) => d.body as { entry?: Array<{ changes?: Array<{ value?: { statuses?: Array<{ id: string; status: string; errors?: Array<{ code: number; error_data?: { details?: string } }> }> } }> }> })
+        .flatMap((b) => b.entry?.[0]?.changes?.[0]?.value?.statuses ?? [])
+        .filter((s) => s.id === message);
+
+    expect((await post("/_sim/status", { status: "read", message_id: first })).status).toBe(200);
+    expect((await statusesFor(first)).map((s) => s.status)).toEqual(["sent", "delivered", "read"]);
+
+    expect((await post("/_sim/status", { status: "failed", reason: "not on whatsapp", message_id: first })).status).toBe(200);
+    const failed = (await statusesFor(first)).at(-1)!;
+    expect(failed.status).toBe("failed");
+    expect(failed.errors?.[0]?.code).toBe(131026);
+    expect(failed.errors?.[0]?.error_data?.details).toBe("not on whatsapp");
+
+    const after = await conversation(key);
+    expect(after.priced.byMessageId[first]!.reasonCode).toBe("NOT_BILLABLE_FAILED");
+    expect(after.priced.total).toBeLessThan(billed);
+    expect(after.priced.total).toBeGreaterThan(0);
+  });
+
+  it("(e) carries an interactive reply through as Meta's `interactive` object, id preserved, and refuses one without an id", async () => {
+    const id = pnid();
+    const replies = [
+      { type: "button_reply", button_reply: { id: "avista", title: "À vista" } },
+      { type: "list_reply", list_reply: { id: "3x", title: "3x" } },
+      { type: "nfm_reply", nfm_reply: { name: "flow", body: "Sent", response_json: '{"plano":"3x"}' } },
+    ];
+    for (const interactive of replies) {
+      expect((await post("/_sim/inbound", { phone_number_id: id, from: `+${TO}`, type: "interactive", interactive })).status).toBe(200);
+      const last = inboundOf((await deliveries()).at(-1)!)[0]!;
+      expect(last["type"]).toBe("interactive");
+      expect(last["interactive"]).toEqual(interactive);
+    }
+
+    const before = (await deliveries()).length;
+    const noId = await post("/_sim/inbound", { phone_number_id: id, from: `+${TO}`, type: "interactive", interactive: { type: "button_reply", button_reply: { title: "À vista" } } });
+    expect(noId.status).toBe(400);
+    const noJson = await post("/_sim/inbound", { phone_number_id: id, from: `+${TO}`, type: "interactive", interactive: { type: "nfm_reply", nfm_reply: { name: "flow" } } });
+    expect(noJson.status).toBe(400);
+    expect((await deliveries()).length).toBe(before);
   });
 });

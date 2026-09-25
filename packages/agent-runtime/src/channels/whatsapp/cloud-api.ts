@@ -200,10 +200,6 @@ export function buildSendRequest(config: CloudApiConfig, to: string, body: Outbo
     method: "POST" as const,
     headers: { authorization: `Bearer ${config.accessToken}`, "content-type": "application/json" },
   };
-  // `to` loses its `+`: the Cloud API documents the number in international
-  // format without one, and the emulator keys its conversation on the literal
-  // string, so a `+` here and none on the inbound side splits one person into
-  // two conversations (measured; docs/OPEN_QUESTIONS.md §46c).
   const recipient = { messaging_product: "whatsapp", recipient_type: "individual", to: toGraphNumber(to) };
   switch (body.kind) {
     case "text":
@@ -228,6 +224,37 @@ export function buildSendRequest(config: CloudApiConfig, to: string, body: Outbo
   }
 }
 
+/** Meta's error for a free-form message outside the 24 hours after the person's last one. */
+export const WINDOW_CLOSED_ERROR = 131047;
+
+/**
+ * What a non-2xx from `/messages` means, read from Meta's error body.
+ *
+ * One code gets its own rule: 131047 is the provider saying the 24-hour
+ * window is shut, which is the SAME rule the channel enforces before a send
+ * and is answered the same way — with a template. It reaches here only when
+ * the two clocks disagree (ours read the window open, the provider's read it
+ * shut), which at the boundary is a race and not a bug, so a caller has to be
+ * able to tell it from a refusal it cannot do anything about.
+ */
+export function providerRefusal(status: number, body: string): { rule: string; detail: string } {
+  let error: { code?: unknown; message?: unknown; error_data?: { details?: unknown } } | undefined;
+  try {
+    error = (JSON.parse(body) as { error?: typeof error }).error;
+  } catch {
+    /* an error without Meta's envelope: the status is all there is */
+  }
+  const details = typeof error?.error_data?.details === "string" ? error.error_data.details : undefined;
+  if (error?.code === WINDOW_CLOSED_ERROR) {
+    return {
+      rule: "session_window_closed",
+      detail: `the provider refused the free-form message (${status}/${WINDOW_CLOSED_ERROR}): its 24h window is shut${details ? ` — ${details}` : ""}`,
+    };
+  }
+  const code = typeof error?.code === "number" ? `/${error.code}` : "";
+  return { rule: "provider_refused", detail: `${status}${code} from the Cloud API${details ? ` — ${details}` : ""}` };
+}
+
 /* ── the impure half: one fetch over a request the above built ── */
 
 /** `+5511987654321` -> `5511987654321`, the only form the Graph API takes. */
@@ -249,6 +276,8 @@ export class WhatsAppCloudApi implements ChannelBackend {
   readonly live: boolean;
   private server: Server | undefined;
   private readonly queue: InboundMessage[] = [];
+  /** Message ids already handed on. Meta delivers at-least-once, so the same message can arrive twice. */
+  private readonly seen = new Set<string>();
   private waiting: ((m: InboundMessage | undefined) => void) | undefined;
   private closed = false;
 
@@ -309,6 +338,13 @@ export class WhatsAppCloudApi implements ChannelBackend {
   }
 
   private push(message: InboundMessage): void {
+    // A redelivery is the same message, not a second turn: answering it twice
+    // would put two replies in front of the person for one thing they said.
+    if (this.seen.has(message.id)) {
+      this.options.say(`[whatsapp] duplicate delivery of ${message.id} dropped`);
+      return;
+    }
+    this.seen.add(message.id);
     if (this.waiting) {
       const resolve = this.waiting;
       this.waiting = undefined;
@@ -335,9 +371,7 @@ export class WhatsAppCloudApi implements ChannelBackend {
     const doFetch = this.options.fetchImpl ?? fetch;
     const response = await doFetch(request.url, { method: request.method, headers: request.headers, body: request.body });
     const text = await response.text();
-    if (!response.ok) {
-      return { id: "", state: "failed", refused: { rule: "provider_refused", detail: `${response.status} from the Cloud API` } };
-    }
+    if (!response.ok) return { id: "", state: "failed", refused: providerRefusal(response.status, text) };
     let id = "";
     try {
       id = String((JSON.parse(text) as { messages?: Array<{ id?: string }> }).messages?.[0]?.id ?? "");

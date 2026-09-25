@@ -404,8 +404,8 @@ dead. We reported it rather than patching around it for good, and **0.1.1
 fixes it** with a `realpathSync` on `argv[1]`, covered upstream by a test that
 packs, installs and runs the bin. So the script simply calls the bin again, and
 the path-resolution workaround this lane carried for one version is gone. The
-same rule as the five gaps below produced a fix in a day; that is the argument
-for reporting them.
+same rule applied to the five gaps in §46, and 0.2.0 closed all of them, which
+is the argument for reporting them. The pin is now 0.2.0.
 
 Two things remain STUBS on our side and are named rather than implied.
 
@@ -526,22 +526,29 @@ which is why the gate uses it, and a scripted run in `human` mode without
 is at. **Open:** a second channel for the operator, or an explicit statement
 that the interactive simulator is a demo and `--scripted` is the real path.
 
-## 46. What the emulator does not do, measured against the pinned version
+## 46. What the emulator did not do at 0.1.1, and what 0.2.0 closed
 
 Driving the whole `collections-agent` flow through `dyvit-wa-sim` found five
 gaps. They were first measured at `2f1f8bc120ddbc1bfa23386622f9a93f3fdeb980`,
 the sha this lane pinned while the tool was not yet on npm, and re-measured
-unchanged at `@dyvit/whatsapp-simulator-cli@0.1.1`, the version it pins now.
-Each is the exact
-payload that failed, so this section and
-`packages/agent-runtime/test/whatsapp-emulator.integration.test.ts` say the
-same thing twice — the tests are written to go RED the day a gap is closed,
-which is how we find out. This is a spec for the repository's owner, not a
-complaint: nothing here is patched from our side, and no pull request was
-opened there.
+unchanged at `@dyvit/whatsapp-simulator-cli@0.1.1`. We reported them without
+patching anything on our side or opening a pull request there, and
+**`@dyvit/whatsapp-simulator-cli@0.2.0` closes all five.** The pin moved to it
+on 2026-09-24.
 
-**a. The 24-hour window is priced but not enforced. This is the one that
-matters.** After `POST /_sim/clock {"advance_hours": 26}`, a free-form send:
+Each gap below keeps the payload that failed, then what was measured against
+0.2.0. The measuring is done by
+`packages/agent-runtime/test/whatsapp-emulator.integration.test.ts`: its five
+`GAP:` tests pinned the old behaviour, and they are now tests of the fixed one,
+each written so it goes red if the gap reopens. A refusal is checked for what
+it did NOT do (record the message, fire a webhook), not only for its status.
+We checked that this works rather than assuming it: against 0.1.1 the file
+fails 9 of its 14 cases, and against 0.2.0 all 14 pass. The release note was
+treated as a claim to test. Where the binary differs from it, the difference is
+listed at the end of this section.
+
+**a. The 24-hour window was priced but not enforced. CLOSED.** On 0.1.1, after
+`POST /_sim/clock {"advance_hours": 26}`, a free-form send
 
 ```http
 POST /v22.0/{phone-number-id}/messages
@@ -549,76 +556,148 @@ POST /v22.0/{phone-number-id}/messages
  "type":"text","text":{"preview_url":false,"body":"Recebemos, acordo quitado."}}
 ```
 
-answers **`200 accepted`**. The real Cloud API answers `400` with error
-`131047` ("Message failed to send because more than 24 hours have passed since
-the customer last replied") and sends nothing. So an app that Meta would refuse
-passes here, and the session window — the rule that decides whether a
-collections agent may speak at all when the payment lands three days later —
-cannot be proved by a run against the emulator.
+answered **`200 accepted`**. The real Cloud API answers `400` with error `131047`
+and sends nothing. The pricing engine had already tagged the message
+`INVALID_NON_TEMPLATE_OUTSIDE_CSW`.
 
-The reason it is worth reporting rather than working around: **the emulator has
-already decided.** Reading `/_sim/state` after that send, the message carries
-`reasonCode: "INVALID_NON_TEMPLATE_OUTSIDE_CSW"`. The refusal is one branch away
-from data the pricing engine computes today. A send that Meta would reject
-could answer the Graph-shaped error instead of `200`, and everything else about
-the tool stays as it is.
+Measured on 0.2.0: `400`, `error.code: 131047`, and an `error_data.details`
+that names the instant the window closed. The message is absent from
+`/_sim/state` and the webhook log does not grow. A template sent into the same
+shut window still answers `200`, so this is the window rule and not a blanket
+refusal. The note says a free-form message inside a Free Entry Point window
+still passes. We did not measure that: no test opens an FEP window.
 
-Our own cover: the channel refuses it at `session_window_closed` before the
-backend is reached, so the rule is enforced on our side either way. That is a
-worse place for it — it means our test proves our rule, not the provider's.
+Enforcement changed three things on our side.
 
-**b. There is no way to redeliver or reorder a webhook.** `POST /_sim/replay`,
-`POST /_sim/webhooks/replay` and `POST /_sim/redeliver` all answer 404;
-`GET /_sim/webhooks` is a read-only log and nothing re-dispatches from it, and
-`handleSend` dispatches each status exactly once, in order. So the case our own
-adversarial suite names — the same event twice, and an event arriving before
-the one that should precede it — cannot be driven through this channel at all.
-We cover it on the CodeSpar side (`kit.runEventsCase` replays
-`commerce.charge.paid` twice and out of order through `ingestExternalEvent`),
-but that is the CodeSpar event, not the WhatsApp delivery. A
-`POST /_sim/webhooks/{index}/redeliver`, or a `replay` that re-sends a recorded
-delivery, would make the WhatsApp half testable.
+1. **Two of our own positive tests depended on the gap.** "Answers our text
+   send with the Cloud API's own response shape" and the copy-and-paste send
+   sent free-form text into a conversation the person had never opened. That
+   passed only because of (a), and Meta would refuse it. Both tests now open
+   the window with an inbound message first.
+2. **The adapter reads 131047 as the rule it is.** `WhatsAppCloudApi.deliver`
+   used to turn every non-2xx into `provider_refused` with the status and
+   nothing else. It now reads Meta's error body (`providerRefusal` in
+   `cloud-api.ts`) and maps 131047 to `session_window_closed`, the rule the
+   channel already enforces before a send. Other codes stay `provider_refused`
+   with the code named. After that refusal the channel's session window reads
+   shut (`SessionWindow.observeProviderShut`) until the person writes again.
+   The poll then sends the template under the once-only cursor it already holds.
+   Without this, a 131047 on the free-form confirmation would have left the
+   cursor taken and the person uninformed, and a second poll would have
+   answered `already_told`, so the confirmation would have been lost.
+3. **The gate now asks the provider, not only us.** The fourth run used to
+   assert our own choice of carrier. Right after the clock moves it now also
+   sends the free-form alternative straight to the emulator and requires
+   `400/131047`. A **fifth run** drives the case (2) exists for. The
+   conversation's clock moves 26 hours and the agent's moves one, so our window
+   reads open and the provider's is shut, the same as a boundary race in
+   production (our check at 23:59:59, Meta's at 24:00:01). The gate asserts
+   exactly one refusal, the provider's 131047, followed by the template, told
+   once, and exit 0. Measured on 2026-09-24: all five runs pass on 0.2.0. On
+   0.1.1 the fourth and fifth fail ("the provider answered 200", "the
+   confirmation went out as text"). With the poll fallback removed, the fifth
+   fails on 0.2.0 ("the debtor was not told").
 
-**c. A `+` on one side and none on the other splits one person into two
-conversations.** The emulator keys a session on the literal string
-`${phone_number_id}:${to|from}`. The Cloud API documents `to` without a `+`,
-and Meta's inbound `from` also arrives without one — but `POST /_sim/inbound`
-defaults `from` to `+5511999999999`. Sending the documented way while
-simulating an inbound the default way produced two keys for one person:
+Our own check (`session_window_closed` before the backend is reached) stays.
+It still keeps a message Meta would refuse from being sent in the first place.
 
-```
-"keys": ["109876543210:+5511987654321", "109876543210:5511987654321"]
-```
+**b. There was no way to redeliver or reorder a webhook. CLOSED.** On 0.1.1,
+`POST /_sim/replay`, `POST /_sim/webhooks/replay` and `POST /_sim/redeliver` all
+answered 404, and each status was dispatched exactly once, in order.
 
-The consequence is not cosmetic. The customer-service window opens on the
-inbound session, so the outbound session never has one, and the pricing — which
-is the tool's whole reason for existing — is computed against a conversation
-missing the customer's messages. We strip the `+` on both sides to avoid it
-(`toGraphNumber`), which is a workaround, not a fix. Normalising the key would
-close it.
+Measured on 0.2.0, with `POST /_sim/webhooks/{i}/redeliver` and
+`POST /_sim/replay {"indexes":[...]}`:
 
-**d. Only `sent` and `delivered` are ever emitted.** `toStatusWebhook` can
-build `read` and `failed`, and nothing emits either: `handleSend` walks the
-message through the two and stops. So a channel cannot observe a read receipt,
-and cannot be tested against a delivery that failed — which on WhatsApp is a
-normal outcome (a number that is not on WhatsApp, a block list). Our
-`DeliveryState` carries all four and only ever sees two.
+- A redelivery carries a body identical to the original, same `wamid`
+  included. That is a duplicate, the shape Meta's at-least-once delivery
+  produces, not a second message. It also carries `replayOf: i`.
+- `{"indexes":[b,a,a]}` delivers b, a, a in that order, repeats included.
+- **Gotcha one:** the redelivery is itself a delivery, appended at the end of
+  `GET /_sim/webhooks` under a new index. An index computed before a replay is
+  still valid after it. The length of the list is not.
+- **Gotcha two:** a missing index in the middle of a replay answers 404, and
+  the entries BEFORE it were already redelivered. `[a, missing, a]` grew the
+  list by exactly one. The call is not atomic, so a 404 does not mean nothing
+  happened.
+- The index space is global across conversations, not per conversation.
 
-**e. An inbound interactive reply degrades to an empty text message.** Outbound
-interactive works and is good — `graph-api.ts` handles `list`, `flow`,
-`cta_url` and buttons, confirmed by sending each — but the reply to one does
-not exist. `POST /_sim/inbound` with
+**It found a defect in our code, and the defect is fixed.** Our receiver
+verified the redelivered signature, answered 200, and queued the same message a
+second time. The agent would have answered one thing the person said twice.
+`WhatsAppCloudApi` now drops a message id it has already handed on, still
+answers 200 (Meta retries on anything else), and says so on the console. A unit
+test covers it, and so does an integration test against the emulator's own
+redelivery. Still not tested: out-of-order **status** webhooks against our
+channel, because our receiver does not read statuses at all (see d).
 
-```json
-{"phone_number_id":"...","from":"+5511987654321","type":"interactive",
- "interactive":{"type":"button_reply","button_reply":{"id":"avista","title":"À vista"}}}
-```
+**c. A `+` on one side and none on the other split one person into two
+conversations. CLOSED.** 0.1.1 keyed a session on the literal
+`${phone_number_id}:${to|from}`, and `POST /_sim/inbound` defaults `from` to
+`+5511999999999`, which produced
+`"keys": ["109876543210:+5511987654321", "109876543210:5511987654321"]`.
 
-answers 200 and produces `contentType: "text"` with `bodyPreview: ""`, and the
-webhook carries `type: "text"`, `text.body: ""`. So the debtor can be SHOWN
-"À vista / 3x" and cannot tap either — which is precisely the interaction
-collections over WhatsApp is built on. An `_sim/inbound` that carried
-`interactive.button_reply` through to the webhook would close it.
+Measured on 0.2.0: an inbound `+5511987654321` and an outbound
+`5511987654321` are one key, `{pnid}:5511987654321`, and a key requested with
+the `+` finds the same conversation. The inbound webhook's `from` carries no
+`+`, which is how Meta sends it.
+
+`toGraphNumber` is **gone from the two places that existed only for this**:
+the `from` of `EmulatorDriver.inbound` (`emulator.ts`) and the emulator session
+key in `open.ts`, which only reads the priced timeline. It **stays in
+`buildSendRequest`** (`cloud-api.ts`), where it builds the `to` of the real
+Meta call. The reason there is Meta's documented number format, not the
+emulator. Nothing in this repository has ever called Meta, so nothing here
+shows that Meta accepts a `+`. Removing it on the strength of the emulator
+would be a claim about Meta that we cannot back.
+
+**d. Only `sent` and `delivered` were ever emitted. CLOSED.** Measured on 0.2.0
+with `POST /_sim/status`:
+
+- `{"status":"read","message_id":…}` emits a `read` status webhook for that
+  message.
+- `{"status":"failed","reason":"not on whatsapp","message_id":…}` emits
+  `failed` with `errors[0].code: 131026` and `error_data.details` set to the
+  reason.
+- Two templates sent outside the window are both billed (total > 0). Failing
+  one marks it `NOT_BILLABLE_FAILED`, and the total drops but stays above zero.
+
+**Ours, and open:** our receiver ignores status webhooks entirely.
+`parseInbound` reads messages, so the delivery state on an outbound line is
+only ever what the send answered. The emulator can now show a read receipt or
+a failure, and the channel does not listen. **Open:** whether a `failed`
+(131026: not on WhatsApp, blocked) belongs in the record and on the operator's
+console. It is a normal outcome on WhatsApp, and right now it would pass
+unnoticed.
+
+**e. An inbound interactive reply degraded to an empty text message. CLOSED.**
+On 0.1.1, `POST /_sim/inbound` with `type: "interactive"` and a `button_reply`
+produced `type: "text"`, `text.body: ""`.
+
+Measured on 0.2.0: `button_reply`, `list_reply` and `nfm_reply` each go out as
+`type: "interactive"` carrying Meta's object, with `id` preserved (and
+`response_json` for `nfm_reply`). A reply without `id`, or an `nfm_reply`
+without `response_json`, answers 400, and the webhook log does not grow.
+
+**Ours, and open:** `parseInbound` reads text only. A tapped button is now
+dropped with its id and type named on the console, which is honest, but the
+debtor can tap "À vista" and the agent does not hear it. Turning a button reply
+into a turn is a channel feature and is not in this change.
+
+### Where 0.2.0 differs from its release note
+
+Measured on 2026-09-24. None of these affects a test or the gate, because both
+always name the conversation or the message.
+
+- `POST /_sim/status` with neither `key` nor `message_id` marked the last
+  message of the FIRST conversation the emulator held, not the most recent
+  send overall. We read the note as saying the latter.
+- It accepts `failed` after `read` for the same message, and accepts
+  `delivered` as an injectable status. Meta does not move a read message to
+  failed.
+- `list_reply` loses the `description` that Meta's `list_reply` carries.
+- The 404 of a partial replay counts the list after the redeliveries it
+  already made: seven deliveries before the call, "there are 8 (0..7)" in the
+  answer.
 
 ### And one gap that was ours, not the emulator's — now closed
 
@@ -642,12 +721,14 @@ second one.
 
 Two things about it are worth keeping written down rather than implied.
 
-**The fourth run asserts OUR choice of carrier, not the provider's refusal.**
-Because of (a) above, the emulator would have taken the free-form message too.
-The session window in `packages/agent-runtime/src/channels/whatsapp/session.ts`
-is what decides, and the gate's own output says so in as many words. The day
-the emulator enforces the window, that run gets stronger without a line
-changing — which is the same bet the rest of this section makes.
+**The fourth run asserted OUR choice of carrier, and now asserts the
+provider's refusal too.** At 0.1.1 the emulator would have taken the free-form
+message as well, so the session window in
+`packages/agent-runtime/src/channels/whatsapp/session.ts` was the only thing
+deciding. One correction to what this paragraph used to predict: the run did
+not get stronger "without a line changing". The poll never tries the free-form
+message once our window reads shut, so enforcement upstream never reached it.
+It took the probe and the fifth run described in (a) above.
 
 **Template APPROVAL is still a stub and still ours to leave that way.** The
 registry proves the agent DECLARED the name, the language and the variable

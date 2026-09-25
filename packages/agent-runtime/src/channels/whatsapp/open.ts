@@ -17,7 +17,7 @@ import type { Setup } from "../../setup.js";
 import { knownSubjects, loadTemplates } from "../index.js";
 import type { ChannelBackend, Conversation } from "../types.js";
 import { WhatsAppChannel } from "./index.js";
-import { toGraphNumber, WhatsAppCloudApi, loadCloudApiConfig, type CloudApiConfig } from "./cloud-api.js";
+import { WhatsAppCloudApi, loadCloudApiConfig, type CloudApiConfig } from "./cloud-api.js";
 import { EmulatorDriver, EMULATOR_DEFAULTS, EMULATOR_ENV, WhatsAppEmulator } from "./emulator.js";
 import type { SessionState } from "./session.js";
 
@@ -102,7 +102,7 @@ export function buildWhatsApp(options: OpenWhatsAppOptions): OpenedWhatsApp | { 
       webhookPort: Number(env[EMULATOR_ENV.webhookPort]?.trim() || EMULATOR_DEFAULTS.webhookPort),
     };
     driver = new EmulatorDriver(url);
-    sessionKey = `${config.phoneNumberId}:${toGraphNumber(options.conversation.contact)}`;
+    sessionKey = `${config.phoneNumberId}:${options.conversation.contact}`;
     backend = new WhatsAppEmulator({
       config,
       conversation: { contact: options.conversation.contact },
