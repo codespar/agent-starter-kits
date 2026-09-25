@@ -67,6 +67,8 @@ export type ExecutionReason =
   | "window_cap_exceeded"
   | "approval_expired"
   | "items_hash_mismatch"
+  /** The quote a spend would present does not name the approved amount and payee; refused before the call. */
+  | "quote_mismatch"
   | "mandate_changed"
   | "denied_by_approver"
   | "rail_failed"

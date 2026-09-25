@@ -14,6 +14,7 @@
  */
 import type { ApiClient } from "@codespar/sdk";
 import type { Mandate } from "../mandate.js";
+import { checkQuote } from "../quote.js";
 import type { PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt } from "../rail.js";
 import type { Actor } from "../types.js";
 import { describeApiError, isUncertain } from "./client.js";
@@ -27,6 +28,9 @@ export class CodeSparRail implements PaymentRail {
   ) {}
 
   async pay(payment: RailPayment): Promise<RailOutcome> {
+    // Without the quote the sealed receipt names no payee (OPEN_QUESTIONS §18), and the API pays a quote that disagrees. Neither goes out.
+    const quoted = checkQuote(payment);
+    if (!quoted.ok) return { status: "failed", code: quoted.code, message: `${quoted.detail}; nothing was sent` };
     try {
       const outcome =
         this.envelope?.canonical && this.envelope.signature
@@ -39,11 +43,12 @@ export class CodeSparRail implements PaymentRail {
                 agent_id: payment.agent_id,
                 payee: payment.payee,
                 attempt_id: payment.attempt_id,
+                quote: quoted.quote,
               },
             })
           : await this.api.post("/v1/consumers/mandates/{id}/spend", {
               path: { id: payment.mandate_id },
-              body: { amount_minor: payment.amount_minor, payee: payment.payee, agent_id: payment.agent_id, attempt_id: payment.attempt_id },
+              body: { amount_minor: payment.amount_minor, payee: payment.payee, agent_id: payment.agent_id, attempt_id: payment.attempt_id, quote: quoted.quote },
             });
       return {
         status: "settled",

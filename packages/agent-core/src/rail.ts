@@ -5,6 +5,7 @@
  * scenarios. Both are idempotent on `attempt_id`: presenting the same
  * attempt again answers the earlier outcome instead of paying twice.
  */
+import type { SpendQuote } from "./quote.js";
 import type { Actor, ChargeInstrument } from "./types.js";
 
 export interface RailPayment {
@@ -22,6 +23,8 @@ export interface RailPayment {
   beneficiary?: string;
   /** Due date of a receivable, `YYYY-MM-DD`. */
   due_date?: string;
+  /** What was approved for this line, presented with a spend so the sealed receipt names the payee. A charge rail ignores it. */
+  quote?: SpendQuote;
   /** Section 4.5: carried on every call. The API has no wire field for it yet; see OPEN_QUESTIONS. */
   actor: Actor;
 }
@@ -68,6 +71,7 @@ export interface RailReceipt {
   kind?: "payment" | "charge";
   state: string;
   mandate: { id: string };
+  /** `payee` is the one the receipt SEALED — the quote's, on a payment — and null when it sealed none. Never copied from the execution. */
   payment: { amount_minor: number; payee: string | null; attempt_id: string; money_moved: boolean; sandbox: boolean; at: string };
   /** Null when the API seals nothing for this kind of record. */
   chain: string | null;

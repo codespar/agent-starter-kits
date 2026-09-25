@@ -7,6 +7,7 @@
  * form; nothing about them is verifiable by anyone.
  */
 import { sha256Hex } from "../hash.js";
+import { checkQuote } from "../quote.js";
 import type { PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt } from "../rail.js";
 import type { StateStore } from "../state/store.js";
 import type { Actor } from "../types.js";
@@ -59,6 +60,9 @@ export class StubRail implements PaymentRail {
   }
 
   async pay(payment: RailPayment): Promise<RailOutcome> {
+    // The same refusal the CodeSpar rail makes before its call, so a scenario exercises it.
+    const quoted = checkQuote(payment);
+    if (!quoted.ok) return { status: "failed", code: quoted.code, message: `${quoted.detail}; nothing was sent` };
     const existing = this.store.stubRailGet(payment.attempt_id);
     if (existing) return existing.outcome as RailOutcome;
 
@@ -118,13 +122,14 @@ export class StubRail implements PaymentRail {
     if (!sealed) return undefined;
     const req = sealed.request as Omit<RailPayment, "actor">;
     const out = sealed.outcome as Extract<RailOutcome, { status: "settled" }>;
+    // Like the API: the payee on the receipt is the one the quote sealed, and none when the spend carried no quote.
     const body = {
       receipt_id: receiptId,
       state: "paid",
       mandate: { id: req.mandate_id },
-      payment: { amount_minor: req.amount_minor, payee: req.payee, attempt_id: req.attempt_id, money_moved: false, sandbox: true, at: sealed.at },
+      payment: { amount_minor: req.amount_minor, payee: req.quote?.payee ?? null, attempt_id: req.attempt_id, money_moved: false, sandbox: true, at: sealed.at },
     };
-    const chain = `sha256:${sha256Hex(JSON.stringify(body))}`;
+    const chain = `sha256:${sha256Hex(JSON.stringify(req.quote ? { ...body, quote: req.quote } : body))}`;
     return {
       ...body,
       chain,

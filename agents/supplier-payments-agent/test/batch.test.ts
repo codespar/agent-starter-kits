@@ -8,7 +8,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { fixedClock, type Execution, type ToolContext } from "@codespar/agent-core";
+import { fixedClock, maskPayee, type Execution, type ToolContext } from "@codespar/agent-core";
 import { assembleTimeline, setup, type Setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 import { runBatch } from "../src/modules/batch-payout.js";
@@ -79,6 +79,23 @@ describe("batch-payout: a batch is a loop of executions", () => {
         expect(a.mandate).toEqual({ id: s.mandate.id, version: s.mandate.version });
       }
       expect(artifacts.map((a) => a.execution_id).sort()).toEqual(executions.map((e) => e.id).sort());
+    } finally {
+      s.close();
+    }
+  });
+
+  it("every line presents the quote of its OWN approved line, and its receipt carries the payee that quote sealed (OPEN_QUESTIONS §18)", async () => {
+    const s = open(mkdtempSync(join(tmpdir(), "supplier-batch-q-")));
+    try {
+      await run(s, "folha-2026-10");
+      const artifacts = s.bundle.readApprovals();
+      for (const e of s.engine.list()) {
+        const line = artifacts.find((a) => a.execution_id === e.id)!.items[0]!;
+        const outcome = e.outcomes[0]!;
+        const sent = s.store.stubRailGet(outcome.attempt_id)!.request as { quote?: { price_minor: number; payee: string; seller: string } };
+        expect(sent.quote).toMatchObject({ seller: line.beneficiary, price_minor: line.amount, payee: line.payee });
+        expect(s.bundle.readReceipt(`${outcome.receipt_id}.json`)?.["payment"]).toMatchObject({ payee: maskPayee(line.payee) });
+      }
     } finally {
       s.close();
     }
