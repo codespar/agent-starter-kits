@@ -63,7 +63,46 @@ Section 5 says the tools come from the MCP. They do not, and this entry used to 
 
 `hello-agent` has only a local tool. Every tool name the kits use still exists in the published set. Every kit meta-tool fails the shape rules, and none of it is drift, because the two sides describe different layers.
 
-**What is checked today.** `tools.json` parses against `ToolsFileSchema` (`packages/agent-core/src/tools.ts`: unique names, meta-tools named `codespar_*`, an `effect`), the prompt names no `codespar_*` outside it, and a call to a tool outside it is refused before any handler (`tool_not_allowed`, in every agent's adversarial suite). **What is not:** that the REST calls the core builds still match what the API accepts, or that the meta-tool names the kits borrow still exist upstream. **Open:** a check for that layer, which would read a pinned `@codespar/types` for the names and the SDK's generated OpenAPI types for the request shapes, never a live server. Whether to add it, and whether the kit's tools should keep borrowing meta-tool names at all, are product decisions; renaming them is not something to do in passing. **v5.2:** section 5 should say the tools are the kit's own and dispatched by the core, not taken from the MCP.
+**What is checked today, in three parts.**
+
+(a) **The file.** `tools.json` parses against `ToolsFileSchema` (`packages/agent-core/src/tools.ts`: unique names, meta-tools named `codespar_*`, an `effect`), the prompt names no `codespar_*` outside it, and a call to a tool outside it is refused before any handler (`tool_not_allowed`, in every agent's adversarial suite).
+
+(b) **The REST calls the core makes. CLOSED 2026-09-25: the compiler checks them.** No script was added. Every request body and every response the kit reads over REST is typed by the SDK's generated `paths`, so an SDK bump that renames, retypes or drops a field the kit sends or reads fails `npm run typecheck`. What that covers:
+
+- `packages/agent-core/src/api/*`, plus the consent submit in `agents/bills-agent/src/modules/embedded-consent.ts`. Bodies are passed inline to the SDK's typed `post`, where an unknown property is a compile error. Responses are the SDK's `ApiSuccess<ApiOperation<path, method>>`: `ChargeView` and `SandboxPaidState` are now aliases of those types instead of hand-written interfaces, and the `as ChargeView` casts and the `as never` casts on the consent submit are gone. `GET /v1/mandates/{id}` still runs a zod parse, because a missing `org_paused` must read as `unknown` at run time (§4), but the schema `satisfies` the SDK's type, so a rename fails the compile there too.
+- The error codes the core branches on. The SDK throws `CodesparApiError` with `body: unknown`, so a route's typed error answers never reach the caller. `ApiErrorCode<Op>` (`api/client.ts`) reads the codes an operation documents, and every code the core compares against is declared through it: `psp_attempt_in_flight`, `psp_dispatch_uncertain` and `psp_attempt_uncertain` against both spend routes, and `issuance_unconfirmed` against the charge read. A code the API stops documenting fails the compile.
+- How it was proven, without committing any of it: renaming `idempotency_key` in the charge create body, or reading `view.amount_minr`, fails `tsc` (TS2561, TS2551). Editing the installed SDK's `openapi.d.ts` fails it too: `issuance_unconfirmed` → `issuance_pending` on the charge read, `org_paused` → `kill_switch` on the mandate read, `attempt_id` → `attempt_key` on the spend body, `paid_minor` → `paid_amount_minor` on the sandbox payer, and dropping `psp_attempt_in_flight` from the spend's 409. Before this change the first of those SDK edits failed only at the two charge reads, as a TS2352 on the cast, and the create's cast let it through.
+
+What the compiler does **not** catch:
+
+- **A dropped optional field.** `attempt_id` is optional on both spend routes and `idempotency_key` is optional on `POST /v1/charges`, and the kit's idempotency rests on both. Leaving one out compiles. The API refuses a due-date charge without its key (`charge_idempotency_key_required`), so the type is looser than the route.
+- **A field the SDK types as `unknown` or as an open map.** See the findings below.
+- **The answer itself.** A type is what the document promises. Only the mandate read checks at run time that the answer kept the promise.
+- **The verifier's key-set read.** `npm run verify` fetches `/.well-known/codespar-receipt-keys.json` with plain `fetch` and checks it against its own `ReceiptKeyDocument` (`packages/agent-core/src/receipt-verification.ts`). That is deliberate: it runs without a key, against any deployment or a file, and must validate what it is given rather than trust a type (§47).
+- **The meta-tool names in `tools.json`.** That is (c).
+
+**SDK/OpenAPI findings from typing it.** 1 is tracked as codespar-enterprise#1674, and 2 to 6 as codespar-enterprise#1677. 7 is not a gap, only a note for §2:
+
+1. `POST /v1/consumers/mandates/{id}/spend` (403: `policy_denied | withdrawal_pin`) and `POST /v1/consumer-payments/execute` (403: `withdrawal_pin`) do not list `org_paused`, which both answer since ent#1648 (§4). codespar-enterprise#1674.
+2. `POST /v1/consumer-payments/execute` types `mandate?: unknown`. The signed envelope is optional and untyped, so the compiler checks nothing about the one field that authorizes the spend.
+3. `POST /v1/charges` types `buyer?: { [key: string]: unknown }` and `method: string`. The kit's `buyer: { name, document }` and `method: "boleto"` go unchecked.
+4. `POST /v1/consents/{token}/submit` answers `mandate: { [key: string]: unknown }`. The signed mandate's fields (`cap_minor`, `merchant_allowlist`, `expires_at`, `periodic_cap`) are read without a type, and `MandateSchema.parse` is what checks them.
+5. `GET /v1/charges/{chargeId}` does not type `settled_at`. It is a column of the charge row, and the kit's charge receipt copy reads it as its `at`, falling back to the moment of the read. That is now the one field in `api/*` read outside a type. Whether the route sends it was not established.
+6. `issuance_unconfirmed` is documented on the charge read's 409 and not on the create. The rail still treats it as uncertain on the create, which is the safe reading.
+7. The spend routes now accept `actor?: PaymentActor` (`{ type: "agent", id, on_behalf_of } | { type: "human", id, channel? }`), the same shape the kit stamps locally. §2 says the API has no actor field on the wire, and that is no longer true for the spend. Sending it is its own change.
+
+Found while typing, on the kit's side, and fixed: the charge read's 409 is `issuance_unconfirmed | charge_reference_ambiguous`, and `CodeSparChargeRail.read` mapped any 409 to `in_flight`, so a reference that matched more than one charge would have been polled forever as a charge still issuing. The read now branches on the typed code. `issuance_unconfirmed` is the only 409 that stays `in_flight`. `charge_reference_ambiguous` is terminal for that reference: the lookup answers `failed` with that code and a message to reconcile by the charge id, the key is not tried after an ambiguous id, and the execution closes `failed` instead of staying `executing`. A 409 with any other code, or with none, is `failed` too. The kit's references are its own attempt ids, so the ambiguous case has not been seen live.
+
+An ambiguous receivable is not a failure that moved no money: the charge was issued and may still be paid. So it closes with its own reason, `charge_reference_ambiguous` (`types.ts`), which means "reconcile by the charge id, never issue again". Where that is enforced:
+
+- **`resume` and `reconcile` never touch it.** `resume` walks `state: "executing"` only, and `reconcile` and `resumePending` return a terminal execution as it is.
+- **`rerun` never touches the API.** It runs on the stub rail in a fresh `mkdtemp` state directory (`packages/agent-runtime/src/commands/rerun.ts`).
+- **The batch claim cannot see this reason.** The claim reads `failed` as "retry", but it lives in `supplier-payments-agent`, whose rail is the spend, and the spend never answers this code.
+- **The path that WOULD have issued a second charge is the collections agent's own.** `list_agreements` built an agreement's status from `settled` and `executing` only, so a `failed` agreement read `em aberto`. The debtor was told `Nada foi cobrado`, and the model could issue again under a fresh attempt id. Now the core's policy denies, at draft, any execution to a payee that holds a `charge_reference_ambiguous` execution under the same mandate. `list_agreements` reports the agreement as `cobranca emitida, em conferencia: nao emitir outra`, and the debtor is told the charge exists and not to pay again.
+
+A `commerce.charge.paid` that arrives after the close is not applied, because the execution is terminal. That payment is found by the reconciliation by charge id, which is the operator's step.
+
+(c) **The meta-tool names the kits borrow.** Not checked: nothing reads a pinned `@codespar/types` to confirm that the names in `tools.json` still exist upstream. **Open, v5.3:** whether to add that check, and whether the kit's tools should keep borrowing meta-tool names at all, are product decisions; renaming them is not something to do in passing. **v5.2:** section 5 should say the tools are the kit's own and dispatched by the core, not taken from the MCP.
 
 ## 9. `approval.json` is a list
 

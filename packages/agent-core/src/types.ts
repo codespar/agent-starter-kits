@@ -82,7 +82,13 @@ export type ExecutionReason =
   /** A receivable was issued and the rail is waiting for the payer; the execution stays `executing` until `commerce.charge.*` closes it. */
   | "awaiting_settlement"
   | "charge_expired"
-  | "charge_cancelled";
+  | "charge_cancelled"
+  /**
+   * An ISSUED receivable whose read now answers that its reference matches more than one charge. Terminal for the
+   * execution, but not "nothing moved": the charge exists and may still be paid. Reconcile it by the charge id; never
+   * issue another to the same payee until that is done, which is why the core refuses one (`policy`).
+   */
+  | "charge_reference_ambiguous";
 
 export interface MandateRef {
   id: string;

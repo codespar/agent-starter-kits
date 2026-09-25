@@ -180,6 +180,14 @@ export class ExecutionEngine {
       return { kind: "deny", reason: "beneficiary_not_allowed", detail };
     }
 
+    // A receivable closed `charge_reference_ambiguous` was issued and may still be paid. Another one to the same payee is how a debtor pays twice.
+    const unreconciled = this.deps.store
+      .listExecutions({ state: "failed", mandate_id: mandate.id })
+      .find((e) => e.id !== execution.id && e.reason === "charge_reference_ambiguous" && e.items.some((i) => execution.items.some((mine) => mine.payee === i.payee)));
+    if (unreconciled) {
+      return { kind: "deny", reason: "charge_reference_ambiguous", detail: `execution ${unreconciled.id} issued a receivable to this payee whose reference turned ambiguous; reconcile it by the charge id before issuing another` };
+    }
+
     const over = execution.items.find((i) => i.amount > mandate.per_tx_cap_minor);
     if (over) return { kind: "deny", reason: "per_tx_cap_exceeded", detail: `${over.beneficiary}: ${over.amount} is above the per-payment cap ${mandate.per_tx_cap_minor}` };
 
@@ -403,11 +411,13 @@ export class ExecutionEngine {
     if (execution.outcomes.length < attempts) {
       return this.leaveUnresolved(updated, unknownDetail ?? `${execution.outcomes.length} of ${attempts} attempt(s) have an outcome`);
     }
-    const failed = execution.outcomes.find((o) => o.status === "failed");
+    // An ambiguous receivable outranks any other failure: it is the one outcome that must be reconciled rather than issued again.
+    const failed = execution.outcomes.find((o) => o.status === "failed" && o.code === "charge_reference_ambiguous") ?? execution.outcomes.find((o) => o.status === "failed");
     if (failed) {
       this.deps.store.updateOutbox(execution.idempotency_key, "failed", execution.outcomes, at);
       // `org_paused` is the API refusing the spend itself: the kill switch was pressed after the gate read the status. Nothing moved.
-      const reason: ExecutionReason = failed.code === "charge_expired" || failed.code === "charge_cancelled" || failed.code === "org_paused" ? failed.code : "rail_failed";
+      const reason: ExecutionReason =
+        failed.code === "charge_expired" || failed.code === "charge_cancelled" || failed.code === "org_paused" || failed.code === "charge_reference_ambiguous" ? failed.code : "rail_failed";
       return this.persist(transition(updated, "failed", { at, actor: this.agentActor, reason, detail: failed.error ?? "rail refused" }));
     }
     if (execution.outcomes.filter((o) => o.status === "settled").length === attempts) {
