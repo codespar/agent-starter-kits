@@ -15,7 +15,7 @@ npm run start:supplier
 > roda a folha de outubro
 ```
 
-Three lines, three approvals, three receipts under `runs/<run-id>/receipts/`. Run it again and every line answers `already_settled`.
+Three lines, one question ("3 linha(s), total R$ …, batch_hash sha256:…" — answer `todas`, `todas exceto 2` or `nenhuma`), three approval artifacts, three receipts under `runs/<run-id>/receipts/`. Run it again and every line answers `already_settled`.
 
 - `ANTHROPIC_API_KEY` can stay empty: the agent then replays a recorded transcript. The old placeholder `sk-ant-your_key_here` counts as empty.
 - One-shot form: `npm start -- --input "roda a folha de outubro" --approve --json`.
@@ -35,6 +35,7 @@ Both shapes deliver it, now that the core dispatches every attempt and names eve
 | Repeating pays nobody twice | A durable claim pairs (mandate, batch, line) with the execution covering it. Settled is skipped, still-open is never re-opened, and only an execution that ended without moving money is retried. |
 | Each approved line stays attested | One approval artifact per line, each with its own `items_hash` bound to the mandate version. `runs/<run-id>/approval.json` holds them in approval order. |
 | The approved list is bound as a set | The list is hashed once, before any line is drafted, and every artifact of the batch carries that `batch_hash` with the line's own position and the list's length. So a bundle of three artifacts says "1, 2 and 4 of 4" and not "three payments". A line the human denied has an execution and no artifact; a line that left the list after it was approved has neither, and the run that would drop it is refused before it drafts anything. |
+| One gesture approves the list, with a veto per line | In the interactive terminal a batch is put in front of the operator once: every line, the total and the `batch_hash` prefix. `todas` approves the list, `todas exceto 3,7` vetoes those positions, `nenhuma` denies it. The gesture decides each line as it arrives and approves nothing by itself: every approved line still mints its own artifact carrying the `batch_hash` the gesture was taken on, and the gesture is a `batch.gesture` event in the bundle naming what was approved and vetoed. A vetoed line is a denied execution with no artifact and appears in the report's `denied`; a line that claims another list under the same ref is not covered by the gesture and is denied. The one-shot and the scenario runner still pass one decision to every line. |
 
 The claim is taken **before** the channel can run the execution. Claiming afterwards would leave a settled payout unclaimed if the process died in between, and that is exactly the double payment. A crash the other way round leaves a claim on an open execution, which the next run reports as `in_progress` and refuses to duplicate — the operator closes it with `npm run approve`, `npm run resume` or `npm run reconcile`.
 
@@ -45,7 +46,7 @@ The claim is taken **before** the channel can run the execution. Claiming afterw
 | The model proposes, the code executes | `codespar_pay` creates executions in `drafted`. Only `ExecutionEngine` in `@codespar/agent-core` checks mandate, caps, allowlist, `escalate_above` and `items_hash`, and only it reaches `executing`. |
 | A batch cannot be fractioned | The lines come from `payables.ts`, never from the tool call. `codespar_pay` refuses `batch_ref` sent together with `items` or `total_minor`, so a model being steered cannot add a payee to a payroll or split one line into five. |
 | Partial failure is visible | `scenarios/partial-batch-failure`: the rail declines one supplier, the other two settle, and the report names which line failed and why. |
-| Two modes, one trail | `approval: human` (default): the operator approves each line. `approval: mandate`: the agent runs what the signed allowance covers and asks above `escalate_above`. Same code, same states, same receipts. |
+| Two modes, one trail | `approval: human` (default): the operator approves the list, with a veto per line. `approval: mandate`: the agent runs what the signed allowance covers and asks above `escalate_above`. Same code, same states, same receipts. |
 | Readable refusal | Cap per payout, cap per month, payee outside the mandate, revoked mandate, outside hours: each names itself in the trail and in the chat. |
 | Sandbox by construction | A key that does not start with `csk_test_` fails before any network call. |
 
