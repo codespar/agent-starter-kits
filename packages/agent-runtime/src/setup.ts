@@ -29,6 +29,7 @@ import {
   type PaymentRail,
   type StubChargeRailOptions,
   type StubRailOptions,
+  type ToolContext,
   type ToolHandler,
 } from "@codespar/agent-core";
 import { AnthropicRuntime } from "@codespar/agent-core/providers/anthropic";
@@ -95,7 +96,8 @@ export interface Setup {
   system: string;
   handlers: Record<string, ToolHandler>;
   tools: ReturnType<typeof loadToolsFile>;
-  makeLoop(runtime: AgentRuntime, onExecution: (execution: Execution) => Promise<Execution>): AgentLoop;
+  /** `onBatch` is for a channel that takes one gesture per batch; without it every line is decided in `onExecution`. */
+  makeLoop(runtime: AgentRuntime, onExecution: (execution: Execution) => Promise<Execution>, onBatch?: ToolContext["onBatch"]): AgentLoop;
   makeRuntime(): AgentRuntime;
   close(): void;
 }
@@ -214,7 +216,7 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
     handlers: {},
     tools,
     makeRuntime,
-    makeLoop: (runtime, onExecution) => new AgentLoop({ runtime, tools, handlers: s.handlers, system, bundle, engine, onExecution, ...(now ? { clock: now } : {}) }),
+    makeLoop: (runtime, onExecution, onBatch) => new AgentLoop({ runtime, tools, handlers: s.handlers, system, bundle, engine, onExecution, ...(onBatch ? { onBatch } : {}), ...(now ? { clock: now } : {}) }),
     close: () => store.close(),
   };
   s.handlers = agent.kit.handlers(s);
