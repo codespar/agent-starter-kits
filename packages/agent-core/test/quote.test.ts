@@ -162,6 +162,22 @@ describe("§18: the receipt's payee is the sealed one, and a mismatch is an erro
     expect(without?.payment.payee).toBeNull();
   });
 
+  it("a mixed-case key sealed as it was sent raises nothing; the same key sealed lower-cased is a mismatch", async () => {
+    const MIXED = "Financeiro@Escola-Aurora.example.com.br";
+    const mandate = { merchant_allowlist: [MIXED] as [string], beneficiaries: [{ alias: "escola", name: "Escola Aurora", payee: MIXED }] as [{ alias: string; name: string; payee: string }] };
+    const verbatim = harness({ mode: "human", mandate });
+    const d1 = await verbatim.engine.draft({ items: [{ payee: "escola", amount: 185000 }] });
+    if (!d1.ok) throw new Error("refused");
+    expect((await verbatim.engine.execute(verbatim.engine.approve(d1.execution.id, approver).id)).state).toBe("settled");
+    expect(verbatim.bundle.readEvents().some((e) => e["type"] === "receipt.seal_mismatch")).toBe(false);
+
+    // The API stores and returns quote.payee verbatim (OPEN_QUESTIONS §18); if that ever changes, this is what the kit says.
+    const lowered = harness({ mode: "human", mandate, wrapRail: (stub) => sealing(stub, MIXED.toLowerCase()) });
+    const d2 = await lowered.engine.draft({ items: [{ payee: "escola", amount: 185000 }] });
+    if (!d2.ok) throw new Error("refused");
+    await expect(lowered.engine.execute(lowered.engine.approve(d2.execution.id, approver).id)).rejects.toBeInstanceOf(ReceiptSealMismatchError);
+  });
+
   for (const [label, sealedPayee] of [["a different payee", MERCADO], ["no payee at all (a spend the API sealed without a quote)", null]] as const) {
     it(`a receipt sealing ${label} throws after the outcome is saved, and the bundle says why without the key in the clear`, async () => {
       const h = harness({ mode: "human", wrapRail: (stub) => sealing(stub, sealedPayee) });
