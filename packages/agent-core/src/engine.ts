@@ -406,7 +406,8 @@ export class ExecutionEngine {
     const failed = execution.outcomes.find((o) => o.status === "failed");
     if (failed) {
       this.deps.store.updateOutbox(execution.idempotency_key, "failed", execution.outcomes, at);
-      const reason: ExecutionReason = failed.code === "charge_expired" || failed.code === "charge_cancelled" ? failed.code : "rail_failed";
+      // `org_paused` is the API refusing the spend itself: the kill switch was pressed after the gate read the status. Nothing moved.
+      const reason: ExecutionReason = failed.code === "charge_expired" || failed.code === "charge_cancelled" || failed.code === "org_paused" ? failed.code : "rail_failed";
       return this.persist(transition(updated, "failed", { at, actor: this.agentActor, reason, detail: failed.error ?? "rail refused" }));
     }
     if (execution.outcomes.filter((o) => o.status === "settled").length === attempts) {
