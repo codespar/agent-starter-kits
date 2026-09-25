@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { fixedClock, maskPayee, type Execution, type ToolContext } from "@codespar/agent-core";
-import { assembleTimeline, setup, type Setup } from "@codespar/agent-runtime";
+import { assembleTimeline, handleExecution, parseBatchGesture, presentBatch, setup, type BatchGestures, type Setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 import { runBatch } from "../src/modules/batch-payout.js";
 import { findBatch, type Batch } from "../src/payables.js";
@@ -394,6 +394,168 @@ describe("batch-payout: the approved list is bound as a set", () => {
       const [artifact] = s.bundle.readApprovals();
       expect("batch" in artifact!).toBe(false);
       expect(assembleTimeline(s.bundle).batches).toEqual([]);
+    } finally {
+      s.close();
+    }
+  });
+});
+
+/**
+ * The interactive terminal's two hooks, driven by scripted answers: one
+ * question for the list, then every line decided by what was answered.
+ */
+function gestureChannel(s: Setup, answers: string[]): { ctx: ToolContext; asked: string[] } {
+  const gestures: BatchGestures = new Map();
+  const asked: string[] = [];
+  const ask = async (question: string) => {
+    asked.push(question);
+    const answer = answers.shift();
+    if (answer === undefined) throw new Error(`asked more than scripted: ${question}`);
+    return answer;
+  };
+  const options = { setup: s, approver: APPROVER, ask, say: () => undefined, gestures };
+  return {
+    asked,
+    ctx: {
+      engine: s.engine,
+      onExecution: (execution) => handleExecution(execution, options),
+      onBatch: (batch) => presentBatch(batch, options),
+    },
+  };
+}
+
+describe("batch-payout: one gesture approves the list, with a veto per line (§39e)", () => {
+  it("reads todas, todas exceto and nenhuma, and refuses to guess at anything else", () => {
+    expect(parseBatchGesture("todas", 4)).toEqual({ vetoed: [] });
+    expect(parseBatchGesture("all", 4)).toEqual({ vetoed: [] });
+    expect(parseBatchGesture("todas exceto 3", 4)).toEqual({ vetoed: [2] });
+    expect(parseBatchGesture("all except 4, 1,4", 4)).toEqual({ vetoed: [0, 3] });
+    expect(parseBatchGesture("nenhuma", 4)).toEqual({ vetoed: [0, 1, 2, 3] });
+    expect(parseBatchGesture("", 4)).toEqual({ vetoed: [0, 1, 2, 3] });
+    // A line that does not exist is a typo, and a typo must not veto nothing.
+    expect(parseBatchGesture("todas exceto 5", 4)).toBeUndefined();
+    expect(parseBatchGesture("todas exceto 0", 4)).toBeUndefined();
+    expect(parseBatchGesture("s", 4)).toBeUndefined();
+    expect(parseBatchGesture("todas menos 2", 4)).toBeUndefined();
+  });
+
+  it("approve-all is one question, and still mints one artifact per line, each naming the list", async () => {
+    const s = open(mkdtempSync(join(tmpdir(), "supplier-gesture-a-")));
+    try {
+      const batch = fourLines();
+      const channel = gestureChannel(s, ["todas"]);
+      const report = await runBatch(batch, channel.ctx);
+
+      expect(channel.asked).toHaveLength(1);
+      expect(report.lines.map((l) => l.dispatch)).toEqual(["settled", "settled", "settled", "settled"]);
+      expect(report.gesture).toEqual({ batch_hash: report.batch_hash, approved: [0, 1, 2, 3], vetoed: [] });
+
+      const artifacts = s.bundle.readApprovals();
+      expect(artifacts).toHaveLength(4);
+      expect(new Set(artifacts.map((a) => a.batch!.batch_hash))).toEqual(new Set([report.batch_hash]));
+      expect(artifacts.map((a) => a.batch!.index)).toEqual([0, 1, 2, 3]);
+      for (const a of artifacts) expect(a.approver).toEqual({ type: "person", id: APPROVER.id, channel: APPROVER.channel });
+
+      // The gesture itself is in the attested record, next to the artifacts it produced.
+      const gestures = s.bundle.readEvents().filter((e) => e["type"] === "batch.gesture");
+      expect(gestures).toHaveLength(1);
+      expect(gestures[0]!["payload"]).toMatchObject({ batch_ref: batch.ref, batch_hash: report.batch_hash, count: 4, approved: [0, 1, 2, 3], vetoed: [], approver: { type: "human", id: APPROVER.id } });
+    } finally {
+      s.close();
+    }
+  });
+
+  it("approve-except denies exactly the vetoed lines, and the report says which", async () => {
+    const s = open(mkdtempSync(join(tmpdir(), "supplier-gesture-b-")));
+    try {
+      const batch = fourLines();
+      const channel = gestureChannel(s, ["todas exceto 2,4"]);
+      const report = await runBatch(batch, channel.ctx);
+
+      expect(channel.asked).toHaveLength(1);
+      expect(report.lines.map((l) => [l.index, l.dispatch, l.state])).toEqual([
+        [0, "settled", "settled"],
+        [1, "refused", "denied"],
+        [2, "settled", "settled"],
+        [3, "refused", "denied"],
+      ]);
+      const vetoed = [batch.lines[1]!.alias, batch.lines[3]!.alias];
+      expect(report.denied).toEqual(vetoed);
+      expect(report.failed).toEqual(vetoed);
+      expect(report.gesture).toEqual({ batch_hash: report.batch_hash, approved: [0, 2], vetoed: [1, 3] });
+      expect(report.settled_minor).toBe(batch.lines[0]!.amount_minor + batch.lines[2]!.amount_minor);
+
+      // A vetoed line is a decision: it has an execution, no artifact, and says why.
+      const artifacts = s.bundle.readApprovals();
+      expect(artifacts.map((a) => a.batch!.index)).toEqual([0, 2]);
+      const denied = s.engine.list().filter((e) => e.state === "denied");
+      expect(denied.map((e) => e.batch!.index)).toEqual([1, 3]);
+      expect(denied.map((e) => e.detail)).toEqual(["vetoed in the batch gesture (line 2 of 4)", "vetoed in the batch gesture (line 4 of 4)"]);
+    } finally {
+      s.close();
+    }
+  });
+
+  it("a line that belongs to another list under the same ref is not approved by the gesture", async () => {
+    const s = open(mkdtempSync(join(tmpdir(), "supplier-gesture-c-")));
+    try {
+      const batch = fourLines();
+      const gestures: BatchGestures = new Map();
+      const options = { setup: s, approver: APPROVER, ask: async () => "todas", say: () => undefined, gestures };
+      // The person approved the four-line list...
+      const shown = await runBatch(batch, { engine: s.engine, onExecution: async (e) => e, onBatch: (b) => presentBatch(b, options) });
+      expect(shown.gesture?.vetoed).toEqual([]);
+      // ...and a line arrives claiming the same ref but a list of three with another hash.
+      const edited = await s.engine.draft({
+        items: [{ payee: batch.lines[0]!.alias, amount: batch.lines[0]!.amount_minor }],
+        batch: { ref: batch.ref, batch_hash: "sha256:" + "0".repeat(64), index: 0, count: 3 },
+      });
+      if (!edited.ok) throw new Error(edited.reason);
+      const decided = await handleExecution(edited.execution, options);
+      expect(decided.state).toBe("denied");
+      expect(decided.detail).toContain("the list changed after the gesture");
+      expect(s.bundle.readApprovals().filter((a) => a.execution_id === edited.execution.id)).toEqual([]);
+    } finally {
+      s.close();
+    }
+  });
+
+  it("an edited list after the gesture is refused before anything is drafted, and nobody is asked again", async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "supplier-gesture-d-"));
+    const four = fourLines();
+    const first = open(stateDir);
+    try {
+      const report = await runBatch(four, gestureChannel(first, ["todas exceto 4"]).ctx);
+      expect(report.lines.map((l) => l.dispatch)).toEqual(["settled", "settled", "settled", "refused"]);
+    } finally {
+      first.close();
+    }
+
+    // The fourth line's amount moves after the person approved the list.
+    const edited: Batch = { ...four, lines: four.lines.map((l, i) => (i === 3 ? { ...l, amount_minor: l.amount_minor + 100 } : l)) };
+    const second = open(stateDir);
+    try {
+      const channel = gestureChannel(second, []);
+      const report = await runBatch(edited, channel.ctx);
+      expect(channel.asked).toEqual([]);
+      expect(report.refused?.reason).toBe("batch_set_changed");
+      expect(report.gesture).toBeUndefined();
+      expect(second.engine.list()).toHaveLength(4);
+    } finally {
+      second.close();
+    }
+  });
+
+  it("without the hook nothing changes: each line is its own question, as the one-shot and the scenarios expect", async () => {
+    const s = open(mkdtempSync(join(tmpdir(), "supplier-gesture-e-")));
+    try {
+      const batch = fourLines();
+      const asked: string[] = [];
+      const options = { setup: s, approver: APPROVER, ask: async (q: string) => (asked.push(q), "s"), say: () => undefined };
+      const report = await runBatch(batch, { engine: s.engine, onExecution: (e) => handleExecution(e, options) });
+      expect(asked).toHaveLength(4);
+      expect(report.gesture).toBeUndefined();
+      expect(report.lines.map((l) => l.dispatch)).toEqual(["settled", "settled", "settled", "settled"]);
     } finally {
       s.close();
     }

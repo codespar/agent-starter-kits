@@ -45,7 +45,7 @@
  * is in progress and is never re-opened, and only a line whose execution
  * ended without moving money is retried.
  */
-import { batchHash, isTerminal, type Execution, type ExecutionItem, type ProposedItem, type ToolContext } from "@codespar/agent-core";
+import { batchHash, isTerminal, type BatchGesture, type Execution, type ExecutionItem, type ProposedItem, type ToolContext } from "@codespar/agent-core";
 import { batchTotal, formatBRL, type Batch, type PayableLine } from "../payables.js";
 
 /** What happened to one line of the batch. `dispatch` is the part an operator reads first. */
@@ -91,6 +91,10 @@ export interface BatchReport {
   failed: string[];
   /** Lines a previous run of this batch already covers. */
   skipped: string[];
+  /** Lines a person denied, by alias: a decision, reported, and a subset of `failed`. */
+  denied: string[];
+  /** Present when the channel took ONE gesture for the whole list: what it approved and vetoed, by position. */
+  gesture?: BatchGesture;
   total_minor: number;
   total: string;
   /** Present when the SET was refused: nothing was drafted, nothing was sent, no line moved. */
@@ -200,6 +204,24 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     );
   }
 
+  // One gesture for the list, when the channel can take one (section 3, v5.3:
+  // "o humano aprova a lista, com veto por linha"). Asked after the set
+  // refusal, so a person is never asked about a list that is not going to run,
+  // and before any draft, so what they see is the list the hash covers. It
+  // decides nothing here: every line below is still drafted and still reaches
+  // `onExecution`, which is where the channel applies it line by line.
+  const gesture = ctx.onBatch
+    ? await ctx.onBatch({
+        ref: batch.ref,
+        label: batch.label,
+        batch_hash: presented,
+        count: batch.lines.length,
+        total_minor: batchTotal(batch),
+        total: formatBRL(batchTotal(batch)),
+        lines: batch.lines.map((line, index) => ({ index, beneficiary: line.name, amount_minor: line.amount_minor, amount: formatBRL(line.amount_minor), status: lineStatus(batch, line, ctx) })),
+      })
+    : undefined;
+
   for (const [index, line] of batch.lines.entries()) {
     const key = claimKey(mandateId, batch.ref, line.alias);
     const held = ctx.engine.claimed(key);
@@ -272,7 +294,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     }
   }
 
-  return summarise(batch, presented, lines);
+  return summarise(batch, presented, lines, undefined, gesture);
 }
 
 /**
@@ -310,7 +332,7 @@ function setRefusal(batch: Batch, presented: string, ctx: ToolContext, setKey: s
   };
 }
 
-function summarise(batch: Batch, presented: string, lines: BatchLineReport[], refused?: BatchSetRefusal): BatchReport {
+function summarise(batch: Batch, presented: string, lines: BatchLineReport[], refused?: BatchSetRefusal, gesture?: BatchGesture): BatchReport {
   const settledMinor = lines.filter((l) => l.dispatch === "settled").reduce((sum, l) => sum + l.amount_minor, 0);
   const total = batchTotal(batch);
   return {
@@ -323,9 +345,11 @@ function summarise(batch: Batch, presented: string, lines: BatchLineReport[], re
     settled: formatBRL(settledMinor),
     failed: lines.filter((l) => l.dispatch === "refused" || l.dispatch === "uncertain").map((l) => l.alias),
     skipped: lines.filter((l) => l.dispatch === "already_settled" || l.dispatch === "in_progress").map((l) => l.alias),
+    denied: lines.filter((l) => l.state === "denied" && l.reason === "denied_by_approver").map((l) => l.alias),
     total_minor: total,
     total: formatBRL(total),
     ...(refused ? { refused } : {}),
+    ...(gesture ? { gesture } : {}),
   };
 }
 
