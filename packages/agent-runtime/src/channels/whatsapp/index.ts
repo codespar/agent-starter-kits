@@ -136,6 +136,7 @@ export class WhatsAppChannel implements Channel {
 
     const sent = await this.options.backend.deliver(to, body);
     if (sent.refused) this.options.say?.(`  [whatsapp] recusado pelo backend (${sent.refused.rule}): ${sent.refused.detail}`);
+    if (sent.refused?.rule === "session_window_closed") this.session.observeProviderShut();
     this.logOutbound(body, sent);
     return sent;
   }

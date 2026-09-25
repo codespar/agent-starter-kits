@@ -289,9 +289,17 @@ async function tellOutcome(channel: WhatsAppChannel, s: Setup, execution: Execut
     const told = s.kit.announceOutcome?.(execution, s, (line) => void lines.push(line)) ?? false;
     if (!told) return { told: false, reason: "already_told" };
     const sent = await channel.send({ kind: "text", text: lines.join("\n") });
-    return deliveryOf(sent, "text");
+    // Our clock read the window open and the provider's read it shut (131047).
+    // The provider's is the one the window is counted on, so the message goes
+    // the way it would have gone had we known: as the template. The cursor is
+    // already this call's, taken by `announceOutcome` above.
+    if (sent.refused?.rule !== "session_window_closed") return deliveryOf(sent, "text");
+    return tellByTemplate(channel, s, execution, { cursorHeld: true });
   }
+  return tellByTemplate(channel, s, execution, { cursorHeld: false });
+}
 
+async function tellByTemplate(channel: WhatsAppChannel, s: Setup, execution: Execution, options: { cursorHeld: boolean }): Promise<Delivery> {
   const chosen = s.kit.outcomeTemplate?.(execution);
   if (!chosen) {
     return {
@@ -304,7 +312,7 @@ async function tellOutcome(channel: WhatsAppChannel, s: Setup, execution: Execut
   if (!declared) {
     return { told: false, reason: "no_template_for_outcome", detail: `o kit pediu o template ${chosen.template}, que channels/whatsapp/templates.json nao declara` };
   }
-  if (!s.engine.markTold(execution.id, execution.state)) return { told: false, reason: "already_told" };
+  if (!options.cursorHeld && !s.engine.markTold(execution.id, execution.state)) return { told: false, reason: "already_told" };
   const sent = await channel.send({ kind: "template", template: declared.name, language: declared.language, variables: chosen.variables });
   s.engine.note("message.debtor", execution.id, { state: execution.state, reason: execution.reason ?? null, template: declared.name, variables: chosen.variables });
   return deliveryOf(sent, "template", declared.name);

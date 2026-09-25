@@ -27,7 +27,7 @@
  */
 import type { ConversationScript } from "@codespar/agent-core";
 import type { ChannelBackend, InboundMessage, OutboundBody, SentMessage } from "../types.js";
-import { toGraphNumber, WhatsAppCloudApi, type CloudApiOptions } from "./cloud-api.js";
+import { WhatsAppCloudApi, type CloudApiOptions } from "./cloud-api.js";
 
 export const EMULATOR_ENV = {
   url: "WHATSAPP_SIM_URL",
@@ -97,9 +97,7 @@ export class EmulatorDriver {
   inbound(options: { phoneNumberId: string; from: string; text: string; sentAt?: Date }): Promise<unknown> {
     return this.post("/_sim/inbound", {
       phone_number_id: options.phoneNumberId,
-      // Without the `+`, matching what `deliver` sends as `to`: the emulator keys
-      // its conversation on the literal string, so the two forms are two people.
-      from: toGraphNumber(options.from),
+      from: options.from,
       text: options.text,
       ...(options.sentAt ? { sent_at: options.sentAt.toISOString() } : {}),
     });
