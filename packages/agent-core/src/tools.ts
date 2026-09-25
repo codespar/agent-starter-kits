@@ -3,10 +3,12 @@
  * authority comes before mandate-level authority: a tool that is not in
  * this file is refused before anything else looks at the call.
  *
- * Two kinds. `meta_tools` are CodeSpar meta-tool names, with the input the
- * kit accepts for them (a snapshot of the MCP shape, pinned by `mcp` in the
- * manifest; see OPEN_QUESTIONS on why the list is not fetched live).
- * `local_tools` are the agent's own read-only helpers.
+ * Two kinds. `meta_tools` borrow a CodeSpar meta-tool's name for the job
+ * they do, but the input shape is the kit's own and the kit's handler runs it:
+ * a payment or charge becomes a `drafted` execution, and the core sends the
+ * real call over REST. It is not a copy of the MCP's schema and does not match
+ * it (OPEN_QUESTIONS section 8 has the comparison). `local_tools` are the
+ * agent's own read-only helpers.
  */
 import { readFileSync } from "node:fs";
 import { z } from "zod";
