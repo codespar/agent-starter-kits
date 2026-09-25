@@ -91,7 +91,7 @@ transcript.jsonl        the conversation and the tool calls
 approval.json           the approval artifacts of the run (section 4.2 of the spec)
 mandate.snapshot.json   the mandate as it was, keys masked
 events.jsonl            every transition and every rail event, each with its actor
-receipts/               the receipts the rail returned, each stamped with the actor
+receipts/               the receipts the rail returned, each stamped with the actor; the payee is the one the receipt sealed
 run.json                mode, rail, mandate id and the version it ran under
 ```
 
@@ -117,6 +117,7 @@ That reads the public key set from `/.well-known/codespar-receipt-keys.json`, pi
 ## Limits and stubs
 
 - The receipt carries two signatures. The HMAC one, under the consumer secret CodeSpar holds, proves the payment to whoever runs this agent, because verifying it means holding the key that also mints it. The Ed25519 one, sealed by CodeSpar's platform issuer key since the API added it, proves it to anybody with `npm run verify`. A receipt sealed before that carries no Ed25519 signature and never will — there is no backfill, and signing an old receipt with today's key would attest to what the database says now, not to what happened then.
+- The receipt names the payee because every spend presents the approved payment as a `quote`; without one the API seals no payee anywhere in the chain. The API only records a quote that disagrees with what settled and pays anyway, so the kit refuses the disagreement before the call, and a receipt that seals a different payee, or none, stops the run with `ReceiptSealMismatchError` instead of a warning. [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §18.
 - The approval artifact is signed by HMAC with a **local development key** (`.codespar/approval.key`). This is a stub: the CodeSpar API does not sign approval lists today. It proves what was approved to whoever runs the agent.
 - Revocation is checked against the API. With a test key, the core reads `GET /v1/mandates/{id}` before every `executing` and executes on `status: active` only: `paused` → `denied` (`mandate_paused`), `revoked` → `denied` (`mandate_revoked`), `expired` → `expired`, and a read that does not answer (timeout, 5xx, 404, an unreadable body) → `denied` (`mandate_status_unavailable`), never "assume active". `npx -y @codespar/cli@0.14.0 mandate revoke <id>` is the switch. Without a key (the CI, the scenarios, `rerun`) the same check answers from a **local stub** (`packages/agent-core/src/stubs/mandate-status.ts`), which is also where the organization kill switch (`org pauseAll`) lives, since the API does not expose one yet.
 - The `actor` of every call is carried locally on every event, approval and receipt copy. The API has no `actor` field on the wire today; the spend carries `agent_id`, which the mandate binds.

@@ -88,7 +88,7 @@ transcript.jsonl        the conversation and the tool calls
 approval.json           the approval artifacts of the run — for a batch, one per line, in approval order
 mandate.snapshot.json   the mandate as it was, keys masked
 events.jsonl            every transition and every rail event, each with its actor
-receipts/               the receipts the rail returned, each stamped with the actor
+receipts/               the receipts the rail returned, each stamped with the actor; the payee is the one the receipt sealed
 run.json                mode, rail, mandate id
 ```
 
@@ -105,6 +105,7 @@ That reads the public key set from `/.well-known/codespar-receipt-keys.json`, pi
 ## Limits and stubs
 
 - The receipt carries two signatures. The HMAC one proves the payout to whoever runs this agent, because verifying it means holding the secret that also mints it. The Ed25519 one, sealed by CodeSpar's platform issuer key since the API added it, proves it to anybody with `npm run verify`. A receipt sealed before that carries no Ed25519 signature and never will — there is no backfill, and signing an old receipt with today's key would attest to what the database says now, not to what happened then.
+- The receipt names the payee because every spend presents the approved line as a `quote`; without one the API seals no payee anywhere in the chain. The API only records a quote that disagrees with what settled and pays anyway, so the kit refuses the disagreement before the call, and a receipt that seals a different payee, or none, stops the run with `ReceiptSealMismatchError` instead of a warning. [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §18.
 - The approval artifact is signed by HMAC with a **local development key** (`.codespar/approval.key`). This is a stub: the CodeSpar API does not sign approval lists today. It proves what was approved to whoever runs the agent.
 - The claim that makes a re-run safe is **local**, in `.codespar/state.db`. Delete that file and the agent has no memory that a batch already ran. The rail's own idempotence still covers a re-sent `attempt_id`, but the executions would be new ones with new attempt ids, so it would not catch them. This is the honest limit of a kit that runs on one machine; see `docs/OPEN_QUESTIONS.md`.
 - The batch is not atomic and does not try to be. Lines settle independently, so a batch can end part paid. That is the point, and the report says which lines those are.
