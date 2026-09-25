@@ -30,9 +30,25 @@ With `escalate_above.new_beneficiary: true` (the example of section 4.3), the fi
 
 Section 9 asks the window to catch five parts below the threshold. The velocity rule (`guardrails.velocity.window_hours`) sums, per payee, the mandate-mode executions the allowance approved without a human inside the window. A payment a human approved is not fractioning, so it does not count; otherwise "the following one, below, runs alone" (4.4) could never happen in the 24 hours after an escalated one. **v5.2:** state the rule in 4.4 or 9.
 
-## 8. Tool definitions are a snapshot, not fetched from the MCP at runtime
+## 8. `tools.json` is the kit's shape under a meta-tool's name, not a snapshot of the MCP
 
-Section 5 says the tools come from the MCP. Fetching them live needs a key and network, which the CI does not have, and would make the closed list depend on what a server answers. `tools.json` holds the minimum the bills-agent uses (`codespar_pay` with `action: pix`, `codespar_ledger`, and the local `list_bills`), with the input shape the core accepts; the `mcp` pin in `agent.yaml` names the version those shapes were written against. **Open:** a `npm run tools:sync` that diffs `tools.json` against `@codespar/mcp@<pin>` and fails the check on drift.
+Section 5 says the tools come from the MCP. They do not, and this entry used to say they were a snapshot of it written against the `mcp` pin. Neither half of that sentence held when measured on 2026-09-24, while scoping a `npm run tools:sync` that would diff `tools.json` against `@codespar/mcp@<pin>`.
+
+**What `tools.json` is.** The closed list of tools the model sees, with an input shape each kit owns. A `meta_tools` entry borrows the name of a CodeSpar meta-tool so a reader knows what job it does, and its handler (`agents/<name>/src/modules/*.ts`) runs locally. A `payment` or `charge` tool calls `ctx.engine.draft(...)`, and `@codespar/agent-core` then builds the real call and sends it over REST (`/v1/consumer-payments/execute`, `/v1/consumers/mandates/{id}/spend`, `/v1/charges`, `/v1/consumers/receipts/{id}`). Nothing in the kit calls the MCP. The shape is narrower and different on purpose. The model names a payee alias and never a Pix key, an agreement alias and never a debtor's document, and the code resolves both.
+
+**What the pinned package publishes.** `@codespar/mcp@0.5.8` ships no tool definitions. Its `dist/bin.js` answers `tools/list` with whatever `listTools(session)` returns, and `@codespar/sdk` fills that from the backend at runtime (`session.tools()` reads `payload.tools` from the connections call), which needs a key. The published definitions live in `@codespar/types` (`SHARED_META_TOOL_DEFINITIONS` in `dist/meta-tool-definitions.js`, each with an `input_schema` and a structural `contract` of properties, required fields and enums). The `mcp` pin does not name a version of it. `@codespar/mcp@0.5.8` depends on `@codespar/sdk` by range, which depends on `@codespar/types` at `^0.10.1 || ^0.11.0`, and the MCP's own bin does not read those definitions anyway. What the `mcp` pin actually names is the server the plugin's `mcp.json` launches for a coding agent learning the API (rule 10), not the source of the kit's shapes.
+
+**The comparison, as evidence.** Each kit's `meta_tools` against `@codespar/types@0.11.3` (the version the SDK range resolved to on 2026-09-24), by the rules a `tools:sync` would enforce (tool gone, required field missing, field the tool does not accept, enum value the tool does not have):
+
+| Kit tool | Agents | Published definition | Diverges |
+|---|---|---|---|
+| `codespar_pay` | bills, supplier-payments | `action` in `[pay, status]`, required `[action]`; `amount`, `currency`, `method` (`pix` is a method), `recipient`, ... | `action: pix` is not an action; `items`, `total_minor` and `batch_ref` (supplier-payments only) are not properties |
+| `codespar_ledger` | bills, supplier-payments | `action` in `[entry, balance, account, receipt, receipts]` | `action: executions` does not exist; it lists this run's executions from the local engine |
+| `codespar_charge` | collections | no `action` property; required `[amount, currency, method, description, buyer]` | the kit's shape has none of the five required fields; `action`, `agreement`, `instalments`, `total_minor` and `execution_id` are not properties |
+
+`hello-agent` has only a local tool. Every tool name the kits use still exists in the published set. Every kit meta-tool fails the shape rules, and none of it is drift, because the two sides describe different layers.
+
+**What is checked today.** `tools.json` parses against `ToolsFileSchema` (`packages/agent-core/src/tools.ts`: unique names, meta-tools named `codespar_*`, an `effect`), the prompt names no `codespar_*` outside it, and a call to a tool outside it is refused before any handler (`tool_not_allowed`, in every agent's adversarial suite). **What is not:** that the REST calls the core builds still match what the API accepts, or that the meta-tool names the kits borrow still exist upstream. **Open:** a check for that layer, which would read a pinned `@codespar/types` for the names and the SDK's generated OpenAPI types for the request shapes, never a live server. Whether to add it, and whether the kit's tools should keep borrowing meta-tool names at all, are product decisions; renaming them is not something to do in passing. **v5.2:** section 5 should say the tools are the kit's own and dispatched by the core, not taken from the MCP.
 
 ## 9. `approval.json` is a list
 

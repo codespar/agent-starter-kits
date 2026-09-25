@@ -173,11 +173,12 @@ stay under a threshold; never to claim a payment unless the tool result says
 `meta_tools` are named `codespar_*` with `effect` `payment`, `charge` or
 `read`; `local_tools` are the agent's own read-only helpers. Each entry has
 `name`, `effect`, `description`, `input_schema` (JSON Schema). Names are
-unique. The shapes are a snapshot written against the `mcp` pin, not fetched
-at runtime (the CI has no key and no network). One handler per tool, returned
-by your kit's `handlers` (step 9); a payment/charge handler calls
-`ctx.engine.draft(...)` and hands the result to `ctx.onExecution(...)`,
-nothing else.
+unique. The shapes are the kit's own, not the MCP's: a meta-tool entry borrows
+the name for the job it does, the model sees only what it needs (an alias,
+never a key or a document), and the core builds the real API call. One
+handler per tool, returned by your kit's `handlers` (step 9); a payment/charge
+handler calls `ctx.engine.draft(...)` and hands the result to
+`ctx.onExecution(...)`, nothing else.
 
 ### 5. Write `guardrails.json` and `mandate.example.json`
 
