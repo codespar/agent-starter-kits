@@ -12,7 +12,7 @@
  * meantime is caught at the last gate, which is the only one that matters.
  */
 import { checkApprovalArtifact, createApprovalArtifact, type ApprovalSigner } from "./approval.js";
-import type { ProofBundle } from "./bundle.js";
+import { maskPayee, type ProofBundle } from "./bundle.js";
 import { evaluateEscalation, type Escalation } from "./escalate.js";
 import { CHARGE_CANCELLED, CHARGE_EXPIRED, CHARGE_PAID, PAYMENT_FAILED, PAYMENT_SUCCEEDED, type PublishedEvent } from "./events.js";
 import type { Guardrails } from "./guardrails.js";
@@ -20,6 +20,7 @@ import { itemsHash, sha256Hex } from "./hash.js";
 import { newId } from "./ids.js";
 import { mandateExpired, payeeAllowed, resolveBeneficiary, windowCap, windowStart, type Mandate } from "./mandate.js";
 import type { Manifest } from "./manifest.js";
+import { checkQuote, quoteFromApproval } from "./quote.js";
 import type { PaymentRail, RailOutcome, RailPayment } from "./rail.js";
 import type { MandateStatusReport, MandateStatusSource } from "./revocation.js";
 import { isTerminal, transition, type Execution, type ExecutionState } from "./state-machine.js";
@@ -295,7 +296,7 @@ export class ExecutionEngine {
     if (!artifact) throw new Error(`execution ${executionId} is approved without an approval artifact`);
 
     // Everything below is one transaction: the last policy run, the artifact check, the outbox row and the state change land together or not at all.
-    const payments = this.paymentsFor(execution);
+    const payments = this.paymentsFor(execution, artifact);
     const decided = this.deps.store.transaction((): Execution => {
       // The approval was given under one mandate; a re-signed one (new version) is a new authorization, and the person decides again under it.
       const current = { id: this.deps.mandate.id, version: this.deps.mandate.version };
@@ -310,6 +311,9 @@ export class ExecutionEngine {
         }
         return this.persist(transition(this.withoutApproval(approved), "awaiting_approval", { at, actor: this.agentActor, reason: "items_hash_mismatch", detail: `approval ${artifact.approval_id} does not match what would be executed (${check.problem})` }));
       }
+      // The API only records a quote that disagrees with the spend, and pays anyway. The kit does not send one.
+      const unquoted = payments.map(checkQuote).find((q) => !q.ok);
+      if (unquoted && !unquoted.ok) return this.persist(transition(approved, "denied", { at, actor: this.agentActor, reason: "quote_mismatch", detail: `${unquoted.code}: ${unquoted.detail}; nothing was sent` }));
 
       const verdict = this.policy(execution, now, "execute", artifact.approver.type === "person");
       if (verdict.kind === "deny" || verdict.kind === "block") {
@@ -343,6 +347,7 @@ export class ExecutionEngine {
   private async dispatch(execution: Execution<"executing">, payments: RailPayment[]): Promise<Execution> {
     const outcomes: ItemOutcome[] = [...execution.outcomes];
     const unknown: string[] = [];
+    const sealMismatches: string[] = [];
     this.deps.store.updateOutbox(execution.idempotency_key, "sent", undefined, this.clock().toISOString());
 
     for (const [index, payment] of payments.entries()) {
@@ -370,9 +375,12 @@ export class ExecutionEngine {
         continue;
       }
       outcomes.push({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: outcome.transaction_id, ...(outcome.receipt_id ? { receipt_id: outcome.receipt_id } : {}) });
-      await this.ingestSettlement(execution, index, payment, outcome.receipt_id, PAYMENT_SUCCEEDED);
+      const mismatch = await this.ingestSettlement(execution, index, payment, outcome.receipt_id, PAYMENT_SUCCEEDED);
+      if (mismatch) sealMismatches.push(mismatch);
     }
-    return this.close({ ...execution, outcomes }, payments.length, unknown.join("; ") || undefined);
+    const closed = this.close({ ...execution, outcomes }, payments.length, unknown.join("; ") || undefined);
+    if (sealMismatches.length > 0) throw new ReceiptSealMismatchError(execution.id, sealMismatches);
+    return closed;
   }
 
   /**
@@ -439,7 +447,8 @@ export class ExecutionEngine {
     if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
   }
 
-  private async ingestSettlement(execution: Execution, index: number, payment: RailPayment, receiptId: string | null, eventType: PublishedEvent): Promise<void> {
+  /** Records a settled attempt and fetches its receipt; answers the seal mismatch, if the receipt disagrees with what was paid. */
+  private async ingestSettlement(execution: Execution, index: number, payment: RailPayment, receiptId: string | null, eventType: PublishedEvent): Promise<string | undefined> {
     // The rail's answer is the settlement event the API publishes (section 4.3): `commerce.payment.succeeded` for a payout, `commerce.charge.paid` for a receivable. Keyed by attempt so a replay is a no-op.
     const appended = this.deps.store.appendEvent({
       run_id: this.deps.runId,
@@ -450,15 +459,26 @@ export class ExecutionEngine {
       at: this.clock().toISOString(),
     });
     if (appended) this.deps.bundle.event({ ...appended, actor: this.agentActor, item_index: index });
-    if (receiptId) await this.saveReceipt(execution.id, receiptId);
+    return receiptId ? this.saveReceipt(execution.id, receiptId, payment) : undefined;
   }
 
-  private async saveReceipt(executionId: string, receiptId: string): Promise<void> {
+  /**
+   * The bundle's copy is the receipt as it was sealed, payee included. A
+   * payment receipt whose sealed payee is not the payee this attempt paid —
+   * including one that sealed no payee — is recorded and answered as a
+   * mismatch, which the caller raises once the execution's outcome is saved:
+   * the money is where the rail says it is, and it is the EVIDENCE that
+   * disagrees. A paid charge carries no seal, so there is nothing to compare.
+   */
+  private async saveReceipt(executionId: string, receiptId: string, payment: RailPayment): Promise<string | undefined> {
     const receipt = await this.deps.rail.receipt(receiptId, this.agentActor);
-    if (receipt) {
-      const path = this.deps.bundle.receipt(receipt);
-      this.record("receipt.saved", executionId, { receipt_id: receiptId, path });
-    }
+    if (!receipt) return undefined;
+    const path = this.deps.bundle.receipt(receipt);
+    this.record("receipt.saved", executionId, { receipt_id: receiptId, path });
+    if (receipt.kind === "charge" || receipt.payment.payee === payment.payee) return undefined;
+    const sealed = receipt.payment.payee === null ? null : maskPayee(receipt.payment.payee);
+    this.record("receipt.seal_mismatch", executionId, { receipt_id: receiptId, attempt_id: payment.attempt_id, sealed_payee: sealed, paid_payee: maskPayee(payment.payee) });
+    return `receipt ${receiptId} seals payee ${sealed ?? "none"}; attempt ${payment.attempt_id} paid ${maskPayee(payment.payee)}`;
   }
 
 
@@ -470,12 +490,17 @@ export class ExecutionEngine {
   async collectReceipts(executionId: string): Promise<string[]> {
     const execution = this.mustGet(executionId);
     const held = new Set(this.deps.bundle.listReceipts().map((f) => f.replace(/\.json$/, "")));
+    const payments = this.paymentsFor(execution, this.approvalOf(execution));
     const fetched: string[] = [];
+    const sealMismatches: string[] = [];
     for (const outcome of execution.outcomes) {
-      if (outcome.status !== "settled" || !outcome.receipt_id || held.has(outcome.receipt_id)) continue;
-      await this.saveReceipt(execution.id, outcome.receipt_id);
+      const payment = payments[outcome.index];
+      if (outcome.status !== "settled" || !outcome.receipt_id || held.has(outcome.receipt_id) || !payment) continue;
+      const mismatch = await this.saveReceipt(execution.id, outcome.receipt_id, payment);
+      if (mismatch) sealMismatches.push(mismatch);
       fetched.push(outcome.receipt_id);
     }
+    if (sealMismatches.length > 0) throw new ReceiptSealMismatchError(execution.id, sealMismatches);
     return fetched;
   }
 
@@ -492,13 +517,14 @@ export class ExecutionEngine {
   async reconcile(executionId: string): Promise<Execution> {
     const execution = this.mustGet(executionId);
     if (execution.state !== "executing") return execution;
-    const payments = this.paymentsFor(execution);
+    const payments = this.paymentsFor(execution, this.approvalOf(execution));
     const outbox = this.deps.store.getOutbox(execution.idempotency_key);
     if (outbox?.status === "pending") {
       return this.leaveUnresolved(execution as Execution<"executing">, "outbox pending: nothing was ever sent; `resume` dispatches it, reconcile does not");
     }
 
     const outcomes: ItemOutcome[] = [...execution.outcomes];
+    const sealMismatches: string[] = [];
     let unresolved: string | undefined;
     for (const [index, payment] of payments.entries()) {
       const prior = outcomes.find((o) => o.index === index);
@@ -540,11 +566,13 @@ export class ExecutionEngine {
         continue;
       }
       replace({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: seen.transaction_id, ...(seen.receipt_id ? { receipt_id: seen.receipt_id } : {}) });
-      await this.ingestSettlement(execution, index, payment, seen.receipt_id, prior ? CHARGE_PAID : PAYMENT_SUCCEEDED);
+      const mismatch = await this.ingestSettlement(execution, index, payment, seen.receipt_id, prior ? CHARGE_PAID : PAYMENT_SUCCEEDED);
+      if (mismatch) sealMismatches.push(mismatch);
     }
     const updated: Execution<"executing"> = { ...(execution as Execution<"executing">), outcomes };
-    if (unresolved) return this.leaveUnresolved(updated, unresolved);
-    return this.close(updated, payments.length);
+    const reconciled = unresolved ? this.leaveUnresolved(updated, unresolved) : this.close(updated, payments.length);
+    if (sealMismatches.length > 0) throw new ReceiptSealMismatchError(execution.id, sealMismatches);
+    return reconciled;
   }
 
   /**
@@ -559,7 +587,7 @@ export class ExecutionEngine {
     const outbox = this.deps.store.getOutbox(execution.idempotency_key);
     if (outbox?.status !== "pending") return this.reconcile(executionId);
     this.record("rail.resume", execution.id, { detail: "outbox pending: nothing was ever sent; dispatching once under the same attempt ids" });
-    return this.dispatch(execution as Execution<"executing">, this.paymentsFor(execution));
+    return this.dispatch(execution as Execution<"executing">, this.paymentsFor(execution, this.approvalOf(execution)));
   }
 
   /** Time-based exits: an open execution past its approval TTL closes as `expired`. */
@@ -770,21 +798,37 @@ export class ExecutionEngine {
     };
   }
 
-  private paymentsFor(execution: Execution): RailPayment[] {
-    return execution.items.map((item, index) => ({
-      attempt_id: `att_${execution.idempotency_key.slice(4)}_${index}`,
-      mandate_id: execution.mandate.id,
-      amount_minor: item.amount,
-      currency: item.currency,
-      payee: item.payee,
-      beneficiary: item.beneficiary,
-      purpose: this.deps.mandate.purpose,
-      agent_id: this.deps.mandate.agent_id,
-      consumer_id: this.deps.mandate.consumer_id,
-      ...(item.description ? { description: item.description } : {}),
-      ...(item.due_date ? { due_date: item.due_date } : {}),
-      actor: this.agentActor,
-    }));
+  /**
+   * The attempts of an execution. Each carries the quote of the SAME line of
+   * the approval artifact — what was approved, not what the execution says
+   * now — so a line that drifted after approval is a quote that disagrees,
+   * refused before the call.
+   */
+  private paymentsFor(execution: Execution, artifact: ApprovalArtifact): RailPayment[] {
+    return execution.items.map((item, index) => {
+      const quote = quoteFromApproval(artifact, index, this.deps.mandate.purpose);
+      return {
+        attempt_id: `att_${execution.idempotency_key.slice(4)}_${index}`,
+        mandate_id: execution.mandate.id,
+        amount_minor: item.amount,
+        currency: item.currency,
+        payee: item.payee,
+        beneficiary: item.beneficiary,
+        purpose: this.deps.mandate.purpose,
+        agent_id: this.deps.mandate.agent_id,
+        consumer_id: this.deps.mandate.consumer_id,
+        ...(item.description ? { description: item.description } : {}),
+        ...(item.due_date ? { due_date: item.due_date } : {}),
+        ...(quote ? { quote } : {}),
+        actor: this.agentActor,
+      };
+    });
+  }
+
+  private approvalOf(execution: Execution): ApprovalArtifact {
+    const artifact = execution.approval_id ? this.deps.store.getApproval(execution.approval_id) : undefined;
+    if (!artifact) throw new Error(`execution ${execution.id} is ${execution.state} without an approval artifact`);
+    return artifact;
   }
 
   private withoutApproval(execution: Execution<"approved">): Execution<"approved"> {
@@ -881,5 +925,22 @@ function railAnswer(outcome: RailOutcome): Record<string, unknown> {
       return { transaction_id: outcome.transaction_id, receipt_id: outcome.receipt_id, money_moved: outcome.money_moved, sandbox: outcome.sandbox };
     default:
       return { code: outcome.code, message: outcome.message };
+  }
+}
+
+/**
+ * A payment settled and the receipt CodeSpar sealed for it names a different
+ * payee, or none. Raised after the execution's outcome is saved, never
+ * instead of it: the rail's answer is the record of where the money went, and
+ * this error is about the evidence. Not a warning, because a receipt that
+ * does not name the payee that was paid proves nothing about that payment.
+ */
+export class ReceiptSealMismatchError extends Error {
+  constructor(
+    readonly executionId: string,
+    readonly mismatches: string[],
+  ) {
+    super(`execution ${executionId}: the sealed receipt does not name the payee that was paid — ${mismatches.join("; ")}`);
+    this.name = "ReceiptSealMismatchError";
   }
 }

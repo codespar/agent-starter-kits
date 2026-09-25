@@ -12,6 +12,7 @@ export * from "./clock.js";
 export * from "./secrets.js";
 export * from "./revocation.js";
 export * from "./rail.js";
+export * from "./quote.js";
 export * from "./receipt-verification.js";
 export * from "./tools.js";
 export * from "./bundle.js";
