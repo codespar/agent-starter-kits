@@ -17,7 +17,9 @@ import type { Mandate } from "../mandate.js";
 import { checkQuote } from "../quote.js";
 import type { PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt } from "../rail.js";
 import type { Actor } from "../types.js";
-import { describeApiError, isUncertain } from "./client.js";
+import { describeApiError, isUncertain, type SpendErrorCode } from "./client.js";
+
+const ATTEMPT_IN_FLIGHT: SpendErrorCode = "psp_attempt_in_flight";
 
 export class CodeSparRail implements PaymentRail {
   readonly name = "codespar" as const;
@@ -73,7 +75,7 @@ export class CodeSparRail implements PaymentRail {
    */
   async lookup(_attemptId: string, payment: RailPayment): Promise<RailLookup> {
     const outcome = await this.pay(payment);
-    if (outcome.status === "failed" && outcome.code === "psp_attempt_in_flight") return { status: "in_flight" };
+    if (outcome.status === "failed" && outcome.code === ATTEMPT_IN_FLIGHT) return { status: "in_flight" };
     return outcome;
   }
 
