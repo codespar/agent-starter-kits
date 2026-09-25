@@ -181,7 +181,7 @@ describe("the organization kill switch (ent#1648): org_paused on the read, 403 o
     expect((await apiSource().check(MANDATE_ID)).status).toBe("unknown");
   });
 
-  it("paused after approval: denied (org_paused) whatever status says, no outbox row, rail.pay never called", async () => {
+  it("paused before execute: the gate denies (org_paused) whatever status says, no outbox row, rail.pay never called", async () => {
     const h = apiHarness();
     const id = await approvedThen(h, { status: 200, body: mandateBody(PAUSED) });
     const out = await h.engine.execute(id);
@@ -201,22 +201,29 @@ describe("the organization kill switch (ent#1648): org_paused on the read, 403 o
     expect(h.rail.payCount).toBe(0);
   });
 
-  // The switch pressed between the read and the spend: the read said running, the API refuses the spend itself.
+  // Paused between the gate and the spend: the read said running, the API refuses the spend itself before any hold.
+  // The execution is already `executing`, and section 4.7 closes that state as `settled` or `failed` only: no new edge.
   const spendRefusals: Array<[string, unknown]> = [
     ["the documented envelope", { error: { code: "org_paused", message: "the organization paused all agent spend (kill switch)" }, request_id: null }],
     ["the flat body the guardrail sends", { error: "org_paused", message: "the organization paused all agent spend (kill switch)" }],
   ];
   for (const [shape, body] of spendRefusals) {
-    it(`a spend answering 403 org_paused (${shape}) closes failed (org_paused), not rail_failed`, async () => {
+    it(`paused between the gate and the spend, 403 org_paused (${shape}): failed (org_paused), and nothing but the read and the one spend reached the API`, async () => {
       const h = harness({ mode: "mandate", now: NOW, manifest: { escalate_above: {} }, guardrails: { escalate_above: {} }, status: apiSource(), wrapRail: () => new CodeSparRail(apiClient()) });
       const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
       if (!d.ok) throw new Error(`refused before draft: ${d.reason}`);
       spendNext = { status: 403, body };
       const out = await h.engine.execute(d.execution.id);
-      expect(out).toMatchObject({ state: "failed", reason: "org_paused" });
-      expect(out.detail).toContain("org_paused");
-      expect(requests.filter((r) => r.method === "POST").map((r) => r.url)).toEqual([`/v1/consumers/mandates/${out.mandate.id}/spend`]);
-      expect(requests.some((r) => r.url.startsWith("/v1/consumers/receipts/"))).toBe(false);
+      expect(out.state).toBe("failed");
+      expect(out.reason).toBe("org_paused");
+      expect(out.history.at(-1)).toMatchObject({ from: "executing", to: "failed", reason: "org_paused" });
+      expect(out.outcomes).toEqual([expect.objectContaining({ status: "failed", code: "org_paused" })]);
+      expect(out.outcomes.some((o) => "receipt_id" in o || "transaction_id" in o)).toBe(false);
+      expect(h.store.listOutbox({ execution_id: out.id })).toEqual([expect.objectContaining({ status: "failed" })]);
+      // No receipt read, no ledger or fund call, no second spend: the mandate read(s) and exactly one POST.
+      const spend = `/v1/consumers/mandates/${out.mandate.id}/spend`;
+      expect(requests.filter((r) => r.method === "POST").map((r) => r.url)).toEqual([spend]);
+      expect(requests.filter((r) => !(r.method === "GET" && r.url === `/v1/mandates/${out.mandate.id}`) && r.url !== spend)).toEqual([]);
     });
   }
 });
