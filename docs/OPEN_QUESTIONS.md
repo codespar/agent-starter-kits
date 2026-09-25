@@ -81,9 +81,9 @@ What the compiler does **not** catch:
 - **The verifier's key-set read.** `npm run verify` fetches `/.well-known/codespar-receipt-keys.json` with plain `fetch` and checks it against its own `ReceiptKeyDocument` (`packages/agent-core/src/receipt-verification.ts`). That is deliberate: it runs without a key, against any deployment or a file, and must validate what it is given rather than trust a type (§47).
 - **The meta-tool names in `tools.json`.** That is (c).
 
-**SDK/OpenAPI findings from typing it**, all open on the API side:
+**SDK/OpenAPI findings from typing it.** 1 is tracked as codespar-enterprise#1674, and 2 to 6 as codespar-enterprise#1677. 7 is not a gap, only a note for §2:
 
-1. `POST /v1/consumers/mandates/{id}/spend` (403: `policy_denied | withdrawal_pin`) and `POST /v1/consumer-payments/execute` (403: `withdrawal_pin`) do not list `org_paused`, which both answer since ent#1648 (§4).
+1. `POST /v1/consumers/mandates/{id}/spend` (403: `policy_denied | withdrawal_pin`) and `POST /v1/consumer-payments/execute` (403: `withdrawal_pin`) do not list `org_paused`, which both answer since ent#1648 (§4). codespar-enterprise#1674.
 2. `POST /v1/consumer-payments/execute` types `mandate?: unknown`. The signed envelope is optional and untyped, so the compiler checks nothing about the one field that authorizes the spend.
 3. `POST /v1/charges` types `buyer?: { [key: string]: unknown }` and `method: string`. The kit's `buyer: { name, document }` and `method: "boleto"` go unchecked.
 4. `POST /v1/consents/{token}/submit` answers `mandate: { [key: string]: unknown }`. The signed mandate's fields (`cap_minor`, `merchant_allowlist`, `expires_at`, `periodic_cap`) are read without a type, and `MandateSchema.parse` is what checks them.
