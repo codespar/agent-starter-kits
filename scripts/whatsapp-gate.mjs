@@ -34,13 +34,20 @@
  * the sandbox payer and confirms it. What it asserts is that the confirmation
  * went out as a TEMPLATE and the execution reached its terminal state.
  *
- * Read that assertion precisely. The emulator PRICES the 24-hour window and
- * does not ENFORCE it (gap **a** of docs/OPEN_QUESTIONS.md §46): a free-form
- * send after the clock moves answers 200 here where Meta answers 400/131047.
- * So what passes here is OUR choice of carrier, made by the session window in
- * `channels/whatsapp/session.ts` — not the provider refusing the alternative.
- * The day the emulator enforces the window this run gets stronger without
- * changing.
+ * Since 0.2.0 the emulator ENFORCES the window the way Meta does (§46a,
+ * closed): a free-form send after the clock moves answers 400/131047. So the
+ * run also asks the PROVIDER, right after the clock moves, whether it would
+ * have carried the alternative — and fails if it would. The template is then
+ * both our choice, made by the session window in
+ * `channels/whatsapp/session.ts`, and the only thing the provider takes.
+ *
+ * THE FIFTH RUN is the same two processes with the clocks deliberately apart:
+ * the conversation's moves 26 hours and the agent's only one, so our window
+ * reads OPEN and the provider's is shut. That is the boundary race in
+ * production — our check at 23:59:59, Meta's at 24:00:01 — and it is only
+ * drivable because the emulator now refuses. What it asserts: the free-form
+ * confirmation went to the provider, came back 131047, and the poll told the
+ * person anyway, by the template, exactly once.
  *
  * Two clocks, and they are not the same thing (#16). `--now` pins the AGENT's
  * notion of now, which the guardrails and the window comparison read;
@@ -69,6 +76,11 @@ const NOW = "2026-09-23T14:00:00-03:00";
 const WINDOW_ADVANCE_HOURS = 26;
 /** The agent's clock for the poll, moved by the same amount as the conversation's. 16:00 in Sao Paulo, inside 08:00-20:00. */
 const NOW_AFTER_WINDOW = new Date(new Date(NOW).getTime() + WINDOW_ADVANCE_HOURS * 3600_000).toISOString();
+/** The fifth run's agent clock: one hour on, while the conversation's is 26. Our window reads open, the provider's is shut. */
+const NOW_CLOCKS_APART = new Date(new Date(NOW).getTime() + 3600_000).toISOString();
+/** Who the conversation is with, and from which number, as the channel sends it: the provider probe has to name the same conversation. */
+const CONTACT = JSON.parse(readFileSync(join(AGENT, `channels/whatsapp/${CONVERSATION}.json`), "utf8")).contact;
+const PHONE_NUMBER_ID = process.env.WHATSAPP_SIM_PHONE_NUMBER_ID ?? "900000000001";
 /**
  * The fourth run replays a DIFFERENT recording, and the reason is not
  * cosmetic. The shipped `happy-path` transcript was recorded where the payer
@@ -148,7 +160,7 @@ function runOnce(index, mode) {
  * money lands, and what carries the cycle across is the record it left. The
  * conversation's clock moves between them; the agent's moves with it.
  */
-async function runWindowCase(mode) {
+async function runWindowCase(mode, { agentNow = NOW_AFTER_WINDOW, check = checkWindow, probe = true } = {}) {
   const state = mkdtempSync(join(tmpdir(), "wa-gate-state-window-"));
   const runs = mkdtempSync(join(tmpdir(), "wa-gate-runs-window-"));
   const env = { COLLECTIONS_STATE_DIR: state, COLLECTIONS_RUNS_DIR: runs };
@@ -182,17 +194,22 @@ async function runWindowCase(mode) {
     }).catch((err) => ({ ok: false, detail: String(err) }));
     if (!moved.ok) return { failures: [...failures, `could not move the emulator clock: ${moved.detail ?? moved.status}`] };
 
+    // Ask the provider, not ourselves, whether the window is shut: the
+    // free-form alternative must be refused with Meta's 131047. A 200 here
+    // means the template below is only our preference.
+    if (probe) failures.push(...(await providerRefusesFreeForm()));
+
     // The payer pays, the poll finds it, and the confirmation goes out over a
     // window that has been shut for two hours.
     const polled = agent(
-      ["poll", "--agent", AGENT, "--channel", "whatsapp", "--conversation", CONVERSATION, "--simulate-payer", "--now", NOW_AFTER_WINDOW, "--json"],
+      ["poll", "--agent", AGENT, "--channel", "whatsapp", "--conversation", CONVERSATION, "--simulate-payer", "--now", agentNow, "--json"],
       env,
     );
     const second = payloadOf(polled);
     if (second.failure) return { failures: [...failures, `poll: ${second.failure}`] };
     const payload = second.payload;
     const conversation = conversationOf(payload.channel?.log);
-    return { payload, conversation, exit: polled.status, failures: [...failures, ...checkWindow(payload, conversation, polled.status)] };
+    return { payload, conversation, exit: polled.status, failures: [...failures, ...check(payload, conversation, polled.status)] };
   } finally {
     rmSync(state, { recursive: true, force: true });
     rmSync(runs, { recursive: true, force: true });
@@ -200,10 +217,27 @@ async function runWindowCase(mode) {
 }
 
 /**
+ * The provider's own answer to a free-form message in this conversation, sent
+ * straight to its Graph surface. On 0.2.0 it is 400/131047 and nothing is
+ * recorded, so the probe leaves the conversation as it found it.
+ */
+async function providerRefusesFreeForm() {
+  const response = await fetch(`${EMULATOR}/v22.0/${PHONE_NUMBER_ID}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: CONTACT.replace(/^\+/, ""), type: "text", text: { preview_url: false, body: "sonda da janela" } }),
+    signal: AbortSignal.timeout(5000),
+  }).catch((err) => ({ status: 0, json: async () => ({ detail: String(err) }) }));
+  const body = await response.json().catch(() => ({}));
+  if (response.status === 400 && body?.error?.code === 131047) return [];
+  return [`the provider answered ${response.status}${body?.error?.code ? `/${body.error.code}` : ""} to a free-form message across the shut window, expected 400/131047: the template is only our choice`];
+}
+
+/**
  * What the fourth run has to show. The execution reached its terminal state,
- * and the message that says so went out as a TEMPLATE — which is OUR choice,
- * made because the window is shut, and not the provider refusing the
- * alternative (§46a: the emulator prices the window and does not enforce it).
+ * and the message that says so went out as a TEMPLATE — our choice, made
+ * because the window is shut, and (probed above) the only carrier the
+ * provider would have taken.
  */
 function checkWindow(payload, conversation, exit) {
   const failures = [];
@@ -233,6 +267,37 @@ function checkWindow(payload, conversation, exit) {
   if ((payload.channel?.messages_out ?? 0) !== 1) failures.push(`the poll sent ${payload.channel?.messages_out} message(s) with the window shut, expected 1`);
   if ((payload.channel?.refused ?? []).length) failures.push(`the poll had ${payload.channel.refused.length} message(s) refused: ${payload.channel.refused.map((r) => r.rule).join(", ")}`);
   if (payload.channel?.session_open !== false) failures.push("the poll reports the window open");
+  failures.push(...discretionFailures(conversation));
+  return failures;
+}
+
+/**
+ * What the fifth run has to show: the clocks disagreed, the provider won. The
+ * poll believed the window open and tried the free-form message, the provider
+ * refused it with 131047, and the person was told anyway — by the template,
+ * once, in the same conversation. Anything else is either a confirmation lost
+ * (the cursor was taken and nothing arrived) or a second one sent.
+ */
+function checkClocksApart(payload, conversation, exit) {
+  const failures = [];
+  if (exit !== 0) failures.push(`poll exited ${exit}, expected 0`);
+  const one = (payload.polled ?? [])[0] ?? {};
+  if (one.state !== "settled") failures.push(`the execution ended ${one.state}, expected settled`);
+  if (one.session_open !== true) failures.push("the agent's window read shut: the clocks were not apart, so the run did not reach the case it exists for");
+  if (one.delivery?.told !== true) failures.push(`the debtor was not told: ${JSON.stringify(one.delivery)}`);
+  if (one.delivery?.carrier !== "template") failures.push(`the confirmation went out as ${one.delivery?.carrier}, expected the template after the provider's 131047`);
+  const refused = payload.channel?.refused ?? [];
+  if (refused.length !== 1 || refused[0].rule !== "session_window_closed" || !/131047/.test(refused[0].detail)) {
+    failures.push(`expected exactly one refusal, the provider's 131047; got ${JSON.stringify(refused)}`);
+  }
+  if ((payload.channel?.messages_out ?? 0) !== 1) failures.push(`the poll delivered ${payload.channel?.messages_out} message(s), expected the one template`);
+  if (payload.channel?.session_open !== false) failures.push("after the provider's 131047 the channel still reports the window open");
+  const outbound = conversation.filter((l) => l.direction === "out");
+  const last = outbound[outbound.length - 1];
+  if (!last || last.kind !== "template" || last.refused) failures.push(`the conversation does not end with the delivered template: ${last?.kind}${last?.refused ? ` (${last.refused.rule})` : ""}`);
+  if (!String(last?.message_id ?? "").startsWith("wamid.")) failures.push("the template carries no wamid: it did not go through the provider's surface");
+  const beforeLast = outbound[outbound.length - 2];
+  if (beforeLast?.kind !== "text" || beforeLast?.refused?.rule !== "session_window_closed") failures.push("the refused free-form attempt is not recorded just before the template");
   failures.push(...discretionFailures(conversation));
   return failures;
 }
@@ -387,12 +452,33 @@ async function main(argv) {
     }`,
   );
   if (windowRow.ok) {
-    say("      (o que passou aqui e a NOSSA escolha de template: o emulador precifica a janela e nao a aplica — docs/OPEN_QUESTIONS.md §46a)");
+    say("      (e o provedor recusou a alternativa: mensagem livre com a janela fechada volta 400/131047 — docs/OPEN_QUESTIONS.md §46a)");
   }
 
+  // The fifth run: the same case with the clocks apart, so our window reads
+  // open and the provider's is shut, and only the provider's 131047 tells.
   say("");
-  say(failed ? `whatsapp gate FAILED: ${failed} finding(s) over ${rows.length + 1} run(s)` : `whatsapp gate ok: ${rows.length} run(s) from zero plus the window run, no intervention, same final state every time`);
-  if (json) process.stdout.write(JSON.stringify({ ok: failed === 0, mode, runs: rows, window: windowRow }) + "\n");
+  say(`whatsapp gate, relogios divergentes: a conversa andou ${WINDOW_ADVANCE_HOURS}h, o agente 1h — a nossa janela le aberta, a do provedor esta fechada`);
+  const apart = await runWindowCase(mode, { agentNow: NOW_CLOCKS_APART, check: checkClocksApart, probe: false });
+  if (apart.failures.length) failed += 1;
+  const apartRow = {
+    run: "clocks_apart",
+    ok: apart.failures.length === 0,
+    failures: apart.failures,
+    state: apart.payload?.polled?.[0]?.state ?? null,
+    refused: (apart.payload?.channel?.refused ?? []).map((r) => r.rule),
+    carrier: apart.payload?.polled?.[0]?.delivery?.carrier ?? null,
+    template: apart.payload?.polled?.[0]?.delivery?.template ?? null,
+  };
+  say(
+    `${apartRow.ok ? "ok  " : "FAIL"} run relogios — ${apartRow.state ?? "?"}, recusada pelo provedor: ${apartRow.refused.join(", ") || "nada"}, avisado por ${apartRow.carrier ?? "?"} ${apartRow.template ?? ""}${
+      apart.failures.length ? ` — ${apart.failures.join("; ")}` : ""
+    }`,
+  );
+
+  say("");
+  say(failed ? `whatsapp gate FAILED: ${failed} finding(s) over ${rows.length + 2} run(s)` : `whatsapp gate ok: ${rows.length} run(s) from zero plus the window run and the clocks-apart run, no intervention, same final state every time`);
+  if (json) process.stdout.write(JSON.stringify({ ok: failed === 0, mode, runs: rows, window: windowRow, clocks_apart: apartRow }) + "\n");
   return failed === 0 ? 0 : 1;
 }
 
