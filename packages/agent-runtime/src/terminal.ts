@@ -53,6 +53,16 @@ export function announceOutcome(execution: Execution, setup: Setup, tell: (line:
   return setup.kit.announceOutcome?.(execution, setup, tell) ?? false;
 }
 
+/** The kit's follow-up to an outcome. Never throws: what follows a paid order cannot un-pay it. */
+export async function followUp(execution: Execution, setup: Setup, say: (line: string) => void): Promise<void> {
+  if (!setup.kit.followUp) return;
+  try {
+    await setup.kit.followUp(execution, setup, say);
+  } catch (err) {
+    say(`  follow-up of ${execution.id} failed and changed nothing about it: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 function receiptLines(execution: Execution, setup: Setup, say: (line: string) => void): void {
   for (const outcome of execution.outcomes) {
     if (outcome.receipt_id) say(`  ${setup.kit.labels.receiptWord}: ${relative(process.cwd(), `${setup.bundle.dir}/receipts/${outcome.receipt_id}.json`)}`);
@@ -112,6 +122,7 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
       say(labels.uncertainDispatch);
     }
     announceOutcome(current, setup, tell);
+    await followUp(current, setup, say);
   }
   return current;
 }

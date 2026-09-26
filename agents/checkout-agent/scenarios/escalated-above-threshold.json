@@ -8,7 +8,7 @@
   "transcript": "./escalated-above-threshold.transcript.jsonl",
   "turns": [
     {
-      "input": "oi, sou o Rafael, quero dois pacotes de dez aulas. pode fechar e gerar o pagamento",
+      "input": "oi, sou a Marina, quero dois pacotes de dez aulas. pode fechar e gerar o pagamento",
       "decision": "approve",
       "payer": "pays"
     },

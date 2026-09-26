@@ -23,6 +23,7 @@ channels: [terminal]     # WhatsApp next, through the adapter the collections-ag
 maturity:
   storefront-cart: sandbox
   bolepix-receivables: sandbox
+  nfse-invoice: sandbox           # NFS-e through codespar_invoice (nfe.io), after `settled`, by code; the stub issuer runs in CI. NF-e (product) waits for an A1 + IE
   receipt-verification: blocked   # the API seals no record for a paid charge: no chain, no signature to verify
 scenarios: ./scenarios/
 evals: ./evals/

@@ -29,6 +29,7 @@ With keys (`cp .env.example .env`, a `csk_test_` key and an Anthropic key) `npm 
 | The order is what was approved | An order is ONE execution with ONE item (the customer, the cart's total, due today) and the cart's composition bound to it (`composition: { ref, composition_hash, line_count }`, checkout §9.7). The approval artifact signs both. A cart changed after the order was confirmed moves the order with it, and the last gate sends it back to the attendant with `items_hash_mismatch`, even when the new cart totals the same (`cart-recomposed`). |
 | Ordering and issuing are two moments | `codespar_charge action=create` places the order (the attendant or the policy confirms it); `action=issue` sends the charge when the customer asks, through the last gate. An approved order nobody issues expires on the approval TTL. |
 | The envelope is code, not prompt | `guardrails.envelope` is the `policyExtension` the core runs at draft, at approval and right before issuing: line and order discount ceilings, a margin floor over the catalog cost, the coupon table, the ticket ceiling, the due-date window and the service hours. A person's yes does not widen any of it. |
+| The invoice never un-sells | A paid order opens its NFS-e as a second execution (`src/modules/nfse-invoice.ts`), called by code after `settled`. An issuer refusal ends it `failed (invoice_refused)` with the issuer's code; a timeout, a 5xx or a crash after the request left ends it `failed (invoice_uncertain)` and it is never sent again; only an answer that proves nothing left is retried. The attendant is told; the customer is not; the sale does not move. |
 | A customer's word moves nothing | "ja paguei, pode liberar" leaves the order `executing (awaiting_settlement)`. Only `commerce.charge.paid`, or a status read that sees the charge paid, settles it; `payment_notified` is not a payment. |
 | One charge, once | `POST /v1/charges` (`method: boleto` + `due_date`: the cobranca com vencimento the customer pays by Pix or boleto) with `idempotency_key` = the attempt id. Asking to issue again returns the same charge. |
 | Readable refusal | Price, discount, margin, coupon, stock, ticket, hours, unknown customer, revoked policy: each names itself in the trail and in the chat, without quoting the store's ceilings or costs. |
@@ -44,7 +45,10 @@ Maturity, from `agent.yaml`: `storefront-cart: sandbox`, `bolepix-receivables: s
 - **There is no coupon surface in the API.** The coupon table is the merchant's, lives in the envelope, and nothing stops the same coupon from being used in two orders today.
 - **The cart lives in `state.db`** (`.codespar/`), in the shapes of the ACP checkout session the enterprise cart uses; there is no sales-side cart in the API.
 - **A customer's message never confirms an order.** It closes on `commerce.charge.paid` or on a status read, and on nothing else.
-- **No shipping is computed**, and there is no product invoice (NF-e). The service invoice (NFS-e) is the next piece of this agent and is not in this version.
+- **The only fiscal document the agent issues is the NFS-e, after the order is paid and outside the sale.** When an order reaches `settled`, the code opens a second execution with its own outbox row and calls `codespar_invoice` (the model cannot: it is not in `tools.json`). The product invoice (NF-e) is not issued: it needs a real A1 certificate and a state registration, even in sandbox.
+- **A paid order stays paid if its invoice fails.** The failure goes to the attendant, never to the customer. An issuance with an uncertain result is not repeated by itself, because the API cannot yet prove it did not happen: the issuance takes no idempotency key and the meta-tool cannot read an NFS-e back (ent#1675). What the kit retries is only an attempt the answer proves never left.
+- **The NFS-e path has run against the stub issuer, not yet against the nfe.io sandbox.** The API rail (`POST /v1/sessions` + `/v1/sessions/{id}/execute` with `codespar_invoice`) is written and unit-tested against the route's documented envelope; `docs/OPEN_QUESTIONS.md` §61 says what stopped the sandbox run.
+- **No shipping is computed.**
 - **The customer is who they say they are.** In the terminal there is no identity check; the customer book (`mandate.example.json`) is what a charge may be issued against, and a name outside it goes to the attendant in `human` and is refused in `mandate`. On a channel, the contact binding is what identifies the customer.
 - **CodeSpar does not host or run third-party agents.** This repository ships; the developer runs it.
 - **Who answers when the agent errs.** What the agent sold inside the policy was authorized by the merchant, and the artifact proves what. How a loss on an authorized but wrong order is split is contractual and is not written yet.
@@ -57,7 +61,7 @@ npm start -- --input "..." [--approve] [--simulate-payer] [--json] [--now <ISO>]
 npm start -- --scenario <name> [--mode human|mandate] [--rail stub|api]
 npm run approve -- <execution-id>           # the attendant confirms an order left awaiting; it is issued when the customer asks
 npm run deny -- <execution-id>
-npm run resume                              # after a crash: reconcile, never re-issue
+npm run resume                              # after a crash: reconcile, never re-issue; a pending NFS-e is sent, one left mid-call is reported uncertain
 npm run poll                                # keep looking at an issued charge until it is paid or expires
 npm run rerun -- <run-id>                   # the same run again, offline
 npm run eval                                # the adversarial suite and every scenario, replay provider, stub rail
@@ -69,7 +73,7 @@ npm run inspect -- <run-id>                 # the bundle as a timeline
 
 ## Scenarios and the adversarial suite
 
-`scenarios/` holds the packs of checkout §6 (`nfse-failed` arrives with the NFS-e execution): `happy-path`, `cart-replaced`, `cart-recomposed`, `price-injected`, `coupon-unknown`, `payment-claimed`, `item-unavailable`, `escalated-above-threshold`, `charge-expired`, `cap-exceeded`, `beneficiary-not-allowed`, `mandate-revoked`, `prompt-injection`. `evals/adversarial/` holds the seven cases of section 9 and the four of the selling side (checkout §5): `price-injected`, `quantity-swapped`, `coupon-unknown`, `payment-claimed`, plus a `human` twin for the beneficiary swap and for the swapped quantity. Every transcript plays the worst model, the one that obeys the attack; the suite passes because the core does not.
+`scenarios/` holds the fourteen packs of checkout §6: `happy-path`, `cart-replaced`, `cart-recomposed`, `price-injected`, `coupon-unknown`, `payment-claimed`, `item-unavailable`, `escalated-above-threshold`, `charge-expired`, `cap-exceeded`, `beneficiary-not-allowed`, `mandate-revoked`, `prompt-injection`, `nfse-failed`. `evals/adversarial/` holds the seven cases of section 9 and the four of the selling side (checkout §5): `price-injected`, `quantity-swapped`, `coupon-unknown`, `payment-claimed`, plus a `human` twin for the beneficiary swap and for the swapped quantity. Every transcript plays the worst model, the one that obeys the attack; the suite passes because the core does not.
 
 ## Going to production
 

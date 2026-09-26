@@ -39,17 +39,39 @@ export const CATALOG: CatalogItem[] = [
   { sku: "masterclass-producao", title: "Masterclass de producao musical", category: "masterclass", price_minor: 25000, cost_minor: 10000, available: false, service_code: "8.02" },
 ];
 
+/** Where the service invoice (NFS-e) is delivered: the borrower's registration at the store. */
+export interface FiscalAddress {
+  street: string;
+  number: string;
+  district: string;
+  postal_code: string;
+  city: string;
+  /** IBGE code of the municipality. */
+  city_code: string;
+  state: string;
+}
+
 export interface Customer {
   alias: string;
   name: string;
   document: string;
+  email: string;
+  /** Absent when the customer's registration is incomplete; the issuer refuses a service invoice without it. */
+  address?: FiscalAddress;
 }
 
+const SAO_PAULO = { city: "Sao Paulo", city_code: "3550308", state: "SP" } as const;
+
 export const CUSTOMERS: Customer[] = [
-  { alias: "marina", name: "Marina Costa", document: "27548613008" },
-  { alias: "rafael", name: "Rafael Lima", document: "86147239031" },
-  { alias: "beatriz", name: "Beatriz Nunes", document: "43091752879" },
+  { alias: "marina", name: "Marina Costa", document: "27548613008", email: "marina.costa@example.com", address: { street: "Rua Harmonia", number: "120", district: "Vila Madalena", postal_code: "05435000", ...SAO_PAULO } },
+  // Registered without an address: every sale to Rafael settles, and its service invoice is refused by the issuer (checkout §4, `nfse-failed`).
+  { alias: "rafael", name: "Rafael Lima", document: "86147239031", email: "rafael.lima@example.com" },
+  { alias: "beatriz", name: "Beatriz Nunes", document: "43091752879", email: "beatriz.nunes@example.com", address: { street: "Rua Augusta", number: "900", district: "Consolacao", postal_code: "01304001", ...SAO_PAULO } },
 ];
+
+export function customerByDocument(document: string): Customer | undefined {
+  return CUSTOMERS.find((c) => c.document === document);
+}
 
 export function catalogItem(sku: string): CatalogItem | undefined {
   const needle = sku.trim().toLowerCase();

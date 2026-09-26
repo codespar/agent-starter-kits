@@ -195,6 +195,18 @@ export interface AgentKit {
    * who was not told was not told.
    */
   outcomeTemplate?(execution: Execution): { template: string; variables: string[] } | undefined;
+  /**
+   * Work that FOLLOWS an outcome and is not part of it: a sale's service
+   * invoice once the order is `settled`. Runs after `announceOutcome`,
+   * wherever an outcome is announced (the terminal, the scenario runner,
+   * `poll`, `webhook`, the WhatsApp poll), and is awaited there. It can never
+   * move the execution it follows: a throw is reported on the operator's
+   * console and the outcome stands, because a paid order stays paid whatever
+   * happens after it.
+   */
+  followUp?(execution: Execution, setup: Setup, say: (line: string) => void): Promise<void>;
+  /** `resume` only: the follow-ups a crash left half-done. The same rule as the core's outbox: what provably never left may go; what may have left is reported, never sent again. */
+  resumeFollowUps?(setup: Setup, say: (line: string) => void): Promise<void>;
   /** Runs before a one-shot or an interactive session, when the mandate may have to be born first. Returns false to stop the run. */
   ensureMandate?(ctx: EnsureMandateContext): Promise<boolean>;
   /** `codespar-agent consent`. Absent means the agent has no consent step. */
