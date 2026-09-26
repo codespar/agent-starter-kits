@@ -15,12 +15,25 @@
  *   breaks, our channel breaks.
  *
  *   What 0.2.0 closed of the five gaps §46 of `docs/OPEN_QUESTIONS.md` measured
- *   against 0.1.1. These were pinned as GAP tests that asserted the OLD
- *   behaviour; each is now asked of the published binary in the form that
- *   would go red if the gap reopened — the refusal is checked for what it did
- *   NOT do (record, webhook) as well as for what it answered, because a 400
- *   that still recorded the message would be the old gap wearing a new status.
+ *   against 0.1.1, and what 0.3.0 changed of the four places 0.2.0 differed
+ *   from its own release note, plus the clock and the reset
+ *   (fabianocruz/whatsapp-simulator#2). Each is asked of the PUBLISHED binary
+ *   in the form that goes red if the behaviour moves back — a refusal is
+ *   checked for what it did NOT do (record, webhook, bill) as well as for what
+ *   it answered, because a 400 that still recorded the message would be the
+ *   old gap wearing a new status.
+ *
+ * Two cases need an emulator nobody else is talking to: "the MOST RECENT send"
+ * and "reset everything" are about the whole emulator, and on a shared one
+ * another run's send or another lane's conversations are part of the answer.
+ * Those start a private instance of the pinned version on a free port, and
+ * stop it after. `WHATSAPP_SIM_VERSION` points them at another version, which
+ * is how this file is run against the previous one to show what it catches.
  */
+import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EMULATOR_DEFAULTS, EmulatorDriver } from "../src/channels/whatsapp/emulator.js";
 import { buildSendRequest, WhatsAppCloudApi, type CloudApiConfig } from "../src/channels/whatsapp/cloud-api.js";
@@ -40,6 +53,39 @@ const up = await (async () => {
   }
 })();
 if (!up) process.stderr.write(`[whatsapp] no emulator at ${URL_BASE}; its integration cases are skipped. Start it with \`npm run whatsapp:emulator\`.\n`);
+
+/** The version the repo pins, read from the one place that pins it; `WHATSAPP_SIM_VERSION` overrides it for a private instance. */
+const PINNED = /EMULATOR_VERSION = "([^"]+)"/.exec(readFileSync(resolve(import.meta.dirname, "../../../scripts/whatsapp-emulator.mjs"), "utf8"))![1]!;
+const PRIVATE_VERSION = process.env["WHATSAPP_SIM_VERSION"] ?? PINNED;
+
+/** An emulator of our own, for the cases whose answer is about the whole emulator. */
+async function privateEmulator(): Promise<{ url: string; stop: () => void }> {
+  const port = await new Promise<number>((done) => {
+    const probe = createServer().listen(0, "127.0.0.1", () => {
+      const address = probe.address();
+      probe.close(() => done(typeof address === "object" && address ? address.port : 0));
+    });
+  });
+  const child = spawn("npx", ["--yes", `@dyvit/whatsapp-simulator-cli@${PRIVATE_VERSION}`, "serve", "--port", String(port), "--app-secret", "dev"], { stdio: "ignore", detached: true });
+  const stop = () => {
+    try {
+      process.kill(-child.pid!, "SIGTERM");
+    } catch {
+      child.kill("SIGTERM");
+    }
+  };
+  const url = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 60; i += 1) {
+    try {
+      if ((await fetch(`${url}/health`, { signal: AbortSignal.timeout(1000) })).ok) return { url, stop };
+    } catch {
+      /* not up yet */
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  stop();
+  throw new Error(`the private emulator (${PRIVATE_VERSION}) did not come up on ${port}`);
+}
 
 /** A fresh phone-number id per case, because the emulator keys a conversation on it. */
 const pnid = () => `9${String(Math.floor(Math.random() * 1e11)).padStart(11, "0")}`;
@@ -135,7 +181,7 @@ function inboundOf(delivery: { body: unknown }) {
   return body.entry?.[0]?.changes?.[0]?.value?.messages ?? [];
 }
 
-describe.skipIf(!up)("the five gaps 0.2.0 closed, asked of the binary", () => {
+describe.skipIf(!up)("the five gaps 0.2.0 closed, and what 0.3.0 changed in them, asked of the binary", () => {
   it("(a) refuses a free-form message outside the 24h window with Meta's 131047, records nothing and fires no webhook", async () => {
     const id = pnid();
     const driver = new EmulatorDriver(URL_BASE);
@@ -208,7 +254,7 @@ describe.skipIf(!up)("the five gaps 0.2.0 closed, asked of the binary", () => {
     expect(replayed.map((d) => (inboundOf(d)[0]!["text"] as { body: string }).body)).toEqual(["segunda", "primeira", "primeira"]);
   });
 
-  it("(b) gotcha two: a missing index mid-replay answers 404, and the ones BEFORE it were already redelivered", async () => {
+  it("(b) since 0.3.0 a replay checks every index first: one missing answers 404, NOTHING goes out, and the count named is the list before the call", async () => {
     const id = pnid();
     await new EmulatorDriver(URL_BASE).inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
     const a = (await deliveries()).length - 1;
@@ -217,11 +263,9 @@ describe.skipIf(!up)("the five gaps 0.2.0 closed, asked of the binary", () => {
 
     const { status, body } = await post("/_sim/replay", { indexes: [a, missing, a] });
     expect(status).toBe(404);
-    expect((body as { error: { message: string } }).error.message).toMatch(/there are \d+/);
-    // Not atomic: the first went out, the third did not.
-    const after = await deliveries();
-    expect(after.length).toBe(before + 1);
-    expect(after[after.length - 1]!.replayOf).toBe(a);
+    // 0.2.0 redelivered the ones before the missing index and counted the list after them.
+    expect((body as { error: { message: string } }).error.message).toContain(`there are ${before} `);
+    expect((await deliveries()).length).toBe(before);
   });
 
   it("(b) and our receiver hands a redelivered message on once, which is what Meta's at-least-once delivery needs of it", async () => {
@@ -276,17 +320,18 @@ describe.skipIf(!up)("the five gaps 0.2.0 closed, asked of the binary", () => {
         .flatMap((b) => b.entry?.[0]?.changes?.[0]?.value?.statuses ?? [])
         .filter((s) => s.id === message);
 
+    const second = (await conversation(key)).messages.at(-1)!.id;
     expect((await post("/_sim/status", { status: "read", message_id: first })).status).toBe(200);
     expect((await statusesFor(first)).map((s) => s.status)).toEqual(["sent", "delivered", "read"]);
 
-    expect((await post("/_sim/status", { status: "failed", reason: "not on whatsapp", message_id: first })).status).toBe(200);
-    const failed = (await statusesFor(first)).at(-1)!;
+    expect((await post("/_sim/status", { status: "failed", reason: "not on whatsapp", message_id: second })).status).toBe(200);
+    const failed = (await statusesFor(second)).at(-1)!;
     expect(failed.status).toBe("failed");
     expect(failed.errors?.[0]?.code).toBe(131026);
     expect(failed.errors?.[0]?.error_data?.details).toBe("not on whatsapp");
 
     const after = await conversation(key);
-    expect(after.priced.byMessageId[first]!.reasonCode).toBe("NOT_BILLABLE_FAILED");
+    expect(after.priced.byMessageId[second]!.reasonCode).toBe("NOT_BILLABLE_FAILED");
     expect(after.priced.total).toBeLessThan(billed);
     expect(after.priced.total).toBeGreaterThan(0);
   });
@@ -295,7 +340,8 @@ describe.skipIf(!up)("the five gaps 0.2.0 closed, asked of the binary", () => {
     const id = pnid();
     const replies = [
       { type: "button_reply", button_reply: { id: "avista", title: "À vista" } },
-      { type: "list_reply", list_reply: { id: "3x", title: "3x" } },
+      // 0.3.0: `description` goes through as Meta sends it; 0.2.0 dropped it.
+      { type: "list_reply", list_reply: { id: "3x", title: "3x", description: "tres parcelas de R$ 400,00" } },
       { type: "nfm_reply", nfm_reply: { name: "flow", body: "Sent", response_json: '{"plano":"3x"}' } },
     ];
     for (const interactive of replies) {
@@ -311,5 +357,140 @@ describe.skipIf(!up)("the five gaps 0.2.0 closed, asked of the binary", () => {
     const noJson = await post("/_sim/inbound", { phone_number_id: id, from: `+${TO}`, type: "interactive", interactive: { type: "nfm_reply", nfm_reply: { name: "flow" } } });
     expect(noJson.status).toBe(400);
     expect((await deliveries()).length).toBe(before);
+  });
+});
+
+/** The statuses one delivery carries, the way Meta shapes them. */
+function statusesOf(delivery: { body: unknown }) {
+  const body = delivery.body as { entry?: Array<{ changes?: Array<{ value?: { statuses?: Array<{ id: string; status: string }> } }> }> };
+  return body.entry?.[0]?.changes?.[0]?.value?.statuses ?? [];
+}
+
+describe.skipIf(!up)("what 0.3.0 changed, asked of the binary (§46, fabianocruz/whatsapp-simulator#2)", () => {
+  it("1. a status with neither key nor message_id marks the MOST RECENT send, in whichever conversation it went", { timeout: 60_000 }, async () => {
+    const own = await privateEmulator();
+    try {
+      const at = (path: string, body: unknown) => fetch(`${own.url}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const text = (id: string, body: string) => at(`/v22.0/${id}/messages`, { messaging_product: "whatsapp", recipient_type: "individual", to: TO, type: "text", text: { preview_url: false, body } });
+      const first = pnid();
+      const second = pnid();
+      // The FIRST conversation the emulator holds is not the one that sent last: 0.2.0 marked the first one's last message.
+      await at("/_sim/inbound", { phone_number_id: first, from: `+${TO}`, text: "oi" });
+      await at("/_sim/inbound", { phone_number_id: second, from: `+${TO}`, text: "oi" });
+      await text(first, "a primeira conversa responde");
+      const latest = ((await (await text(second, "a segunda responde por ultimo")).json()) as { messages: Array<{ id: string }> }).messages[0]!.id;
+
+      expect((await at("/_sim/status", { status: "read" })).status).toBe(200);
+      const state = async (id: string) => (await (await fetch(`${own.url}/_sim/state?key=${id}:${TO}`)).json()) as { messages: Array<{ id: string; status: string; direction: string }> };
+      expect((await state(second)).messages.find((m) => m.id === latest)?.status).toBe("read");
+      expect((await state(first)).messages.filter((m) => m.direction === "business_to_user").map((m) => m.status)).not.toContain("read");
+    } finally {
+      own.stop();
+    }
+  });
+
+  it("2. only read and failed can be injected, and both are final: delivered is 400, failed after read is 409 and leaves the bill", async () => {
+    const id = pnid();
+    const key = `${id}:${TO}`;
+    const driver = new EmulatorDriver(URL_BASE);
+    await driver.pin(new Date("2026-09-23T17:00:00.000Z"));
+    await driver.inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
+    await driver.advanceHours(26);
+    const template = { kind: "template" as const, template: "acordo_quitado", language: "pt_BR", variables: ["acordo-1042"] };
+    const message = ((await send(id, template)).body as { messages: Array<{ id: string }> }).messages[0]!.id;
+
+    const delivered = await post("/_sim/status", { status: "delivered", message_id: message });
+    expect(delivered.status).toBe(400);
+    expect((await post("/_sim/status", { status: "read", message_id: message })).status).toBe(200);
+    const billed = (await conversation(key)).priced.total;
+    const hooks = (await deliveries()).length;
+
+    const afterRead = await post("/_sim/status", { status: "failed", reason: "not on whatsapp", message_id: message });
+    expect(afterRead.status).toBe(409);
+    expect((await post("/_sim/status", { status: "read", message_id: message })).status).toBe(409);
+    const after = await conversation(key);
+    expect(after.priced.total).toBe(billed);
+    expect(after.priced.byMessageId[message]!.reasonCode).not.toBe("NOT_BILLABLE_FAILED");
+    expect(after.messages.find((m) => m.id === message)?.status).toBe("read");
+    expect((await deliveries()).length).toBe(hooks);
+  });
+
+  it("3. a list_reply keeps its description in the webhook, the way Meta sends it", async () => {
+    const id = pnid();
+    const interactive = { type: "list_reply", list_reply: { id: "3x", title: "3x", description: "tres parcelas de R$ 400,00" } };
+    expect((await post("/_sim/inbound", { phone_number_id: id, from: `+${TO}`, type: "interactive", interactive })).status).toBe(200);
+    const last = inboundOf((await deliveries()).at(-1)!)[0]!;
+    expect((last["interactive"] as { list_reply: { description?: string } }).list_reply.description).toBe("tres parcelas de R$ 400,00");
+  });
+
+  it("4. a replay with one bad index sends nothing at all", async () => {
+    const id = pnid();
+    await new EmulatorDriver(URL_BASE).inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
+    const a = (await deliveries()).length - 1;
+    const before = await deliveries();
+    const { status } = await post("/_sim/replay", { indexes: [a, a, before.length + 1000] });
+    expect(status).toBe(404);
+    const after = await deliveries();
+    expect(after.length).toBe(before.length);
+    expect(after.filter((d) => d.replayOf === a).length).toBe(before.filter((d) => d.replayOf === a).length);
+  });
+
+  it("5. a clock moved back before existing messages warns and names them; their window still counts, as Meta's would", async () => {
+    const id = pnid();
+    const key = `${id}:${TO}`;
+    const driver = new EmulatorDriver(URL_BASE);
+    await driver.pin(new Date("2026-09-24T01:30:00.000Z"));
+    await driver.inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi, as 22:30" });
+    const back = (await driver.pin(new Date("2026-09-23T17:00:00.000Z"))) as { warning?: string; ahead?: Array<{ key: string; latest: string }> };
+    expect(back.warning).toMatch(/reset/);
+    expect(back.ahead?.map((x) => x.key)).toContain(key);
+    expect(back.ahead?.find((x) => x.key === key)?.latest.startsWith("2026-09-24T01:30")).toBe(true);
+    // The window is still counted from the message "ahead": 26 hours on from the pinned 17:00 is inside it. That is #42, named, not fixed.
+    await driver.advanceHours(26);
+    expect((await send(id, { kind: "text", text: "janela?" })).status).toBe(200);
+  });
+
+  it("6. reset by key clears that conversation and only it, so its window counts from what happens next", async () => {
+    const id = pnid();
+    const other = pnid();
+    const driver = new EmulatorDriver(URL_BASE);
+    await driver.inbound({ phoneNumberId: other, from: `+${TO}`, text: "a outra conversa fica" });
+    await driver.pin(new Date("2026-09-24T01:30:00.000Z"));
+    await driver.inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi, as 22:30" });
+
+    const reset = await post("/_sim/reset", { key: `${id}:${TO}` });
+    expect(reset.status).toBe(200);
+    expect(reset.body).toMatchObject({ key: `${id}:${TO}`, removed: true });
+    expect((await raw(`/_sim/state?key=${encodeURIComponent(`${id}:${TO}`)}`)).status).toBe(404);
+    expect((await conversation(`${other}:${TO}`)).messages.map((m) => m.bodyPreview)).toEqual(["a outra conversa fica"]);
+
+    // The #42 sequence, cleared: back to 17:00, the person writes, 26 hours pass, and the window is shut.
+    await driver.pin(new Date("2026-09-23T17:00:00.000Z"));
+    await driver.inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi, as 14:00" });
+    await driver.advanceHours(26);
+    const outside = await send(id, { kind: "text", text: "janela?" });
+    expect(outside.status).toBe(400);
+    expect((outside.body as { error: { code: number } }).error.code).toBe(131047);
+  });
+
+  it("6. reset with no key clears the whole emulator: conversations, webhooks and the clock", { timeout: 60_000 }, async () => {
+    // Never on a shared emulator: this is exactly what the per-run conversation of #42 exists not to need.
+    const own = await privateEmulator();
+    try {
+      const at = (path: string, body: unknown) => fetch(`${own.url}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const id = pnid();
+      await at("/_sim/inbound", { phone_number_id: id, from: `+${TO}`, text: "oi" });
+      await at("/_sim/clock", { advance_hours: 100 });
+      expect(((await (await fetch(`${own.url}/_sim/webhooks`)).json()) as { deliveries: unknown[] }).deliveries.length).toBeGreaterThan(0);
+
+      const reset = await at("/_sim/reset", {});
+      expect(reset.status).toBe(200);
+      expect(((await (await fetch(`${own.url}/_sim/webhooks`)).json()) as { deliveries: unknown[] }).deliveries).toEqual([]);
+      expect((await fetch(`${own.url}/_sim/state?key=${id}:${TO}`)).status).toBe(404);
+      const clock = (await (await at("/_sim/clock", { advance_hours: 0 })).json()) as { now: string };
+      expect(Math.abs(Date.parse(clock.now) - Date.now())).toBeLessThan(60_000);
+    } finally {
+      own.stop();
+    }
   });
 });
