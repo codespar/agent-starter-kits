@@ -80,7 +80,18 @@ const NOW_AFTER_WINDOW = new Date(new Date(NOW).getTime() + WINDOW_ADVANCE_HOURS
 const NOW_CLOCKS_APART = new Date(new Date(NOW).getTime() + 3600_000).toISOString();
 /** Who the conversation is with, and from which number, as the channel sends it: the provider probe has to name the same conversation. */
 const CONTACT = JSON.parse(readFileSync(join(AGENT, `channels/whatsapp/${CONVERSATION}.json`), "utf8")).contact;
-const PHONE_NUMBER_ID = process.env.WHATSAPP_SIM_PHONE_NUMBER_ID ?? "900000000001";
+/**
+ * A conversation of its own for every run (#42). The emulator keys a
+ * conversation on `phone_number_id:contact` and keeps every inbound message
+ * it ever received under that key, dated by whatever clock was pinned when it
+ * arrived. The 24-hour window it enforces is counted from the LATEST of them —
+ * so a run that pinned its clock to 22:30 leaves an inbound "from the future"
+ * for a run that pins 14:00 next, and that run finds the window open. The
+ * contact is the agent's and stays what the channel's rules bind; the phone
+ * number id is the emulator's, and a fresh one per run is a fresh conversation.
+ * The same move the runtime's own integration test makes per case.
+ */
+const freshPhoneNumberId = () => `9${String(Math.floor(Math.random() * 1e11)).padStart(11, "0")}`;
 /**
  * The fourth run replays a DIFFERENT recording, and the reason is not
  * cosmetic. The shipped `happy-path` transcript was recorded where the payer
@@ -140,7 +151,7 @@ function runOnce(index, mode) {
         NOW,
         "--json",
       ],
-      { COLLECTIONS_STATE_DIR: state, COLLECTIONS_RUNS_DIR: runs },
+      { COLLECTIONS_STATE_DIR: state, COLLECTIONS_RUNS_DIR: runs, WHATSAPP_SIM_PHONE_NUMBER_ID: freshPhoneNumberId() },
     );
     const { payload, failure } = payloadOf(result);
     if (failure) return { failures: [failure] };
@@ -163,7 +174,9 @@ function runOnce(index, mode) {
 async function runWindowCase(mode, { agentNow = NOW_AFTER_WINDOW, check = checkWindow, probe = true } = {}) {
   const state = mkdtempSync(join(tmpdir(), "wa-gate-state-window-"));
   const runs = mkdtempSync(join(tmpdir(), "wa-gate-runs-window-"));
-  const env = { COLLECTIONS_STATE_DIR: state, COLLECTIONS_RUNS_DIR: runs };
+  // One conversation for both processes of the case, and for the probe: the case IS that conversation.
+  const phoneNumberId = freshPhoneNumberId();
+  const env = { COLLECTIONS_STATE_DIR: state, COLLECTIONS_RUNS_DIR: runs, WHATSAPP_SIM_PHONE_NUMBER_ID: phoneNumberId };
   try {
     // Tuesday: the debtor agrees, the bolepix is issued, and NOBODY pays. The
     // fixture payer is told to sit on it, which is what makes this run end
@@ -197,7 +210,7 @@ async function runWindowCase(mode, { agentNow = NOW_AFTER_WINDOW, check = checkW
     // Ask the provider, not ourselves, whether the window is shut: the
     // free-form alternative must be refused with Meta's 131047. A 200 here
     // means the template below is only our preference.
-    if (probe) failures.push(...(await providerRefusesFreeForm()));
+    if (probe) failures.push(...(await providerRefusesFreeForm(CONTACT, phoneNumberId)));
 
     // The payer pays, the poll finds it, and the confirmation goes out over a
     // window that has been shut for two hours.
@@ -221,8 +234,8 @@ async function runWindowCase(mode, { agentNow = NOW_AFTER_WINDOW, check = checkW
  * straight to its Graph surface. On 0.2.0 it is 400/131047 and nothing is
  * recorded, so the probe leaves the conversation as it found it.
  */
-async function providerRefusesFreeForm(contact = CONTACT) {
-  const response = await fetch(`${EMULATOR}/v22.0/${PHONE_NUMBER_ID}/messages`, {
+async function providerRefusesFreeForm(contact, phoneNumberId) {
+  const response = await fetch(`${EMULATOR}/v22.0/${phoneNumberId}/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: contact.replace(/^\+/, ""), type: "text", text: { preview_url: false, body: "sonda da janela" } }),
@@ -392,7 +405,7 @@ function runCheckoutOnce(index, mode) {
   const state = mkdtempSync(join(tmpdir(), `wa-gate-checkout-state-${index}-`));
   const runs = mkdtempSync(join(tmpdir(), `wa-gate-checkout-runs-${index}-`));
   try {
-    const result = agent([...CHECKOUT_START, "--mode", mode, ...(mode === "human" ? ["--approve"] : []), "--simulate-payer", "--now", NOW, "--json"], { CHECKOUT_STATE_DIR: state, CHECKOUT_RUNS_DIR: runs });
+    const result = agent([...CHECKOUT_START, "--mode", mode, ...(mode === "human" ? ["--approve"] : []), "--simulate-payer", "--now", NOW, "--json"], { CHECKOUT_STATE_DIR: state, CHECKOUT_RUNS_DIR: runs, WHATSAPP_SIM_PHONE_NUMBER_ID: freshPhoneNumberId() });
     const { payload, failure } = payloadOf(result);
     if (failure) return { failures: [failure] };
     const conversation = conversationOf(payload.channel?.log);
@@ -438,7 +451,8 @@ function checkCheckout(payload, conversation) {
 async function runCheckoutWindow(mode) {
   const state = mkdtempSync(join(tmpdir(), "wa-gate-checkout-window-"));
   const runs = mkdtempSync(join(tmpdir(), "wa-gate-checkout-window-runs-"));
-  const env = { CHECKOUT_STATE_DIR: state, CHECKOUT_RUNS_DIR: runs };
+  const phoneNumberId = freshPhoneNumberId();
+  const env = { CHECKOUT_STATE_DIR: state, CHECKOUT_RUNS_DIR: runs, WHATSAPP_SIM_PHONE_NUMBER_ID: phoneNumberId };
   try {
     const ordered = agent([...CHECKOUT_START, "--mode", mode, ...(mode === "human" ? ["--approve"] : []), "--transcript", ORDERED_TRANSCRIPT, "--now", NOW, "--json"], { ...env, CHECKOUT_STUB_PAYER: "never" });
     const first = payloadOf(ordered);
@@ -448,7 +462,7 @@ async function runCheckoutWindow(mode) {
     if (conversationOf(first.payload.channel?.log).some((l) => l.direction === "out" && /pedido confirmado/i.test(String(l.text ?? "")))) failures.push("the customer was told the order was confirmed before anybody paid");
     const moved = await fetch(`${EMULATOR}/_sim/clock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ advance_hours: WINDOW_ADVANCE_HOURS }), signal: AbortSignal.timeout(5000) }).catch((err) => ({ ok: false, detail: String(err) }));
     if (!moved.ok) return { failures: [...failures, `could not move the emulator clock: ${moved.detail ?? moved.status}`] };
-    failures.push(...(await providerRefusesFreeForm(CHECKOUT_CONTACT)));
+    failures.push(...(await providerRefusesFreeForm(CHECKOUT_CONTACT, phoneNumberId)));
     const polled = agent(["poll", "--agent", CHECKOUT, "--channel", "whatsapp", "--conversation", CHECKOUT_CONVERSATION, "--simulate-payer", "--now", NOW_AFTER_WINDOW, "--json"], env);
     const second = payloadOf(polled);
     if (second.failure) return { failures: [...failures, `poll: ${second.failure}`] };
