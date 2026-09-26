@@ -80,6 +80,13 @@ export interface Execution<S extends ExecutionState = ExecutionState> {
   batch?: ExecutionBatch;
   /** Present when this execution's amount is composed of lines (a cart): the lines' hash, not the lines. */
   composition?: ExecutionComposition;
+  /**
+   * A batch line's attempt generation per item index, when it is not 0: how
+   * many of the line's derived attempt ids the rail answered as spent before
+   * the one this execution presented (`batchAttemptId`). Saved BEFORE the
+   * next id is presented, so a reconcile looks up the id that was sent.
+   */
+  attempt_generations?: Record<number, number>;
   mandate: MandateRef;
   /** Written once, before the rail is called. Retrying reuses it. */
   idempotency_key: string;

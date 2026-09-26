@@ -16,7 +16,7 @@ import { maskPayee, type ProofBundle } from "./bundle.js";
 import { evaluateEscalation, type Escalation } from "./escalate.js";
 import { CHARGE_CANCELLED, CHARGE_EXPIRED, CHARGE_PAID, PAYMENT_FAILED, PAYMENT_SUCCEEDED, type PublishedEvent } from "./events.js";
 import type { Guardrails } from "./guardrails.js";
-import { itemsHash, sha256Hex } from "./hash.js";
+import { batchAttemptId, itemsHash, sha256Hex } from "./hash.js";
 import { newId } from "./ids.js";
 import { mandateExpired, payeeAllowed, resolveBeneficiary, windowCap, windowStart, type Mandate } from "./mandate.js";
 import type { Manifest } from "./manifest.js";
@@ -101,6 +101,14 @@ type Verdict =
   | { kind: "escalate"; escalation: Escalation };
 
 type Gate = "draft" | "approve" | "execute";
+
+/**
+ * How many spent generations of one batch line's attempt id a dispatch walks
+ * past before it reports the line failed. Each one is a payment the provider
+ * already refused for this exact line, so eight is a line that keeps failing,
+ * not a line still looking for its id.
+ */
+const MAX_ATTEMPT_GENERATION = 8;
 
 /** Open executions reserve the window: a cap is a ceiling on what may be committed, not a balance. */
 const WINDOW_STATES: ExecutionState[] = ["awaiting_approval", "approved", "executing", "settled"];
@@ -414,12 +422,30 @@ export class ExecutionEngine {
     const sealMismatches: string[] = [];
     this.deps.store.updateOutbox(execution.idempotency_key, "sent", undefined, this.clock().toISOString());
 
-    for (const [index, payment] of payments.entries()) {
+    const generations: Record<number, number> = { ...execution.attempt_generations };
+    for (const [index, presented] of payments.entries()) {
       if (outcomes.some((o) => o.index === index)) continue;
+      let payment = presented;
       // The dispatch line is the request. `idempotency_key` is what makes a retry the same payment, so the bundle names it next to the attempt.
       this.record("rail.dispatch", execution.id, { attempt_id: payment.attempt_id, payee: payment.payee, amount: payment.amount_minor, rail: this.deps.rail.name, idempotency_key: execution.idempotency_key });
-      const outcome = await this.deps.rail.pay(payment);
+      let outcome = await this.deps.rail.pay(payment);
       this.record("rail.outcome", execution.id, { attempt_id: payment.attempt_id, status: outcome.status, ...railAnswer(outcome) });
+      // A batch line whose derived id the rail holds as failed-with-no-money
+      // moves to the next generation of it, and only on that answer (see
+      // `batchAttemptId`). The generation is saved before the next id goes
+      // out, so a crash or an unknown answer is reconciled against the id
+      // that was actually sent.
+      while (execution.batch && outcome.status === "failed" && outcome.spent && (generations[index] ?? 0) < MAX_ATTEMPT_GENERATION) {
+        const generation = (generations[index] ?? 0) + 1;
+        const next = batchAttemptId(execution.mandate.id, execution.batch, index, generation);
+        this.record("rail.attempt_spent", execution.id, { attempt_id: payment.attempt_id, code: outcome.code, next_attempt_id: next, generation });
+        generations[index] = generation;
+        this.deps.store.saveExecution({ ...execution, outcomes, attempt_generations: { ...generations }, updated_at: this.clock().toISOString() });
+        payment = { ...payment, attempt_id: next };
+        this.record("rail.dispatch", execution.id, { attempt_id: payment.attempt_id, payee: payment.payee, amount: payment.amount_minor, rail: this.deps.rail.name, idempotency_key: execution.idempotency_key });
+        outcome = await this.deps.rail.pay(payment);
+        this.record("rail.outcome", execution.id, { attempt_id: payment.attempt_id, status: outcome.status, ...railAnswer(outcome) });
+      }
       if (outcome.status === "uncertain") {
         this.record("rail.uncertain", execution.id, { attempt_id: payment.attempt_id, code: outcome.code, message: outcome.message });
         // No outcome is recorded because there is none. The siblings are still
@@ -442,7 +468,7 @@ export class ExecutionEngine {
       const mismatch = await this.ingestSettlement(execution, index, payment, outcome.receipt_id, PAYMENT_SUCCEEDED);
       if (mismatch) sealMismatches.push(mismatch);
     }
-    const closed = this.close({ ...execution, outcomes }, payments.length, unknown.join("; ") || undefined);
+    const closed = this.close({ ...execution, outcomes, ...(Object.keys(generations).length > 0 ? { attempt_generations: generations } : {}) }, payments.length, unknown.join("; ") || undefined);
     if (sealMismatches.length > 0) throw new ReceiptSealMismatchError(execution.id, sealMismatches);
     return closed;
   }
@@ -873,9 +899,12 @@ export class ExecutionEngine {
    */
   private paymentsFor(execution: Execution, artifact: ApprovalArtifact): RailPayment[] {
     return execution.items.map((item, index) => {
-      const quote = quoteFromApproval(artifact, index, this.deps.mandate.purpose);
+      // A batch line is the same attempt, with the same quote, on every run of the same list, wherever it runs (§39c); anything else is its execution's own.
+      const quote = quoteFromApproval(artifact, index, this.deps.mandate.purpose, { stable: execution.batch !== undefined });
       return {
-        attempt_id: `att_${execution.idempotency_key.slice(4)}_${index}`,
+        attempt_id: execution.batch
+          ? batchAttemptId(execution.mandate.id, execution.batch, index, execution.attempt_generations?.[index] ?? 0)
+          : `att_${execution.idempotency_key.slice(4)}_${index}`,
         mandate_id: execution.mandate.id,
         amount_minor: item.amount,
         currency: item.currency,

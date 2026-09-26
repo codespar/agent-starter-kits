@@ -2,8 +2,10 @@
  * The CodeSpar sandbox rail. With the signed envelope the consent returned
  * (`mandate.canonical` + `mandate.signature`) it spends through
  * `POST /v1/consumer-payments/execute`; without it, by mandate id through
- * `POST /v1/consumers/mandates/{id}/spend`. Both are idempotent on
- * `attempt_id`. The by-id route answered `bad_signature` on staging for a
+ * `POST /v1/consumers/mandates/{id}/spend`. Idempotence on both is OPT-IN
+ * and keyed on an explicit `attempt_id`, which every payment here carries: a
+ * spend without one is a fresh payment on every request (ent#1671, #1683).
+ * What a repeat of an attempt answers is in `lookup` below. The by-id route answered `bad_signature` on staging for a
  * mandate carrying `periodic_cap` (OPEN_QUESTIONS §14), which is why the
  * envelope is preferred when it exists. Receipts come back from
  * `GET /v1/consumers/receipts/{id}`.
@@ -19,7 +21,10 @@ import type { PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt } f
 import type { Actor } from "../types.js";
 import { describeApiError, isUncertain, type SpendErrorCode } from "./client.js";
 
+/** Another presentation of this attempt is claimed and has no recorded outcome yet: it may be moving money right now. */
 const ATTEMPT_IN_FLIGHT: SpendErrorCode = "psp_attempt_in_flight";
+/** This attempt failed, moved no money and was compensated; the API will never run this id again. */
+const ATTEMPT_SPENT: SpendErrorCode = "psp_attempt_conflict";
 
 export class CodeSparRail implements PaymentRail {
   readonly name = "codespar" as const;
@@ -62,20 +67,45 @@ export class CodeSparRail implements PaymentRail {
       };
     } catch (err) {
       const failure = describeApiError(err);
+      // Not a refusal: the other presentation may already have reached the provider, so "nothing moved" would be a claim nobody can make.
+      if (failure.code === ATTEMPT_IN_FLIGHT) return { status: "uncertain", code: failure.code, message: failure.message };
       if (isUncertain(failure)) return { status: "uncertain", code: failure.code, message: failure.message };
+      if (failure.code === ATTEMPT_SPENT) return { status: "failed", code: failure.code, message: failure.message, spent: true };
+      // Everything else is a refusal that sent nothing, carried with the API's own code and message. That includes the two
+      // ent#1671 codes `@codespar/sdk` 0.16.8 does not type yet, `attempt_id_conflict` (this id was used for a different
+      // payment) and `attempt_id_unavailable` (another project of the organization holds it): neither is branched on until
+      // the SDK documents them, and neither is `spent`, so neither moves a batch line to another id.
       return { status: "failed", code: failure.code, message: failure.message };
     }
   }
 
   /**
-   * There is no read route for an attempt. The documented way is to present
-   * the same `attempt_id` again: the lifecycle is idempotent on it and
-   * answers the state it reached. `psp_attempt_in_flight` means the first
-   * presentation is still running.
+   * There is no read route for an attempt: the way to learn what became of
+   * one is to present the same `attempt_id`, with the same payment, again.
+   * Against the deployed API (ent#1671, #1683) that call never moves money
+   * for an attempt it already holds, and each answer maps to one reading:
+   *
+   * - settled: `200` with the ORIGINAL body verbatim (same `transactionId`,
+   *   same stored `receipt.id`, which the receipt route resolves) plus
+   *   `idempotent_replay: true`. Read as `settled`, exactly as the first answer.
+   * - `psp_attempt_in_flight` (409): claimed, no outcome yet, on every rail.
+   *   Read as `in_flight`; the next reconcile asks again with the SAME id.
+   * - `psp_attempt_uncertain` (409): pinned, dispatch outcome unknown. Read as
+   *   `uncertain`, which leaves the execution open for a person.
+   * - `psp_attempt_conflict` (409): failed, compensated, no money. Read as
+   *   `failed` and `spent`.
+   * - `attempt_id_conflict` / `attempt_id_unavailable` (409): the id is held for
+   *   a different payment, or by another project. Read as `failed`: nothing
+   *   was held or sent by this call. Neither can come from re-presenting the
+   *   payment this execution sent, whose tuple is the one the id was claimed
+   *   with, so seeing one here is a defect worth its readable failure.
+   * - an attempt the API never took: there is no record to answer from, so
+   *   this call IS the payment. Reconcile runs only after the outbox row
+   *   flipped to `sent`, so an attempt it looks up was presented once already.
    */
   async lookup(_attemptId: string, payment: RailPayment): Promise<RailLookup> {
     const outcome = await this.pay(payment);
-    if (outcome.status === "failed" && outcome.code === ATTEMPT_IN_FLIGHT) return { status: "in_flight" };
+    if (outcome.status === "uncertain" && outcome.code === ATTEMPT_IN_FLIGHT) return { status: "in_flight" };
     return outcome;
   }
 
