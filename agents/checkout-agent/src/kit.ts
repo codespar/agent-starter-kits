@@ -27,14 +27,37 @@ import {
   type Execution,
   type StubChargeRailOptions,
 } from "@codespar/agent-core";
-import { defineAgent, type AgentKit, type Setup } from "@codespar/agent-runtime";
+import { defineAgent, envName, type AgentKit, type Setup } from "@codespar/agent-runtime";
 import { formatBRL, formatDate } from "./catalog.js";
 import { checkOrder, loadEnvelope, priceCart, localDate } from "./pricing.js";
 import { claimOrder, CartBook, makeCartHandlers, type Cart } from "./modules/storefront-cart.js";
 import { followCart, makeChargeHandlers, orderProposal } from "./modules/bolepix-receivables.js";
+import { CodeSparInvoiceRail, followSale, InvoiceBook, resumeInvoices, StubInvoiceRail, type InvoiceDeps, type InvoiceRail, type StubIssuerBehaviour } from "./modules/nfse-invoice.js";
 
 function cartOf(setup: Setup, execution: Execution): Cart | undefined {
   return execution.composition ? new CartBook(setup.store).get(execution.composition.ref) : undefined;
+}
+
+const invoiceRails = new WeakMap<Setup, InvoiceRail>();
+
+/**
+ * The issuer the NFS-e goes to: `codespar_invoice` through the API with a
+ * test key, the stub issuer otherwise. `CHECKOUT_STUB_ISSUER` scripts the
+ * stub from a test process (issues | refuses | times_out | unsent_once | unsent).
+ */
+function invoiceRail(s: Setup): InvoiceRail {
+  let rail = invoiceRails.get(s);
+  if (!rail) {
+    const scripted = process.env[envName(s.agent, "STUB_ISSUER")] as StubIssuerBehaviour | undefined;
+    rail = s.api ? new CodeSparInvoiceRail(s.api) : new StubInvoiceRail(s.store, scripted);
+    invoiceRails.set(s, rail);
+  }
+  return rail;
+}
+
+function invoiceDeps(s: Setup, say: (line: string) => void): InvoiceDeps {
+  const carts = new CartBook(s.store);
+  return { store: s.store, engine: s.engine, rail: invoiceRail(s), cart: (ref) => carts.get(ref), say };
 }
 
 /**
@@ -163,6 +186,8 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
       if (outcome.transaction_id) lines.push(`    cobranca: ${outcome.transaction_id} — ${outcome.status}${outcome.code ? ` (${outcome.code})` : ""}`);
       if (outcome.receipt_id) lines.push(`    pedido pago: ${relative(process.cwd(), `${setup.bundle.dir}/receipts/${outcome.receipt_id}.json`)}`);
     }
+    const invoice = new InvoiceBook(setup.store).of(execution.id);
+    if (invoice) lines.push(`    NFS-e ${invoice.id}: ${invoice.state}${invoice.reason ? ` (${invoice.reason}, ${invoice.code})` : ""}${invoice.document ? ` — documento ${invoice.document.id}` : ""}`);
     return lines;
   },
 
@@ -197,6 +222,7 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
           receipt_ids: e.outcomes.filter((o) => o.receipt_id).map((o) => o.receipt_id),
         };
       }),
+      invoices: executions.map((e) => new InvoiceBook(s.store).of(e.id)).filter((r) => r !== undefined).map((r) => ({ id: r.id, sale_execution_id: r.sale_execution_id, state: r.state, reason: r.reason ?? null, code: r.code ?? null, document_id: r.document?.id ?? null, attempts: r.attempts })),
       receipts: s.bundle.listReceipts().map((f) => relative(process.cwd(), `${s.bundle.dir}/receipts/${f}`)),
       bundle_dir: relative(process.cwd(), s.bundle.dir),
       seconds: Math.round(((Date.now() - startedAt) / 1000) * 10) / 10,
@@ -236,6 +262,14 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
     tell(text);
     setup.engine.note("message.debtor", execution.id, { state: execution.state, reason: execution.reason ?? null, text });
     return true;
+  },
+
+  /** Checkout §4: a paid order opens its NFS-e, an execution of its own that never moves the sale. */
+  followUp: async (execution, setup, say) => {
+    await followSale(execution, invoiceDeps(setup, say));
+  },
+  resumeFollowUps: async (setup, say) => {
+    for (const r of await resumeInvoices(invoiceDeps(setup, say))) say(`${r.id}: NFS-e of ${r.sale_execution_id} -> ${r.state}${r.reason ? ` (${r.reason}, ${r.code})` : ""}`);
   },
 
   /** Orders already paid by the same customer under this policy, so the velocity window has history. */
