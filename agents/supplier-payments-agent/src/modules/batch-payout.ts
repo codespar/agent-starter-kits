@@ -28,22 +28,31 @@
  *   one refusal does not stop the others  -> the loop `continue`s, never
  *                                            breaks, and never throws past
  *                                            the line it is on
- *   one attempt_id per call               -> the core derives it from each
- *                                            execution's own idempotency key
- *   repeating pays nobody twice           -> the per-line claim below
+ *   one attempt_id per call               -> the core derives it from the
+ *                                            line itself: mandate, batch_hash,
+ *                                            position (`batchAttemptId`)
+ *   repeating pays nobody twice           -> the per-line claim below, and
+ *                                            behind it the API's record of
+ *                                            that attempt id
  *   the approved list is bound as a set   -> `batch_hash`, and the set claim
  *                                            that refuses a run whose list
  *                                            changed after it was approved
  *
- * The claim is what survives a re-run. Execution ids are random, so a second
- * run of the same batch would mint fresh ids, fresh idempotency keys and
- * fresh attempt ids, and the rail's own idempotence — which is keyed on
- * `attempt_id` — would not recognise them. The claim pairs (mandate, batch,
- * line) with the execution that covers it, durably, and the rules for
- * reading one back are the same posture the enterprise money paths take: a
- * line whose execution SETTLED is done, a line whose execution is still open
- * is in progress and is never re-opened, and only a line whose execution
- * ended without moving money is retried.
+ * The claim is the first line of defence on a re-run, and it is local. The
+ * claim pairs (mandate, batch, line) with the execution that covers it,
+ * durably, and the rules for reading one back are the same posture the
+ * enterprise money paths take: a line whose execution SETTLED is done, a line
+ * whose execution is still open is in progress and is never re-opened, and
+ * only a line whose execution ended without moving money is retried.
+ *
+ * The second line is the API, and it holds wherever the batch runs. A batch
+ * line's attempt id and quote come from the line and not from the execution,
+ * so a run on a machine with no claim at all presents the attempt the API
+ * already holds, and the API answers it from its record (ent#1671): settled
+ * lines replay with their original receipt, a line still in flight stays open
+ * here, and only a line the provider refused is paid again, under the next
+ * generation of its id. OPEN_QUESTIONS §39c says what that does and does not
+ * cover.
  */
 import { batchHash, isTerminal, type BatchGesture, type Execution, type ExecutionItem, type ProposedItem, type ToolContext } from "@codespar/agent-core";
 import { batchTotal, formatBRL, type Batch, type PayableLine } from "../payables.js";

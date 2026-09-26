@@ -1,7 +1,9 @@
 /**
  * `codespar-agent resume [--json]`: after a crash or a restart. Executions
- * left in `executing` are reconciled against the rail (idempotent on
- * attempt_id), never repeated; stale open ones expire.
+ * left in `executing` are reconciled against the rail, never repeated: a
+ * lookup presents the same explicit attempt_id, which the API answers from
+ * its record of that attempt without paying again (ent#1671). Stale open
+ * ones expire.
  */
 import { stderr, stdout } from "node:process";
 import type { Execution } from "@codespar/agent-core";

@@ -2,8 +2,13 @@
  * The payment rail the core dispatches to once an execution is `executing`.
  * Two implementations: the CodeSpar sandbox through the API (needs a
  * `csk_test_` key) and a local stub persisted in state.db for CI and
- * scenarios. Both are idempotent on `attempt_id`: presenting the same
- * attempt again answers the earlier outcome instead of paying twice.
+ * scenarios. Idempotence is OPT-IN on the API and the core always opts in:
+ * every payment carries an explicit `attempt_id`, and presenting the same
+ * attempt again answers from the rail's record of it instead of paying twice
+ * (ent#1671): the original outcome when it settled, "still running" while it
+ * is in flight, "unknown, reconcile" while it is pinned, and a refusal when
+ * the same id arrives with a different payment. A payment sent WITHOUT an id
+ * is a new payment every time; nothing here sends one.
  */
 import type { SpendQuote } from "./quote.js";
 import type { Actor, ChargeInstrument } from "./types.js";
@@ -55,6 +60,13 @@ export type RailOutcome =
       status: "failed";
       code: string;
       message: string;
+      /**
+       * The rail holds this `attempt_id` as an attempt that failed and moved
+       * no money, and will refuse it for good (`psp_attempt_conflict`). Set
+       * only on that answer: the id is spent, and a batch line pays under the
+       * next generation of its id (`batchAttemptId`).
+       */
+      spent?: true;
       raw?: unknown;
     }
   | {

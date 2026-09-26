@@ -139,8 +139,11 @@ Looping costs you two things you must then handle yourself:
   DROPPED line is never read again, so it cannot be the thing that remembers
   the set.
 - **Re-running is yours to make safe.** Execution ids are random, so a second
-  call drafts new executions with new `attempt_id`s that the rail's own
-  idempotence cannot recognise. `ctx.engine.claim(key, executionId)` and
+  call drafts new executions. A batch line drafted with its `batch` binding
+  presents an attempt id derived from the line (`batchAttemptId`), which the
+  API recognises across runs and machines (OPEN_QUESTIONS §39c); anything
+  else presents an id of its own execution, which it does not. Either way the
+  local claim is the first line of defence. `ctx.engine.claim(key, executionId)` and
   `ctx.engine.claimed(key)` record which execution covers a line, durably.
   Take the claim BEFORE `ctx.onExecution`, never after: a crash in between
   then leaves a claim on an OPEN execution, which the next run can refuse to

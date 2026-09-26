@@ -18,15 +18,26 @@ export interface SpendQuote {
   resource: string;
   price_minor: number;
   payee: string;
-  /** When the offer was approved: the artifact's `approved_at`. */
-  at: string;
+  /**
+   * When the offer was approved: the artifact's `approved_at`. Absent on a
+   * batch line, whose quote must be the same on every run of the list: the
+   * API compares the quote's digest on a repeat of an `attempt_id`, so an
+   * approval time in it would make the same line a different payment on
+   * every machine (OPEN_QUESTIONS §39c). The time is still in the artifact.
+   */
+  at?: string;
 }
 
-/** The quote for line `index` of what was approved, or undefined when the artifact has no such line. */
-export function quoteFromApproval(artifact: ApprovalArtifact, index: number, purpose: string): SpendQuote | undefined {
+/**
+ * The quote for line `index` of what was approved, or undefined when the
+ * artifact has no such line. `stable` leaves the approval time out, for a
+ * batch line (see `SpendQuote.at`).
+ */
+export function quoteFromApproval(artifact: ApprovalArtifact, index: number, purpose: string, options: { stable?: boolean } = {}): SpendQuote | undefined {
   const item = artifact.items[index];
   if (!item) return undefined;
-  return { seller: item.beneficiary, resource: item.description ?? purpose, price_minor: item.amount, payee: item.payee, at: artifact.approved_at };
+  const quote = { seller: item.beneficiary, resource: item.description ?? purpose, price_minor: item.amount, payee: item.payee };
+  return options.stable ? quote : { ...quote, at: artifact.approved_at };
 }
 
 /** The quote a spend presents, or why it may not go out: none, or one that does not name exactly the amount and the payee it pays. */
