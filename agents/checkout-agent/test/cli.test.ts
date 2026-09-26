@@ -45,6 +45,7 @@ type Payload = {
   carts: Array<{ cart_id: string; cart_hash: string; total_minor: number }>;
   executions: Array<{ id: string; state: string; reason: string | null; payable?: boolean | null; cart_id: string | null; cart_hash: string | null; total_minor: number; due_date: string | null; charge_id: string | null; pix_copy_paste: string | null }>;
   receipts: string[];
+  invoices: Array<{ sale_execution_id: string; state: string; reason: string | null; attempts: number }>;
 };
 
 describe("npm start -- --input ... --json (the five-minute contract)", () => {
@@ -62,6 +63,8 @@ describe("npm start -- --input ... --json (the five-minute contract)", () => {
     expect(e!.cart_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(e!.charge_id).toMatch(/^chg_stub_/);
     expect(payload.receipts).toHaveLength(1);
+    // The paid order opened its NFS-e, a separate execution, and the stub issuer accepted it.
+    expect(payload.invoices).toEqual([expect.objectContaining({ sale_execution_id: e!.id, state: "accepted", reason: null, attempts: 1 })]);
     // The QR and the people go to stderr.
     expect(out.stderr).toContain("copia e cola");
   });
@@ -110,6 +113,9 @@ describe("section 10: restart after the issuance, then resume and poll", () => {
     expect(count(env, "SELECT COUNT(*) AS n FROM stub_rail_attempts")).toBe(1);
     expect(count(env, "SELECT COUNT(*) AS n FROM events WHERE type = 'commerce.charge.paid'")).toBe(1);
     expect(count(env, "SELECT COUNT(*) AS n FROM events WHERE type = 'message.debtor'")).toBe(1);
+    // The order settled in `poll`, and `poll` is where its NFS-e went out: once.
+    expect(count(env, "SELECT COUNT(*) AS n FROM events WHERE type = 'invoice.dispatch'")).toBe(1);
+    expect(count(env, "SELECT COUNT(*) AS n FROM outbox WHERE kind = 'nfse.issue' AND status = 'done'")).toBe(1);
     const runsDir = env["CHECKOUT_RUNS_DIR"]!;
     expect(readdirSync(runsDir).flatMap((d) => (existsSync(join(runsDir, d, "receipts")) ? readdirSync(join(runsDir, d, "receipts")) : []))).toHaveLength(1);
   });

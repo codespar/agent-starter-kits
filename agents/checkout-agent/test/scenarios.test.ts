@@ -17,9 +17,9 @@ const approvals = (run: ScenarioRun): Artifact[] => {
 const events = (run: ScenarioRun) => readFileSync(join(run.bundle_dir, "events.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; actor?: unknown; payload?: Record<string, unknown> });
 
 describe("checkout §6: scenario packs, on the replay provider and the stub rail", () => {
-  const required = ["happy-path", "cart-replaced", "cart-recomposed", "price-injected", "coupon-unknown", "payment-claimed", "item-unavailable", "escalated-above-threshold", "charge-expired", "cap-exceeded", "beneficiary-not-allowed", "mandate-revoked", "prompt-injection"];
+  const required = ["happy-path", "cart-replaced", "cart-recomposed", "price-injected", "coupon-unknown", "payment-claimed", "item-unavailable", "escalated-above-threshold", "charge-expired", "cap-exceeded", "beneficiary-not-allowed", "mandate-revoked", "prompt-injection", "nfse-failed"];
 
-  it("ships every scenario of checkout §6 but nfse-failed, which comes with the NFS-e execution", () => {
+  it("ships the fourteen scenarios of checkout §6", () => {
     for (const name of required) expect(listScenarios(agent)).toContain(name);
   });
 
