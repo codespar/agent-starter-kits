@@ -52,6 +52,45 @@ export interface ExecutionBatch {
   count: number;
 }
 
+/**
+ * One line of what an execution's amount is MADE OF, as the kit resolved it:
+ * a cart line (`ref` a SKU, a quantity, the unit price the catalog gave it)
+ * or a discount line (a negative `amount`). Only `compositionHash` reads it;
+ * the core never stores the lines, only their hash and their count.
+ */
+export interface CompositionLine {
+  ref: string;
+  quantity: number;
+  unit_amount: number;
+  amount: number;
+  currency: string;
+}
+
+/**
+ * What an execution's single amount was composed from, when it was composed
+ * from something: a sale is ONE charge, so ONE item whose amount is the
+ * order's total, and the lines of the cart behind that total are not items.
+ *
+ * That leaves the composition unattested by `items_hash`: two units at 100
+ * and one unit at 200 are the same item, the same amount, the same hash.
+ * `composition_hash` binds the lines — computed by the kit over the resolved
+ * lines in order, carried by the execution and by every artifact of it — so a
+ * cart recomposed at a constant total after approval is not the cart that was
+ * approved.
+ *
+ * Absent on an execution that is not composed from anything, and an artifact
+ * without it is the artifact of section 4.2 unchanged, byte for byte: the
+ * field is omitted rather than null, the same discipline as `batch`.
+ */
+export interface ExecutionComposition {
+  /** The kit's reference for what was composed (`cart_id`). */
+  ref: string;
+  /** `compositionHash` over the resolved lines, in order. */
+  composition_hash: string;
+  /** How many lines that hash covers. */
+  line_count: number;
+}
+
 /** The trigger of section 4.4 that sent a `mandate` execution to a human. */
 export type EscalationTrigger = "amount" | "new_beneficiary" | "outside_hours";
 
@@ -110,6 +149,8 @@ export interface ApprovalArtifact {
   items_hash: string;
   /** Present when this execution is one line of a batch: what binds the SET this line was approved inside. */
   batch?: ExecutionBatch;
+  /** Present when this execution's amount is composed of lines (a cart): what binds the composition that was approved. */
+  composition?: ExecutionComposition;
   /** Present when a section 4.4 trigger sent the execution to a human first. */
   escalation?: { trigger: EscalationTrigger; detail: string };
   actor: Actor;

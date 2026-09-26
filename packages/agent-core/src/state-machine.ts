@@ -6,7 +6,7 @@
  * does not compile; the runtime check below refuses the same pair when the
  * types were bypassed (a cast, a row read back from SQLite).
  */
-import type { Actor, ApprovalMode, EscalationTrigger, ExecutionBatch, ExecutionItem, ExecutionReason, ItemOutcome, MandateRef } from "./types.js";
+import type { Actor, ApprovalMode, EscalationTrigger, ExecutionBatch, ExecutionComposition, ExecutionItem, ExecutionReason, ItemOutcome, MandateRef } from "./types.js";
 
 export type ExecutionState =
   | "drafted"
@@ -78,6 +78,8 @@ export interface Execution<S extends ExecutionState = ExecutionState> {
   items_hash: string;
   /** Present when this execution is one line of a batch: the set it was presented inside, and where in it. */
   batch?: ExecutionBatch;
+  /** Present when this execution's amount is composed of lines (a cart): the lines' hash, not the lines. */
+  composition?: ExecutionComposition;
   mandate: MandateRef;
   /** Written once, before the rail is called. Retrying reuses it. */
   idempotency_key: string;

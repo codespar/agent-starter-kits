@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import type { ExecutionItem } from "./types.js";
+import type { CompositionLine, ExecutionItem } from "./types.js";
 
 /** JSON with keys sorted at every level, so the same value always hashes the same. */
 export function canonicalJson(value: unknown): string {
@@ -50,6 +50,27 @@ export function itemsHash(items: readonly ExecutionItem[]): string {
  */
 export function batchHash(lines: readonly ExecutionItem[]): string {
   return itemsHash(lines);
+}
+
+/**
+ * The hash of what an execution's amount is composed of (a cart's resolved
+ * lines, in order). The same canonicalisation as `itemsHash` — sorted-key
+ * JSON, SHA-256, the `sha256:` prefix — over the fields that decide a
+ * composition, and deliberately not `itemsHash` itself: its fields are the
+ * ones that decide where money goes (payee, amount, currency, due date), and
+ * none of them sees a quantity or a unit price. Ten units at a 10% discount
+ * and nine at list price are the same line amount; they are not the same
+ * sale. Order is part of it, like a batch.
+ */
+export function compositionHash(lines: readonly CompositionLine[]): string {
+  const canonical = lines.map((line) => ({
+    ref: line.ref,
+    quantity: line.quantity,
+    unit_amount: line.unit_amount,
+    amount: line.amount,
+    currency: line.currency,
+  }));
+  return `sha256:${sha256Hex(canonicalJson(canonical))}`;
 }
 
 export function hmacSha256Hex(key: Buffer, payload: string): string {
