@@ -73,7 +73,8 @@ Same code, same states, same receipts. Start with `human`, switch when you trust
 | Mandate revocation checked against the API before every payment (`bills-agent`) | Live in the sandbox |
 | Receipts sealed with HMAC | Proves the payment to whoever runs the agent |
 | Receipts also sealed with Ed25519 | Proves the payment to anybody: `npm run verify -- <receipt-file>`. Receipts sealed before the API added it carry none and never will |
-| Approval artifacts signed with a local dev key | Stub: the API does not sign approval lists yet |
+| The approved list's hash sealed into the receipt (chain v4) | Every spend carries the approval artifact's `items_hash` (and `batch_hash`); `npm run verify` recomputes the chain from the receipt read and holds that link against the artifact. Proves WHAT was approved, not who |
+| Approval artifacts signed with a local dev key | Stub: the API does not sign approval lists, so WHO approved is proved to whoever runs the agent only |
 
 Not here yet: a WhatsApp run against Meta itself (the adapter is written from the published documentation and this repo has never opened an account). Each agent's README lists its own stubs. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) tracks every place the code and the spec diverge.
 
@@ -87,15 +88,17 @@ A receipt carries two, and they prove different things to different people.
 | `receipt_sig_ed25519` | Ed25519 under CodeSpar's platform issuer key | Anybody. The public keys are served with no credential at [`/.well-known/codespar-receipt-keys.json`](https://api.codespar.dev/.well-known/codespar-receipt-keys.json) | `npm run verify -- <receipt-file>`, or twenty lines of `node:crypto` |
 
 ```sh
-npm run verify -- runs/<run-id>/receipts/<receipt-id>.json        # fetches the public keys over HTTPS
-npm run verify -- receipt.json --keys codespar-receipt-keys.json # a saved copy: no network at all
+npm run verify -- receipt-read.json --approval approval.json      # the API's read: signature, body and approved list, no credential
+npm run verify -- runs/<run-id>/receipts/<receipt-id>.json        # a run's masked copy: the signature only
+npm run verify -- runs/<run-id>/receipts/<receipt-id>.json --from-api  # the copy, bound through the API's read (the tenant's key; nothing written)
+npm run verify -- receipt.json --keys codespar-receipt-keys.json # a saved copy of the key set: no network at all
 npm run verify -- receipt.json --json                            # the verdict as JSON on stdout, the sentence on stderr
 npm run verify -- receipt.json --url https://api.staging.codespar.dev/.well-known/codespar-receipt-keys.json
 ```
 
-The signature covers `codespar-receipt:v1:<receipt_id>:<chain>` and nothing else, so it survives the bundle's masking: a receipt copied off the machine that produced it still verifies, with no key, no API key and no CodeSpar call that could be refused. The answers are kept apart on purpose — `verified`, `tampered`, `unsigned` (sealed before the capability existed, which is not a failure), `unknown_key`, `unreachable` (unknown, never "invalid") and `malformed` — and each has its own exit code. The verifier is [`packages/agent-core/src/receipt-verification.ts`](packages/agent-core/src/receipt-verification.ts): `node:crypto` and nothing else, no SDK, no key material.
+The signature covers `codespar-receipt:v1:<receipt_id>:<chain>` and nothing else, so it survives the bundle's masking: a receipt copied off the machine that produced it still verifies, with no key, no API key and no CodeSpar call that could be refused. The body is another matter. The chain is a digest of the receipt's links (mandate, quote with the payee, approval, payment), and the key document publishes how to recompute it (`chain_recipe`). From the API's receipt read, `verify` recomputes it, holds it against the signed chain, and for a v4 receipt holds the sealed approval hashes against the approval artifact: that is "this payment was made against the list H". The bundle's copy masks the payee the chain sealed, so it proves the signature only, unless `--from-api` reads the unmasked receipt from the API at verify time. The answers are kept apart on purpose — `verified` (signature, body and, when an artifact is given, approval), `signature_only` (the body could not be bound: a masked copy, a v1–v3 chain, no recipe; not a failure), `chain_mismatch`, `approval_mismatch`, `tampered`, `unsigned` (sealed before the capability existed, which is not a failure), `unknown_key`, `unreachable` (unknown, never "invalid") and `malformed` — and each has its own exit code. The verifier is [`packages/agent-core/src/receipt-verification.ts`](packages/agent-core/src/receipt-verification.ts) and [`receipt-chain.ts`](packages/agent-core/src/receipt-chain.ts): `node:crypto` and nothing else, RFC 8785 included, no SDK, no key material.
 
-Point it at the deployment that sealed the receipt. The default is production; a receipt sealed by another deployment needs its `--url`, because every deployment publishes its own key under the same `kid` and a receipt checked against the wrong set reads `tampered`. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §47 has the measurement and the ask.
+Point it at the deployment that sealed the receipt. The default is production; a receipt sealed by another deployment needs its `--url` (with `--from-api`, the key set defaults to the API's own deployment). The recipe is read from the same document whose key verified the signature. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §47 has the measurements and the decisions, §3 what the approval link does and does not prove.
 
 The kits use Pix and bolepix. The CodeSpar API also settles USDC over x402; see the [docs](https://codespar.dev/docs).
 

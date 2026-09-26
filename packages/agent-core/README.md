@@ -21,6 +21,10 @@ This package is the decisions. The RUNNER around them — the terminal channel, 
 
 `checkApprovalArtifact` compares both, and the last gate sends a mismatch back to `awaiting_approval` with `items_hash_mismatch`, like a changed list. `ExecutionEngine.restate()` is how an OPEN execution (`awaiting_approval`, `approved`) follows the proposal behind it — a customer who changes the cart after the order was approved — without a transition: items, total, `items_hash` and composition are replaced, the state, the artifact and the idempotency key are kept, and the last gate does the refusing. The payees of a restatement cannot change.
 
+## What of the artifact reaches the receipt
+
+Every spend carries `approval: { items_hash, batch_hash? }`, the artifact's own hashes (`spendApprovalOf`), and the API seals them into the receipt's chain as a link of their own (chain v4, ent#1670). Both rails refuse a spend without them before any call. `composition` is not sent: the API takes the two hashes and nothing else, and only charges carry a composition today. `receipt-chain.ts` recomputes a chain from the receipt read under the `chain_recipe` the key document publishes (RFC 8785 implemented locally, `node:crypto` only), and `verifyReceiptRead` holds the signature, the body and the sealed approval link against the artifact, in that order. It proves WHAT was approved to anybody holding the read; WHO approved stays in the artifact, under the local key. `docs/OPEN_QUESTIONS.md` §3 and §47.
+
 ## Reconcile never re-dispatches
 
 An execution left in `executing` is looked up on the rail, attempt by attempt. A recorded settled or failed outcome closes it; `in_flight`, `uncertain` or unknown leaves it in `executing` with `reason: rail_uncertain` for a human. The single exception is an outbox row still `pending` (the state changed, no call was ever made): those attempts go out once, under the same ids.

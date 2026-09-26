@@ -58,7 +58,8 @@ CodeSpar agent.
 8. **No overclaims, no telemetry.** "Verifiable by a third party" is true of
    one thing here — the Ed25519 signature CodeSpar seals onto a payment
    receipt, which `npm run verify` checks against the published key set — and
-   false of everything else: the approval artifact, a paid charge, and every
+   false of everything else: the approval artifact (only its hash, sealed
+   into a v4 payment receipt, reaches a third party), a paid charge, and every
    receipt sealed before the API had the capability. `check` fails on the
    phrase unless the doc also names `Ed25519`. Nothing phones home.
 
