@@ -4,13 +4,14 @@
 
 Agents that move money under a mandate. The person signs the limits once (cap per payment, cap per month, named payees, expiry), the agent proposes payments, and deterministic code decides what actually runs. Every payment ends in an approval record and a receipt.
 
-Three agents ship today, all in TypeScript, all running against the CodeSpar sandbox:
+Four agents ship today, all in TypeScript, all running against the CodeSpar sandbox:
 
 - **[`bills-agent`](agents/bills-agent)** pays a household's monthly bills (school, cleaner, utilities) over Pix.
 - **[`collections-agent`](agents/collections-agent)** is the merchant side: it agrees payment terms with a customer, issues a bolepix per instalment and closes the loop when the charge is paid. It is also the one with a second channel: WhatsApp, run against a [local Cloud API emulator](agents/collections-agent#the-whatsapp-channel) that needs no account.
 - **[`supplier-payments-agent`](agents/supplier-payments-agent)** is the company side: suppliers, sales commissions and payroll, paid in batches. A batch is a loop of executions, one per line, so a refusal on one payee does not stop the others and re-running it pays nobody twice.
+- **[`checkout-agent`](agents/checkout-agent)** sells in the conversation: the customer builds a cart, the code prices it from the catalog, the attendant (or a price and discount policy) confirms the order, and one bolepix is issued when the customer asks to pay. The cart's composition is bound to the approval, so a cart changed after the order was confirmed goes back to the attendant, even at the same total.
 
-A fourth, **[`hello-agent`](agents/hello-agent)**, is the worked example the [`codespar-agent-builder`](skills/codespar-agent-builder) skill builds: read-only, 300 lines, no payment tool at all.
+A fifth, **[`hello-agent`](agents/hello-agent)**, is the worked example the [`codespar-agent-builder`](skills/codespar-agent-builder) skill builds: read-only, 300 lines, no payment tool at all.
 
 ## Quickstart: clone to first receipt
 
@@ -68,6 +69,7 @@ Same code, same states, same receipts. Start with `human`, switch when you trust
 | WhatsApp as a channel (`collections-agent`) | Against [`dyvit-wa-sim`](https://github.com/fabianocruz/whatsapp-simulator), a local Cloud API emulator: no Meta account, no credential. The CI closes the cycle three times from zero on it |
 | WhatsApp through Meta's Cloud API | The same backend, one base URL away. Credentials absent by default; never run against Meta from this repo |
 | Batch payouts, one execution per line (`supplier-payments-agent`) | Sandbox |
+| A cart priced by code, sold under a price and discount policy, charged by bolepix (`checkout-agent`) | Sandbox |
 | Mandate revocation checked against the API before every payment (`bills-agent`) | Live in the sandbox |
 | Receipts sealed with HMAC | Proves the payment to whoever runs the agent |
 | Receipts also sealed with Ed25519 | Proves the payment to anybody: `npm run verify -- <receipt-file>`. Receipts sealed before the API added it carry none and never will |
@@ -119,6 +121,7 @@ The repo is also the `codespar-core` plugin: the CodeSpar MCP server (pinned at 
 | [`agents/bills-agent`](agents/bills-agent) | Pays bills under a mandate. |
 | [`agents/collections-agent`](agents/collections-agent) | Collects from customers inside a negotiation envelope. |
 | [`agents/supplier-payments-agent`](agents/supplier-payments-agent) | Pays suppliers, commissions and payroll in batches, under one mandate. |
+| [`agents/checkout-agent`](agents/checkout-agent) | Sells from a catalog in the conversation: a cart the code prices, an order the attendant or the policy confirms, one bolepix per order. |
 | [`agents/hello-agent`](agents/hello-agent) | The read-only worked example: the smallest agent the runtime can carry. |
 | [`skills/codespar-agent-builder`](skills/codespar-agent-builder) | The skill for adding a new agent. |
 | [`docs/spec-v5.1.1.md`](docs/spec-v5.1.1.md) | The spec this code was built against. |
