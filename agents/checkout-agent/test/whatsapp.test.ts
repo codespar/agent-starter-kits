@@ -47,6 +47,8 @@ function start(args: string[], extra: Record<string, string> = {}) {
       WHATSAPP_APP_SECRET: "",
       CHECKOUT_STATE_DIR: stateDir,
       CHECKOUT_RUNS_DIR: join(stateDir, "runs"),
+      // A conversation of its own on the emulator (#42): no case inherits another's inbound messages, or the window they anchor.
+      WHATSAPP_SIM_PHONE_NUMBER_ID: `9${String(Math.floor(Math.random() * 1e11)).padStart(11, "0")}`,
       ...extra,
     },
     encoding: "utf8",
