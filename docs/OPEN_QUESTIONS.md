@@ -993,3 +993,19 @@ a. **The conversation decides who is charged.** On the terminal the customer is 
 b. **No hours rule on this channel.** The collections-agent's channel refuses to speak outside `collection_hours` because the law sets collection hours. The runner reads that key only. A store's `service_hours` are the envelope's, refused at every gate in both modes (§5 of the agent's README); the agent may still say "fora do horário" in the conversation.
 
 c. **The subject is the customer alias.** The channel's subject rule then refuses a message in one customer's conversation that names another's alias. Checkout has two conversations, so the rule has something to refuse.
+
+## 63. The timed flow of checkout §8 on staging: not measured, and why
+
+Checkout §8 times the sale on staging: conversation to payable QR, then to `settled`, then the NFS-e. It was **not measured** in this build. The environment the lane ran in has no `csk_test_` key (no `CODESPAR_API_KEY` in the environment, no `.env` in any lane directory), and the key for the kits' staging organization is held by the owner and was not handed to a lane. Nothing in the code stands in the way. The charge path is the collections-agent's, which measured 10 s from issuance to `settled` on staging (§22), and the NFS-e path is the one §61 describes. The run, once a key is in the shell, is one command from the repository root:
+
+```sh
+CODESPAR_API_URL=https://api.staging.codespar.dev \
+  npm start --workspace=agents/checkout-agent -- --scenario happy-path --mode human --rail api --wait 120 --json
+```
+
+What to read off it:
+
+- **Emission to payable and to `settled`.** `cycle_seconds` in the scenario's JSON is the time from issuance to `settled`, and the scenario asserts `max_cycle_seconds: 40`. The bundle's events carry the create, the first payable look, the payer's call and the `settled` transition.
+- **The NFS-e.** It shows in the same bundle: `invoice.opened`, `invoice.dispatch` and `invoice.outcome`. The `accepted` / `refused` / `uncertain` it records closes §61. Under §58's reading, `uncertain` is what a nfe.io refusal will look like until ent#1675 lands.
+
+The same run with `--mode mandate` is the policy-approved version. The numbers belong in this entry, and the README's badge waits for them.
