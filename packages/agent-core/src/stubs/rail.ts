@@ -130,13 +130,13 @@ export class StubRail implements PaymentRail {
   private repeat(attemptId: string, recorded: Omit<RailPayment, "actor">, outcome: Recorded, asked: Omit<RailPayment, "actor">): RailOutcome {
     const mismatched = mismatchedFields(recorded, asked);
     if (mismatched.length > 0) {
-      return { status: "failed", code: "attempt_id_conflict", message: `stub: attempt ${attemptId} was already used for a different payment (differs in: ${mismatched.join(", ")}); nothing was held or sent` };
+      return { status: "failed", code: "attempt_id_conflict", message: `stub: attempt ${attemptId} was already used for a different payment (differs in: ${mismatched.join(", ")}); nothing was held or sent`, held: "conflict" };
     }
     switch (outcome.status) {
       case "in_flight":
         return { status: "uncertain", code: "psp_attempt_in_flight", message: `stub: attempt ${attemptId} is claimed and its outcome is not yet recorded` };
       case "settled":
-        return { ...outcome, raw: { ...(outcome.raw as Record<string, unknown>), idempotent_replay: true } };
+        return { ...outcome, replayed: true, raw: { ...(outcome.raw as Record<string, unknown>), idempotent_replay: true } };
       case "failed":
         return { status: "failed", code: "psp_attempt_conflict", message: `stub: attempt ${attemptId} already failed and moved no money; use a fresh attempt_id`, spent: true };
       default:
