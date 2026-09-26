@@ -43,6 +43,7 @@ jobs:
           npm run eval --workspace=agents/collections-agent
           npm run eval --workspace=agents/hello-agent
           npm run eval --workspace=agents/supplier-payments-agent
+          npm run eval --workspace=agents/checkout-agent
       # Section 12: one row per scenario per mode, every agent, discovered from
       # `agents/*/agent.yaml` rather than listed — a fourth agent is in the
       # matrix the day it lands. The gate is the FINAL STATE the scenario
@@ -93,6 +94,14 @@ jobs:
           node -e 'const o=JSON.parse(require("fs").readFileSync("/tmp/batch1.json","utf8")); if(o.executions.length!==3||o.executions.some(e=>e.state!=="settled")||o.settled_minor!==540000||o.receipts.length!==3||!o.actor) process.exit(1)'
           npm start --silent -- --input "roda a folha de outubro" --transcript scenarios/happy-path.transcript.jsonl --approve --json --now 2026-09-23T14:00:00-03:00 > /tmp/batch2.json
           node -e 'const o=JSON.parse(require("fs").readFileSync("/tmp/batch2.json","utf8")); if(o.executions.length!==0||o.settled_minor!==0||o.receipts.length!==0) process.exit(1)'
+
+      # The sale in one command: the cart, the order, the charge and the payment, with the fields the --json contract names.
+      - name: the sale closes in one command (stub rail, fixture payer, pinned clock)
+        run: |
+          cd agents/checkout-agent
+          export CHECKOUT_STATE_DIR=/tmp/checkout-state CHECKOUT_RUNS_DIR=/tmp/checkout-runs
+          npm start --silent -- --input "oi, sou a Marina, quero duas aulas avulsas, fecha e gera o pagamento" --transcript test/fixtures/order-marina.transcript.jsonl --approve --simulate-payer --json --now 2026-09-23T14:00:00-03:00 > /tmp/checkout.json
+          node -e 'const o=JSON.parse(require("fs").readFileSync("/tmp/checkout.json","utf8")); const e=o.executions[0]; if(o.executions.length!==1||e.state!=="settled"||e.cart_id!=="cart-1"||!/^sha256:/.test(e.cart_hash)||e.total_minor!==20000||!e.charge_id||o.receipts.length!==1||!o.actor) process.exit(1)'
 
       - name: tests (core + agent, including restart and rerun)
         run: npm test

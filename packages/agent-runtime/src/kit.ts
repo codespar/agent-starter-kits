@@ -157,8 +157,19 @@ export interface AgentKit {
   usage(manifest: LoadedManifest): string;
   buildRail(ctx: RailContext): RailBuild;
   handlers(setup: Setup): Record<string, ToolHandler>;
-  /** The deterministic policy the core runs as its `policyExtension`. */
-  policyExtension?(ctx: { agentDir: string; manifest: LoadedManifest; guardrails: Guardrails }): PolicyExtension | undefined;
+  /**
+   * Whether the channel dispatches an execution the moment it is approved.
+   * Default true. False when approving and issuing are two moments of the
+   * agent's own flow — a sale: the attendant (or the policy) confirms the
+   * order, and the charge goes out when the customer asks for it. The
+   * approved execution then waits, and the agent's own tool hands it to
+   * `engine.execute`, which runs the last gate like any other caller: a cart
+   * changed in between is caught there. An approved execution nobody issues
+   * expires on the approval TTL.
+   */
+  executeOnApproval?: boolean;
+  /** The deterministic policy the core runs as its `policyExtension`. `store` is the run's state.db, for a policy that judges durable state of the agent's own (a cart). */
+  policyExtension?(ctx: { agentDir: string; manifest: LoadedManifest; guardrails: Guardrails; store: StateStore }): PolicyExtension | undefined;
   /** The console lines that describe one execution. */
   describeExecution(execution: Execution, setup: Setup): string[];
   /** The `--json` body of a one-shot. */

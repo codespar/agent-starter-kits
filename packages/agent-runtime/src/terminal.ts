@@ -92,7 +92,8 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
     say(`  -> ${current.state}${current.reason ? ` (${current.reason})` : ""}`);
   }
 
-  if (current.state === "approved") {
+  // An agent that issues on request (`executeOnApproval: false`) leaves the approved execution for its own tool to issue.
+  if (current.state === "approved" && setup.kit.executeOnApproval !== false) {
     current = await engine.execute(current.id);
     say(`  -> ${current.state}${current.reason ? ` (${current.reason})` : ""}`);
     if (setup.settlement === "immediate") {
