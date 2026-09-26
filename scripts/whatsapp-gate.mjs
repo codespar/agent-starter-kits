@@ -221,11 +221,11 @@ async function runWindowCase(mode, { agentNow = NOW_AFTER_WINDOW, check = checkW
  * straight to its Graph surface. On 0.2.0 it is 400/131047 and nothing is
  * recorded, so the probe leaves the conversation as it found it.
  */
-async function providerRefusesFreeForm() {
+async function providerRefusesFreeForm(contact = CONTACT) {
   const response = await fetch(`${EMULATOR}/v22.0/${PHONE_NUMBER_ID}/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: CONTACT.replace(/^\+/, ""), type: "text", text: { preview_url: false, body: "sonda da janela" } }),
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: contact.replace(/^\+/, ""), type: "text", text: { preview_url: false, body: "sonda da janela" } }),
     signal: AbortSignal.timeout(5000),
   }).catch((err) => ({ status: 0, json: async () => ({ detail: String(err) }) }));
   const body = await response.json().catch(() => ({}));
@@ -239,7 +239,7 @@ async function providerRefusesFreeForm() {
  * because the window is shut, and (probed above) the only carrier the
  * provider would have taken.
  */
-function checkWindow(payload, conversation, exit) {
+function checkWindow(payload, conversation, exit, { template = "acordo_quitado", contact = CONTACT } = {}) {
   const failures = [];
   if (exit !== 0) failures.push(`poll exited ${exit}, expected 0`);
   const polled = payload.polled ?? [];
@@ -260,14 +260,14 @@ function checkWindow(payload, conversation, exit) {
   if (!last || last.kind !== "template") failures.push(`the last message of the conversation is a ${last?.kind}, expected the template that closes it`);
   if (last?.refused) failures.push(`the confirmation was refused: ${last.refused.rule}`);
   if (!String(last?.message_id ?? "").startsWith("wamid.")) failures.push("the confirmation carries no wamid: it did not go through the provider's surface");
-  if (!/acordo_quitado/.test(String(last?.text ?? ""))) failures.push(`the template sent was ${last?.text}, expected acordo_quitado`);
+  if (!String(last?.text ?? "").includes(template)) failures.push(`the template sent was ${last?.text}, expected ${template}`);
   // `payload.channel` is the POLL's own view — the lines this second process
   // put on the channel, not the whole file — so it is where "nothing else
   // went out once the window had shut" is actually decidable.
   if ((payload.channel?.messages_out ?? 0) !== 1) failures.push(`the poll sent ${payload.channel?.messages_out} message(s) with the window shut, expected 1`);
   if ((payload.channel?.refused ?? []).length) failures.push(`the poll had ${payload.channel.refused.length} message(s) refused: ${payload.channel.refused.map((r) => r.rule).join(", ")}`);
   if (payload.channel?.session_open !== false) failures.push("the poll reports the window open");
-  failures.push(...discretionFailures(conversation));
+  failures.push(...discretionFailures(conversation, contact));
   return failures;
 }
 
@@ -359,15 +359,105 @@ function check(payload, conversation) {
  * message carries a document. Belt and braces over rules the channel already
  * enforces — a gate that only checks what the code checks proves nothing.
  */
-function discretionFailures(conversation) {
+function discretionFailures(conversation, contact = CONTACT) {
   const failures = [];
-  if (conversation.some((l) => String(l.contact ?? "").includes("987654321"))) failures.push("the conversation log carries the contact in the clear");
+  const digits = contact.replace(/^\+55\d{2}/, "");
+  if (conversation.some((l) => String(l.contact ?? "").includes(digits))) failures.push("the conversation log carries the contact in the clear");
   for (const line of conversation.filter((l) => l.direction === "out")) {
     if (line.kind === "instrument") continue;
     const tokens = String(line.text ?? "").split(/\s+/).map((t) => t.replace(/^[^0-9]+|[^0-9]+$/g, ""));
     if (tokens.some((t) => /^\d{11}$/.test(t) || /^\d{14}$/.test(t))) failures.push(`a message carries something shaped like a document: ${String(line.text).slice(0, 40)}`);
   }
   return failures;
+}
+
+/**
+ * The checkout-agent over the same channel (checkout decision 6): the sale
+ * the terminal runbook shows, from a clean state three times, and the
+ * ordered-tonight-paid-tomorrow case across a shut window. The customer's
+ * turns come from `pedido-marina`, the model from the recorded happy path,
+ * the rail and the issuer are stubs. What passes is the final state and the
+ * shape of the conversation, as above: the order settled, one charge, one
+ * paid record, the NFS-e that follows it accepted, the QR followed by the
+ * copy-and-paste, "pedido confirmado" said, no document in any message.
+ */
+const CHECKOUT = join(ROOT, "agents/checkout-agent");
+const CHECKOUT_CONVERSATION = "pedido-marina";
+const CHECKOUT_START = ["start", "--agent", CHECKOUT, "--channel", "whatsapp", "--conversation", CHECKOUT_CONVERSATION, "--scripted"];
+const CHECKOUT_CONTACT = JSON.parse(readFileSync(join(CHECKOUT, `channels/whatsapp/${CHECKOUT_CONVERSATION}.json`), "utf8")).contact;
+/** Issued tonight and not yet paid: the recording that ends with the charge out, not with "pedido confirmado". */
+const ORDERED_TRANSCRIPT = join(CHECKOUT, "test/fixtures/ordered-marina-awaiting-payer.transcript.jsonl");
+
+function runCheckoutOnce(index, mode) {
+  const state = mkdtempSync(join(tmpdir(), `wa-gate-checkout-state-${index}-`));
+  const runs = mkdtempSync(join(tmpdir(), `wa-gate-checkout-runs-${index}-`));
+  try {
+    const result = agent([...CHECKOUT_START, "--mode", mode, ...(mode === "human" ? ["--approve"] : []), "--simulate-payer", "--now", NOW, "--json"], { CHECKOUT_STATE_DIR: state, CHECKOUT_RUNS_DIR: runs });
+    const { payload, failure } = payloadOf(result);
+    if (failure) return { failures: [failure] };
+    const conversation = conversationOf(payload.channel?.log);
+    return { payload, conversation, failures: checkCheckout(payload, conversation) };
+  } finally {
+    rmSync(state, { recursive: true, force: true });
+    rmSync(runs, { recursive: true, force: true });
+  }
+}
+
+function checkCheckout(payload, conversation) {
+  const failures = [];
+  const executions = payload.executions ?? [];
+  if (JSON.stringify(executions.map((e) => e.state)) !== JSON.stringify(["settled"])) failures.push(`states ${JSON.stringify(executions.map((e) => e.state))} != ["settled"]`);
+  if (!executions[0]?.charge_id) failures.push("no charge id on the order");
+  if (!/^sha256:/.test(String(executions[0]?.cart_hash ?? ""))) failures.push("the order carries no cart_hash");
+  if ((payload.receipts ?? []).length !== 1) failures.push(`${(payload.receipts ?? []).length} paid record(s), expected 1`);
+  const invoices = payload.invoices ?? [];
+  if (invoices.length !== 1 || invoices[0].state !== "accepted") failures.push(`the NFS-e that follows the sale is ${JSON.stringify(invoices.map((i) => i.state))}, expected ["accepted"]`);
+  if (!payload.actor) failures.push("no actor on the payload");
+  const channel = payload.channel ?? {};
+  if (channel.backend !== "emulator") failures.push(`backend ${channel.backend} != emulator`);
+  const unexpected = (channel.refused ?? []).map((r) => r.rule).filter((rule) => rule !== "media_upload_unimplemented");
+  if (unexpected.length) failures.push(`the channel refused ${unexpected.length} message(s): ${unexpected.join(", ")}`);
+  const inbound = conversation.filter((l) => l.direction === "in");
+  const outbound = conversation.filter((l) => l.direction === "out");
+  if (inbound.length !== 2) failures.push(`${inbound.length} inbound message(s), expected the conversation's 2`);
+  const delivered = outbound.filter((l) => !l.refused);
+  const noId = delivered.filter((l) => !String(l.message_id ?? "").startsWith("wamid."));
+  if (noId.length) failures.push(`${noId.length} message(s) carry no wamid from the provider`);
+  const qr = outbound.findIndex((l) => l.kind === "media");
+  if (qr < 0) failures.push("the QR was never attempted");
+  else if (outbound[qr + 1]?.kind !== "instrument") failures.push("the message after the QR is not the copy-and-paste");
+  const copyPaste = outbound.filter((l) => l.kind === "instrument" && String(l.text ?? "").startsWith("00020126"));
+  if (copyPaste.length !== 1) failures.push(`${copyPaste.length} Pix copy-and-paste message(s), expected 1`);
+  if (!outbound.some((l) => l.kind === "text" && /pedido confirmado/i.test(String(l.text ?? "")))) failures.push("the customer was never told the order was confirmed");
+  if (outbound.some((l) => /nota fiscal|nfs-e/i.test(String(l.text ?? "")))) failures.push("the customer was told about the invoice, which is the attendant's");
+  failures.push(...discretionFailures(conversation, CHECKOUT_CONTACT));
+  return failures;
+}
+
+/** Ordered tonight, paid tomorrow: two processes over one state, the conversation's clock moved 26 hours between them. */
+async function runCheckoutWindow(mode) {
+  const state = mkdtempSync(join(tmpdir(), "wa-gate-checkout-window-"));
+  const runs = mkdtempSync(join(tmpdir(), "wa-gate-checkout-window-runs-"));
+  const env = { CHECKOUT_STATE_DIR: state, CHECKOUT_RUNS_DIR: runs };
+  try {
+    const ordered = agent([...CHECKOUT_START, "--mode", mode, ...(mode === "human" ? ["--approve"] : []), "--transcript", ORDERED_TRANSCRIPT, "--now", NOW, "--json"], { ...env, CHECKOUT_STUB_PAYER: "never" });
+    const first = payloadOf(ordered);
+    if (first.failure) return { failures: [`order: ${first.failure}`] };
+    const failures = [];
+    if (first.payload.executions?.[0]?.state !== "executing") failures.push(`after ordering the execution is ${first.payload.executions?.[0]?.state}, expected executing (nobody has paid yet)`);
+    if (conversationOf(first.payload.channel?.log).some((l) => l.direction === "out" && /pedido confirmado/i.test(String(l.text ?? "")))) failures.push("the customer was told the order was confirmed before anybody paid");
+    const moved = await fetch(`${EMULATOR}/_sim/clock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ advance_hours: WINDOW_ADVANCE_HOURS }), signal: AbortSignal.timeout(5000) }).catch((err) => ({ ok: false, detail: String(err) }));
+    if (!moved.ok) return { failures: [...failures, `could not move the emulator clock: ${moved.detail ?? moved.status}`] };
+    failures.push(...(await providerRefusesFreeForm(CHECKOUT_CONTACT)));
+    const polled = agent(["poll", "--agent", CHECKOUT, "--channel", "whatsapp", "--conversation", CHECKOUT_CONVERSATION, "--simulate-payer", "--now", NOW_AFTER_WINDOW, "--json"], env);
+    const second = payloadOf(polled);
+    if (second.failure) return { failures: [...failures, `poll: ${second.failure}`] };
+    const conversation = conversationOf(second.payload.channel?.log);
+    return { payload: second.payload, conversation, failures: [...failures, ...checkWindow(second.payload, conversation, polled.status, { template: "pedido_confirmado", contact: CHECKOUT_CONTACT })] };
+  } finally {
+    rmSync(state, { recursive: true, force: true });
+    rmSync(runs, { recursive: true, force: true });
+  }
 }
 
 /** The emulator is a separate process and the gate does not start one: a gate that silently ran against nothing would pass. */
@@ -476,9 +566,38 @@ async function main(argv) {
     }`,
   );
 
+  // The checkout-agent: the same channel, a sale instead of a debt.
   say("");
-  say(failed ? `whatsapp gate FAILED: ${failed} finding(s) over ${rows.length + 2} run(s)` : `whatsapp gate ok: ${rows.length} run(s) from zero plus the window run and the clocks-apart run, no intervention, same final state every time`);
-  if (json) process.stdout.write(JSON.stringify({ ok: failed === 0, mode, runs: rows, window: windowRow, clocks_apart: apartRow }) + "\n");
+  say(`whatsapp gate: ${total} run(s) of checkout-agent over dyvit-wa-sim, conversation ${CHECKOUT_CONVERSATION}, approval: ${mode}`);
+  const checkoutRows = [];
+  for (let i = 1; i <= total; i += 1) {
+    const { payload, conversation, failures } = runCheckoutOnce(i, mode);
+    if (failures.length) failed += 1;
+    const row = { run: i, ok: failures.length === 0, failures, state: payload?.executions?.[0]?.state ?? null, charge_id: payload?.executions?.[0]?.charge_id ?? null, invoice: payload?.invoices?.[0]?.state ?? null, receipts: (payload?.receipts ?? []).length, messages_in: conversation?.filter((l) => l.direction === "in").length ?? 0, messages_out: conversation?.filter((l) => l.direction === "out").length ?? 0 };
+    checkoutRows.push(row);
+    say(`${row.ok ? "ok  " : "FAIL"} run ${i}/${total} — ${row.state ?? "?"}, NFS-e ${row.invoice ?? "?"}, ${row.receipts} record(s), ${row.messages_in} in / ${row.messages_out} out${failures.length ? ` — ${failures.join("; ")}` : ""}`);
+  }
+  const checkoutShapes = new Set(checkoutRows.map((r) => JSON.stringify([r.state, r.invoice, r.receipts, r.messages_in, r.messages_out])));
+  if (checkoutRows.length > 1 && checkoutShapes.size !== 1) {
+    failed += 1;
+    say(`FAIL the ${checkoutRows.length} checkout runs did not agree: ${[...checkoutShapes].join(" vs ")}`);
+  }
+  const checkoutIds = checkoutRows.map((r) => r.charge_id).filter(Boolean);
+  if (checkoutIds.length > 1 && new Set(checkoutIds).size !== checkoutIds.length) {
+    failed += 1;
+    say("FAIL two checkout runs shared a charge id, so one of them was not from zero");
+  }
+  say("");
+  say(`whatsapp gate, checkout janela: pedido agora, pagamento ${WINDOW_ADVANCE_HOURS}h depois`);
+  const checkoutWindow = await runCheckoutWindow(mode);
+  if (checkoutWindow.failures.length) failed += 1;
+  const checkoutWindowRow = { run: "window", ok: checkoutWindow.failures.length === 0, failures: checkoutWindow.failures, state: checkoutWindow.payload?.polled?.[0]?.state ?? null, carrier: checkoutWindow.payload?.polled?.[0]?.delivery?.carrier ?? null, template: checkoutWindow.payload?.polled?.[0]?.delivery?.template ?? null };
+  say(`${checkoutWindowRow.ok ? "ok  " : "FAIL"} run janela — ${checkoutWindowRow.state ?? "?"}, avisado por ${checkoutWindowRow.carrier ?? "?"} ${checkoutWindowRow.template ?? ""}${checkoutWindow.failures.length ? ` — ${checkoutWindow.failures.join("; ")}` : ""}`);
+
+  say("");
+  const allRuns = rows.length + 2 + checkoutRows.length + 1;
+  say(failed ? `whatsapp gate FAILED: ${failed} finding(s) over ${allRuns} run(s)` : `whatsapp gate ok: ${rows.length} collections run(s) from zero plus the window run and the clocks-apart run, and ${checkoutRows.length} checkout run(s) from zero plus its window run, no intervention, same final state every time`);
+  if (json) process.stdout.write(JSON.stringify({ ok: failed === 0, mode, runs: rows, window: windowRow, clocks_apart: apartRow, checkout: { runs: checkoutRows, window: checkoutWindowRow } }) + "\n");
   return failed === 0 ? 0 : 1;
 }
 
