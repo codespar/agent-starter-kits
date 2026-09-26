@@ -1,0 +1,23 @@
+{
+  "channel": "whatsapp",
+  "templates": [
+    {
+      "name": "pedido_confirmado",
+      "language": "pt_BR",
+      "description": "The order's charge was paid, told outside the 24-hour window: the customer ordered in the evening and paid the next day, and by then this is the only message WhatsApp will carry. {{1}} is the order's total as the code computed it.",
+      "body": "Oi! Recebemos o pagamento do seu pedido de {{1}}. Pedido confirmado, obrigado!"
+    },
+    {
+      "name": "pedido_cobranca_vencida",
+      "language": "pt_BR",
+      "description": "The order's charge reached its due date unpaid. It has to be its own template: a customer whose charge expired must not be told the order is confirmed. {{1}} is the order's total.",
+      "body": "Oi! A cobranca do seu pedido de {{1}} venceu sem pagamento. Se quiser, emito uma nova por aqui."
+    },
+    {
+      "name": "pedido_cobranca_cancelada",
+      "language": "pt_BR",
+      "description": "The order's charge was cancelled, so nothing was paid and nothing is owed on it. {{1}} is the order's total.",
+      "body": "Oi! A cobranca do seu pedido de {{1}} foi cancelada e nada foi pago. Qualquer coisa, e so falar por aqui."
+    }
+  ]
+}

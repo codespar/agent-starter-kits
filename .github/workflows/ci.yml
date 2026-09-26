@@ -69,7 +69,10 @@ jobs:
       # conversation (settled, one charge, one record, the copy-and-paste as
       # its own message after the QR), plus the three runs agreeing with each
       # other. It FAILS rather than skips when the emulator is not up.
-      - name: the WhatsApp channel closes the cycle three times from zero, once across a shut 24-hour window, and once with the clocks apart (against the emulator)
+      # The checkout-agent rides the same gate: its sale three times from zero on
+      # `pedido-marina`, and the ordered-tonight-paid-tomorrow case across a
+      # shut window, confirmed by the `pedido_confirmado` template.
+      - name: the WhatsApp channel closes the cycle three times from zero, once across a shut 24-hour window, and once with the clocks apart (against the emulator); the checkout-agent's sale three times from zero and across the window
         run: npm run whatsapp:gate
       - name: one command, machine output
         run: |

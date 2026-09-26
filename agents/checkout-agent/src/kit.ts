@@ -104,6 +104,9 @@ const kit: AgentKit = {
   npm start -- --input "oi, sou a Marina, quero o pacote de dez aulas e uma avaliacao inicial"   one turn (add --approve/--deny, --json)
   npm start -- --scenario <name>                                   run a scenario pack (see scenarios/)
   npm run approve -- <execution-id>                                the attendant confirms an order left awaiting (it is issued when the customer asks)
+  npm start -- --channel whatsapp --conversation <name>            the conversation channel (needs npm run whatsapp:emulator at the repo root)
+  npm start -- --channel whatsapp --conversation <name> --scripted the same, with the customer's turns replayed from channels/whatsapp/
+  npm run poll -- --channel whatsapp --conversation <name>         back to a conversation whose payment landed after the run ended
 options: --mode human|mandate  --provider anthropic|replay  --transcript <file>  --rail stub|api  --user <id>
          --wait <seconds>  --simulate-payer  --payer pays|expires|never (stub only)  --json
          --now <ISO 8601>  pin the run to that instant (service hours, the due date, timestamps); env CODESPAR_AGENT_NOW is the same thing`,
@@ -157,7 +160,8 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
   handlers: (setup) => {
     const envelope = loadEnvelope(setup.guardrails);
     const book = new CartBook(setup.store);
-    const orderDeps = { book, runId: setup.runId, timezone: setup.guardrails.timezone, clock: setup.engine.clock };
+    // On a channel that binds a conversation, the customer is the one it is bound to: read at call time, because the channel binds after setup.
+    const orderDeps = { book, runId: setup.runId, timezone: setup.guardrails.timezone, clock: setup.engine.clock, boundCustomer: () => setup.conversation?.subject };
     return {
       ...makeCartHandlers({ ...orderDeps, envelope, onReplaced: (cart, engine) => void followCart(cart, engine, orderDeps) }),
       ...makeChargeHandlers(orderDeps),
@@ -270,6 +274,22 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
   },
   resumeFollowUps: async (setup, say) => {
     for (const r of await resumeInvoices(invoiceDeps(setup, say))) say(`${r.id}: NFS-e of ${r.sale_execution_id} -> ${r.state}${r.reason ? ` (${r.reason}, ${r.code})` : ""}`);
+  },
+
+  /**
+   * The same outcome as `announceOutcome`, as a template this agent declares
+   * in `channels/whatsapp/templates.json`: what a poll sends once the 24-hour
+   * window has shut, which for a sale is the ordinary case of a customer who
+   * ordered at night and paid in the morning. A denial or an expired approval
+   * is answered inside the turn that produced it, so it has no template, and
+   * the poll reports it rather than sending approximate copy.
+   */
+  outcomeTemplate: (execution) => {
+    const total = formatBRL(execution.total);
+    if (execution.state === "settled") return { template: "pedido_confirmado", variables: [total] };
+    if (execution.reason === "charge_expired") return { template: "pedido_cobranca_vencida", variables: [total] };
+    if (execution.reason === "charge_cancelled") return { template: "pedido_cobranca_cancelada", variables: [total] };
+    return undefined;
   },
 
   /** Orders already paid by the same customer under this policy, so the velocity window has history. */

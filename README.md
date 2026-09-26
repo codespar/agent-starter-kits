@@ -66,7 +66,7 @@ Same code, same states, same receipts. Start with `human`, switch when you trust
 |---|---|
 | Pix payments out (`bills-agent`) | Sandbox |
 | Bolepix charges with a sandbox payer (`collections-agent`) | Sandbox |
-| WhatsApp as a channel (`collections-agent`) | Against [`dyvit-wa-sim`](https://github.com/fabianocruz/whatsapp-simulator), a local Cloud API emulator: no Meta account, no credential. The CI closes the cycle three times from zero on it |
+| WhatsApp as a channel (`collections-agent`, `checkout-agent`) | Against [`dyvit-wa-sim`](https://github.com/fabianocruz/whatsapp-simulator), a local Cloud API emulator: no Meta account, no credential. The CI closes the cycle three times from zero on it |
 | WhatsApp through Meta's Cloud API | The same backend, one base URL away. Credentials absent by default; never run against Meta from this repo |
 | Batch payouts, one execution per line (`supplier-payments-agent`) | Sandbox |
 | A cart priced by code, sold under a price and discount policy, charged by bolepix (`checkout-agent`) | Sandbox |

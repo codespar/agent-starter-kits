@@ -11,6 +11,7 @@ function copyAgent(): string {
   for (const f of ["agent.yaml", "SYSTEM_PROMPT.md", "tools.json", "guardrails.json", "mandate.example.json", "AGENTS.md", "CLAUDE.md", "README.md", "runbook.md", ".env.example"]) cpSync(join(AGENT_DIR, f), join(dir, f));
   cpSync(join(AGENT_DIR, "scenarios"), join(dir, "scenarios"), { recursive: true });
   cpSync(join(AGENT_DIR, "evals"), join(dir, "evals"), { recursive: true });
+  cpSync(join(AGENT_DIR, "channels"), join(dir, "channels"), { recursive: true });
   return dir;
 }
 

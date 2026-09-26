@@ -34,6 +34,17 @@ With keys (`cp .env.example .env`, a `csk_test_` key and an Anthropic key) `npm 
 | One charge, once | `POST /v1/charges` (`method: boleto` + `due_date`: the cobranca com vencimento the customer pays by Pix or boleto) with `idempotency_key` = the attempt id. Asking to issue again returns the same charge. |
 | Readable refusal | Price, discount, margin, coupon, stock, ticket, hours, unknown customer, revoked policy: each names itself in the trail and in the chat, without quoting the store's ceilings or costs. |
 
+## The WhatsApp channel
+
+The conversation this agent is for, through the adapter the collections-agent already uses (checkout decision 6), against a local Cloud API emulator that needs no Meta account:
+
+```sh
+npm run whatsapp:emulator                                                            # terminal 1, at the repo root
+npm start -- --channel whatsapp --conversation pedido-marina --simulate-payer       # terminal 2: you type as Marina
+```
+
+The QR goes into the conversation with the copy-and-paste as its own message underneath, the attendant's question stays on the console, and "recebemos, pedido confirmado" closes it. On the channel the conversation decides who is charged: an order in Marina's conversation is Marina's, and one for anybody else is refused before it exists. A payment that lands after the 24-hour window has shut is confirmed by `npm run poll -- --channel whatsapp` with the `pedido_confirmado` template. `channels/whatsapp/README.md` has the files; the CI runs the sale three times from zero on the emulator, plus the shut-window case (`npm run whatsapp:gate`).
+
 ## What is sandbox, what the agent applies alone, what is out
 
 Maturity, from `agent.yaml`: `storefront-cart: sandbox`, `bolepix-receivables: sandbox`, `receipt-verification: blocked`.

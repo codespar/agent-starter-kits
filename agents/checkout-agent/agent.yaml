@@ -19,7 +19,7 @@ mandate_schema: ./mandate.example.json
 # as failed; `created` is when the cobranca com vencimento becomes payable (read from the status poll). `payment_notified` and
 # `expiry_notified` are deliberately absent: neither proves a payment (checkout §5.4).
 events: [commerce.charge.created, commerce.charge.paid, commerce.charge.expired, commerce.charge.cancelled]
-channels: [terminal]     # WhatsApp next, through the adapter the collections-agent already uses (checkout decision 6)
+channels: [terminal, whatsapp]   # WhatsApp through the adapter the collections-agent uses (checkout decision 6); `npm run check` confirms channels/whatsapp/ ships a conversation
 maturity:
   storefront-cart: sandbox
   bolepix-receivables: sandbox
