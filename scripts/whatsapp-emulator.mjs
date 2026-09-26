@@ -28,7 +28,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const EMULATOR_PACKAGE = "@dyvit/whatsapp-simulator-cli";
 /** The release the gate is measured against. Bump deliberately, never automatically. */
-export const EMULATOR_VERSION = "0.2.0";
+export const EMULATOR_VERSION = "0.3.0";
 export const EMULATOR_PORT = 4290;
 /** Must match `WHATSAPP_SIM_APP_SECRET`. A local development value, not a credential. */
 export const EMULATOR_APP_SECRET = "dev";

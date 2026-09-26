@@ -59,7 +59,7 @@ jobs:
       # payer pay, then `poll --channel whatsapp`. It asserts the cycle closed
       # and the confirmation went out as a TEMPLATE, and that the emulator
       # refuses the free-form alternative with Meta's 400/131047
-      # (docs/OPEN_QUESTIONS.md §46a, enforced since 0.2.0). A fifth run moves
+      # (docs/OPEN_QUESTIONS.md §46a, enforced since 0.2.0; pinned at 0.3.0). A fifth run moves
       # the clocks apart — our window reads open, the provider's is shut — and
       # asserts the poll answers the provider's 131047 with the template.
       # The backend is the SAME code the official one uses, pointed at the

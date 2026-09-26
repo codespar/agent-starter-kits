@@ -90,6 +90,14 @@ const CONTACT = JSON.parse(readFileSync(join(AGENT, `channels/whatsapp/${CONVERS
  * contact is the agent's and stays what the channel's rules bind; the phone
  * number id is the emulator's, and a fresh one per run is a fresh conversation.
  * The same move the runtime's own integration test makes per case.
+ *
+ * 0.3.0 NAMES the problem (the clock answers a `warning` and the conversations
+ * `ahead` of it) and offers `POST /_sim/reset`. A global reset `{}` is not an
+ * option here: the emulator is shared by every run of this gate, by the test
+ * files and, on a laptop, by other lanes, and it would wipe their
+ * conversations mid-case. `{"key": "<pnid>:<contact>"}` would be a sound
+ * alternative before a case that must use a fixed key; a fresh key per run
+ * needs no call and leaves nothing behind (docs/OPEN_QUESTIONS.md §46).
  */
 const freshPhoneNumberId = () => `9${String(Math.floor(Math.random() * 1e11)).padStart(11, "0")}`;
 /**
@@ -231,7 +239,7 @@ async function runWindowCase(mode, { agentNow = NOW_AFTER_WINDOW, check = checkW
 
 /**
  * The provider's own answer to a free-form message in this conversation, sent
- * straight to its Graph surface. On 0.2.0 it is 400/131047 and nothing is
+ * straight to its Graph surface. Since 0.2.0 it is 400/131047 and nothing is
  * recorded, so the probe leaves the conversation as it found it.
  */
 async function providerRefusesFreeForm(contact, phoneNumberId) {
