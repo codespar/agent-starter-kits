@@ -11,7 +11,34 @@
  * is a new payment every time; nothing here sends one.
  */
 import type { SpendQuote } from "./quote.js";
-import type { Actor, ChargeInstrument } from "./types.js";
+import type { Actor, ApprovalArtifact, ChargeInstrument } from "./types.js";
+
+/** The `approval` a spend presents: `sha256:<64 lowercase hex>`, as `itemsHash` and `batchHash` write it. */
+export interface SpendApproval {
+  items_hash: string;
+  batch_hash?: string;
+}
+
+/** The hashes of what was approved, for a spend of any line of this artifact: the ones the artifact's own HMAC covers. */
+export function spendApprovalOf(artifact: Pick<ApprovalArtifact, "items_hash" | "batch">): SpendApproval {
+  return { items_hash: artifact.items_hash, ...(artifact.batch ? { batch_hash: artifact.batch.batch_hash } : {}) };
+}
+
+const APPROVAL_HASH = /^(sha256:)?[0-9a-f]{64}$/;
+
+/**
+ * The approval a spend presents, or why it may not go out: none, or a hash
+ * the API would refuse (`invalid_approval_hash`: lowercase hex SHA-256, the
+ * `sha256:` prefix optional). The shape and never the content, like the API:
+ * WHICH list is the artifact's business, checked before `executing`.
+ */
+export function checkSpendApproval(payment: { approval?: SpendApproval | undefined }): { ok: true; approval: SpendApproval } | { ok: false; code: "approval_missing" | "approval_malformed"; detail: string } {
+  const { approval } = payment;
+  if (!approval) return { ok: false, code: "approval_missing", detail: "a spend carries the hashes of the approval artifact, or it does not go out" };
+  if (!APPROVAL_HASH.test(approval.items_hash)) return { ok: false, code: "approval_malformed", detail: "the approval's items_hash is not a lowercase hex SHA-256" };
+  if (approval.batch_hash !== undefined && !APPROVAL_HASH.test(approval.batch_hash)) return { ok: false, code: "approval_malformed", detail: "the approval's batch_hash is not a lowercase hex SHA-256" };
+  return { ok: true, approval };
+}
 
 export interface RailPayment {
   attempt_id: string;
@@ -30,6 +57,15 @@ export interface RailPayment {
   due_date?: string;
   /** What was approved for this line, presented with a spend so the sealed receipt names the payee. A charge rail ignores it. */
   quote?: SpendQuote;
+  /**
+   * The approval artifact's hashes, exactly as the artifact carries them: its
+   * `items_hash`, and for a batch line its `batch.batch_hash`. The API seals
+   * them into the receipt's chain as a link of their own (chain v4,
+   * ent#1670), so whoever holds the receipt read can show THIS payment was
+   * sealed against THAT list. It is the caller's claim, sealed: the API checks
+   * its shape and never its content. A charge rail ignores it.
+   */
+  approval?: SpendApproval;
   /** Section 4.5: carried on every call. The API has no wire field for it yet; see OPEN_QUESTIONS. */
   actor: Actor;
 }

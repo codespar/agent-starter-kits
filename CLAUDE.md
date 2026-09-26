@@ -40,8 +40,10 @@ the whole tree; each agent under `agents/` adds its own `AGENTS.md`.
     does. "Verifiable by a third party" is true of THAT and of nothing else
     here: a receipt sealed before the change carries no Ed25519 signature and
     never will, and the approval artifact is still HMAC with a local
-    development key. Write the phrase only where `Ed25519` is written too;
-    `npm run check` fails otherwise.
+    development key: what reaches a third party is its hash, sealed into a
+    v4 receipt, which proves what was approved and never who. Write the
+    phrase only where `Ed25519` is written too; `npm run check` fails
+    otherwise.
 12. **No telemetry.** Nothing in this repository phones home.
 
 `AGENTS.md` and `CLAUDE.md` are the same file, here and in every agent; `npm

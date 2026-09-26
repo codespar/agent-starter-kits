@@ -12,7 +12,7 @@
  */
 import { canonicalJson, sha256Hex } from "../hash.js";
 import { checkQuote } from "../quote.js";
-import type { PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt } from "../rail.js";
+import { checkSpendApproval, type PaymentRail, type RailLookup, type RailOutcome, type RailPayment, type RailReceipt } from "../rail.js";
 import type { StateStore } from "../state/store.js";
 import type { Actor } from "../types.js";
 
@@ -49,9 +49,9 @@ type Recorded = RailOutcome | typeof IN_FLIGHT;
 
 /**
  * The fields a repeat of an attempt id is compared on, the stub's share of
- * the API's attempt tuple (ent#1671): whose money, how much, to whom, and the
- * digest of the quote. Rail and instrument are the API's and have no stub
- * counterpart.
+ * the API's attempt tuple (ent#1671): whose money, how much, to whom, the
+ * digest of the quote and the approval the spend carried (ent#1670). Rail
+ * and instrument are the API's and have no stub counterpart.
  */
 function mismatchedFields(recorded: Omit<RailPayment, "actor">, asked: Omit<RailPayment, "actor">): string[] {
   const out: string[] = [];
@@ -60,6 +60,7 @@ function mismatchedFields(recorded: Omit<RailPayment, "actor">, asked: Omit<Rail
   if (recorded.currency !== asked.currency) out.push("currency");
   if (recorded.payee !== asked.payee) out.push("payee");
   if (canonicalJson(recorded.quote ?? null) !== canonicalJson(asked.quote ?? null)) out.push("quote");
+  if (canonicalJson(recorded.approval ?? null) !== canonicalJson(asked.approval ?? null)) out.push("approval");
   return out;
 }
 
@@ -95,6 +96,8 @@ export class StubRail implements PaymentRail {
     // The same refusal the CodeSpar rail makes before its call, so a scenario exercises it.
     const quoted = checkQuote(payment);
     if (!quoted.ok) return { status: "failed", code: quoted.code, message: `${quoted.detail}; nothing was sent` };
+    const approval = checkSpendApproval(payment);
+    if (!approval.ok) return { status: "failed", code: approval.code, message: `${approval.detail}; nothing was sent` };
     const { actor: _actor, ...request } = payment;
     const existing = this.store.stubRailGet(payment.attempt_id);
     if (existing) return this.repeat(payment.attempt_id, existing.request as Omit<RailPayment, "actor">, existing.outcome as Recorded, request);
