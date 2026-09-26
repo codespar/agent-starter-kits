@@ -168,7 +168,7 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
   // Section 11: mode, rail and mandate id. The VERSION rides with the id, so a reader knows which signing of the mandate authorised the run without opening the snapshot.
   bundle.meta({ run_id: runId, agent: `${manifest.manifest.name}@${manifest.manifest.version}`, mode, rail: railKind, mandate_id: mandate.id, mandate_version: mandate.version, started_at: (now ?? (() => new Date()))().toISOString() });
 
-  const policyExtension = agent.kit.policyExtension?.({ agentDir: agent.dir, manifest, guardrails });
+  const policyExtension = agent.kit.policyExtension?.({ agentDir: agent.dir, manifest, guardrails, store });
   const engine = new ExecutionEngine({
     store,
     rail,
