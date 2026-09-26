@@ -8,7 +8,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { StateStore, batchAttemptId, fixedClock, maskPayee, type Execution, type StubRail, type StubRailOptions, type ToolContext } from "@codespar/agent-core";
+import { StateStore, batchAttemptId, batchHash, fixedClock, maskPayee, type Execution, type StubRail, type StubRailOptions, type ToolContext } from "@codespar/agent-core";
 import { assembleTimeline, handleExecution, parseBatchGesture, presentBatch, setup, type BatchGestures, type Setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 import { runBatch } from "../src/modules/batch-payout.js";
@@ -749,12 +749,105 @@ describe("batch-payout: a batch is idempotent across machines (§39c)", () => {
     }
   });
 
+  it("A pays at generation 2 after generation 1 failed; B, still at generation 1, is told it is spent, advances, and gets A's payment as a replay", async () => {
+    const ledger = newLedger();
+    // A: the provider refuses generation 0.
+    const a = mkdtempSync(join(tmpdir(), "supplier-machine-l-"));
+    let s = open(a, { ledger, refusePayees: [INSUMOS] });
+    try {
+      await run(s, "fornecedores-2026-10");
+    } finally {
+      s.close();
+    }
+    // B: generation 0 is spent, so it presents generation 1, which the provider also refuses. B is left at generation 1.
+    const b = mkdtempSync(join(tmpdir(), "supplier-machine-m-"));
+    s = open(b, { ledger, refusePayees: [INSUMOS] });
+    let g1: string;
+    try {
+      await run(s, "fornecedores-2026-10");
+      const line = s.engine.list()[1]!;
+      expect(line.state).toBe("failed");
+      expect(line.attempt_generations).toEqual({ 0: 1 });
+      g1 = line.outcomes[0]!.attempt_id;
+    } finally {
+      s.close();
+    }
+    // A again, the provider now accepting: 0 and 1 are spent, generation 2 is paid.
+    s = open(a, { ledger });
+    let g2: string;
+    let receipt: string | undefined;
+    try {
+      const report = await run(s, "fornecedores-2026-10");
+      expect(report.lines.map((l) => l.dispatch)).toEqual(["already_settled", "settled", "already_settled"]);
+      expect(railOf(s).payCount).toBe(1);
+      const line = s.engine.list().find((e) => e.batch?.index === 1 && e.state === "settled")!;
+      g2 = line.outcomes[0]!.attempt_id;
+      receipt = line.outcomes[0]!.receipt_id;
+      expect(g2).toBe(batchAttemptId(line.mandate.id, line.batch!, 0, 2));
+    } finally {
+      s.close();
+    }
+    // B again: its claim says the line failed, so it drafts it anew. The new
+    // execution walks the same derivation from 0: spent, spent (its own g1),
+    // then A's generation 2, which the rail answers from its record.
+    s = open(b, { ledger });
+    try {
+      const rail = railOf(s);
+      const answers: Array<{ attempt_id: string; status: string; replay: unknown }> = [];
+      const pay = rail.pay.bind(rail);
+      rail.pay = async (payment) => {
+        const outcome = await pay(payment);
+        answers.push({ attempt_id: payment.attempt_id, status: outcome.status, replay: outcome.status === "settled" ? (outcome.raw as Record<string, unknown>)["idempotent_replay"] : undefined });
+        return outcome;
+      };
+      const report = await run(s, "fornecedores-2026-10");
+      expect(report.lines.map((l) => l.dispatch)).toEqual(["already_settled", "settled", "already_settled"]);
+      expect(answers.map((x) => x.status)).toEqual(["failed", "failed", "settled"]);
+      expect(answers[1]!.attempt_id).toBe(g1);
+      expect(answers[2]).toEqual({ attempt_id: g2, status: "settled", replay: true });
+      expect(railOf(s).payCount).toBe(0);
+      expect(s.engine.list().find((e) => e.batch?.index === 1 && e.state === "settled")!.outcomes[0]!.receipt_id).toBe(receipt);
+    } finally {
+      s.close();
+      ledger.close();
+    }
+  });
+
+  it("a refusal that is not the id being spent never moves the line to another id, on this run or the next", async () => {
+    const ledger = newLedger();
+    // The books hold the line's generation-0 id for a DIFFERENT payment, so the rail answers attempt_id_conflict.
+    const s = machine("n", { ledger });
+    const batch = findBatch("fornecedores-2026-10")!;
+    const presented = batchHash(s.engine.preview(batch.lines.map((l) => ({ payee: l.alias, amount: l.amount_minor, description: `${batch.label}: ${l.reference}`, due_date: batch.due }))));
+    const g0 = batchAttemptId(s.engine.mandate.id, { batch_hash: presented, index: 1 }, 0);
+    ledger.stubRailPut(g0, { attempt_id: g0, mandate_id: s.engine.mandate.id, amount_minor: 1, currency: "BRL", payee: INSUMOS }, { status: "settled", transaction_id: "tx_other", receipt_id: null, money_moved: false, sandbox: true, raw: {} }, "2026-09-23T17:00:00.000Z");
+    try {
+      for (const _ of [1, 2]) {
+        const report = await run(s, "fornecedores-2026-10");
+        expect(report.lines[1]!.dispatch).toBe("refused");
+      }
+      const tries = s.engine.list().filter((e) => e.batch?.index === 1);
+      expect(tries).toHaveLength(2);
+      for (const e of tries) {
+        expect(e.outcomes).toEqual([expect.objectContaining({ attempt_id: g0, status: "failed", code: "attempt_id_conflict" })]);
+        expect(e.attempt_generations).toBeUndefined();
+      }
+      expect(payloadsOf(s, "rail.attempt_spent")).toEqual([]);
+    } finally {
+      s.close();
+      ledger.close();
+    }
+  });
+
   it("a line still in flight on one machine is not paid by another: it stays open there, for reconciliation", async () => {
     const ledger = newLedger();
     const first = machine("h", { ledger, uncertainPayees: [INSUMOS] });
     try {
       const report = await run(first, "fornecedores-2026-10");
       expect(report.lines.map((l) => l.dispatch)).toEqual(["settled", "uncertain", "settled"]);
+      // An unknown answer is kept for reconciliation under the id that was sent: one presentation per line, no generation.
+      expect(payloadsOf(first, "rail.dispatch")).toHaveLength(3);
+      expect(first.engine.list()[1]!.attempt_generations).toBeUndefined();
     } finally {
       first.close();
     }
@@ -766,6 +859,8 @@ describe("batch-payout: a batch is idempotent across machines (§39c)", () => {
       expect(railOf(second).payCount).toBe(0);
       const line = second.engine.list()[1]!;
       expect(line.state).toBe("executing");
+      expect(payloadsOf(second, "rail.dispatch")).toHaveLength(3);
+      expect(line.attempt_generations).toBeUndefined();
       expect(payloadsOf(second, "rail.uncertain").map((p) => p["code"])).toEqual(["psp_attempt_in_flight"]);
       // Reconciling asks the rail about the SAME attempt: in flight once, then the provider's own outcome. Still nothing new paid.
       await second.engine.reconcile(line.id);

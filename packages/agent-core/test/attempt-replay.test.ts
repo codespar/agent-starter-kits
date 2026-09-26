@@ -13,11 +13,12 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createCodeSparClient } from "../src/api/client.js";
 import { CodeSparRail } from "../src/api/rail.js";
+import { batchAttemptId } from "../src/hash.js";
 import { quoteFromApproval } from "../src/quote.js";
-import type { RailPayment } from "../src/rail.js";
+import type { PaymentRail, RailOutcome, RailPayment } from "../src/rail.js";
 import { StubRail } from "../src/stubs/rail.js";
 import { StateStore } from "../src/state/store.js";
-import { ESCOLA, MERCADO } from "./helpers.js";
+import { ESCOLA, harness, MERCADO } from "./helpers.js";
 
 const actor = { type: "agent" as const, agent: "bills-agent@0.1.0", on_behalf_of: "usr_demo" };
 
@@ -172,5 +173,83 @@ describe("a batch line's quote is the same on every run of the list", () => {
     const artifact = { approved_at: "2026-09-23T18:00:00.000Z", items: [{ beneficiary: "Escola Aurora", description: "outubro", amount: 185000, payee: ESCOLA }] } as never;
     expect(quoteFromApproval(artifact, 0, "contas do mes")).toEqual({ seller: "Escola Aurora", resource: "outubro", price_minor: 185000, payee: ESCOLA, at: "2026-09-23T18:00:00.000Z" });
     expect(quoteFromApproval(artifact, 0, "contas do mes", { stable: true })).toEqual({ seller: "Escola Aurora", resource: "outubro", price_minor: 185000, payee: ESCOLA });
+  });
+});
+
+/**
+ * When a batch line moves to the next generation of its id: on
+ * `psp_attempt_conflict` — the server stating the attempt failed with no
+ * money — and on NOTHING else. Advancing on an unknown outcome is how one line
+ * gets paid under two ids; advancing on `attempt_id_conflict` or
+ * `attempt_id_unavailable` is minting a new payment for an id somebody else's
+ * record holds.
+ */
+describe("a batch line's attempt id advances on a spent id, and on nothing else", () => {
+  const BATCH = { ref: "folha-teste", batch_hash: `sha256:${"a".repeat(64)}`, index: 0, count: 1 };
+  const approver = { id: "usr_demo", channel: "terminal" };
+
+  /** A rail that answers `script(n)` for its n-th call, and records every attempt id it was shown. */
+  function scripted(script: (call: number) => RailOutcome) {
+    const seen: string[] = [];
+    const wrap = (): PaymentRail => ({
+      name: "stub",
+      pay: async (p) => (seen.push(p.attempt_id), script(seen.length - 1)),
+      lookup: async () => undefined,
+      receipt: async () => undefined,
+    });
+    return { seen, wrap };
+  }
+
+  async function runLine(rail: ReturnType<typeof scripted>) {
+    const h = harness({ wrapRail: rail.wrap });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }], batch: BATCH });
+    if (!d.ok) throw new Error(`refused before draft: ${d.reason}`);
+    h.engine.approve(d.execution.id, approver);
+    return h.engine.execute(d.execution.id);
+  }
+
+  const held: Array<[string, RailOutcome]> = [
+    ["attempt_id_conflict", { status: "failed", code: "attempt_id_conflict", message: "used for a different payment" }],
+    ["attempt_id_unavailable", { status: "failed", code: "attempt_id_unavailable", message: "not available" }],
+    ["an unknown refusal", { status: "failed", code: "some_code_nobody_documented", message: "?" }],
+    ["psp_attempt_in_flight", { status: "uncertain", code: "psp_attempt_in_flight", message: "claimed" }],
+    ["psp_attempt_uncertain", { status: "uncertain", code: "psp_attempt_uncertain", message: "pinned" }],
+    ["psp_dispatch_uncertain", { status: "uncertain", code: "psp_dispatch_uncertain", message: "timeout" }],
+  ];
+  for (const [name, answer] of held) {
+    it(`${name}: one presentation, the generation-0 id, no generation recorded`, async () => {
+      const rail = scripted(() => answer);
+      const out = await runLine(rail);
+      const g0 = batchAttemptId(out.mandate.id, BATCH, 0);
+      expect(rail.seen).toEqual([g0]);
+      expect(out.attempt_generations).toBeUndefined();
+      expect(out.state).toBe(answer.status === "failed" ? "failed" : "executing");
+    });
+  }
+
+  it("psp_attempt_conflict: the next generation, derived the same way on any machine, and saved on the execution", async () => {
+    const settled: RailOutcome = { status: "settled", transaction_id: "tx_g2", receipt_id: null, money_moved: false, sandbox: true, raw: {} };
+    const spent: RailOutcome = { status: "failed", code: "psp_attempt_conflict", message: "failed, no money", spent: true };
+    const rail = scripted((call) => (call < 2 ? spent : settled));
+    const out = await runLine(rail);
+    expect(rail.seen).toEqual([0, 1, 2].map((g) => batchAttemptId(out.mandate.id, BATCH, 0, g)));
+    expect(out.state).toBe("settled");
+    expect(out.outcomes[0]!.attempt_id).toBe(rail.seen[2]);
+    expect(out.attempt_generations).toEqual({ 0: 2 });
+  });
+
+  it("a psp_attempt_conflict the rail did not mark spent does not advance either", async () => {
+    const rail = scripted(() => ({ status: "failed", code: "psp_attempt_conflict", message: "no spent flag" }));
+    const out = await runLine(rail);
+    expect(rail.seen).toHaveLength(1);
+    expect(out.attempt_generations).toBeUndefined();
+  });
+
+  it("stops after eight spent generations, failed, never looping", async () => {
+    const rail = scripted(() => ({ status: "failed", code: "psp_attempt_conflict", message: "failed, no money", spent: true }));
+    const out = await runLine(rail);
+    expect(rail.seen).toHaveLength(9);
+    expect(out.state).toBe("failed");
+    expect(out.attempt_generations).toEqual({ 0: 8 });
   });
 });
