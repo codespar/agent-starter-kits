@@ -166,6 +166,10 @@ export interface ItemOutcome {
   transaction_id?: string;
   /** The rail's code on a failed outcome (`charge_expired`, `charge_cancelled`, a provider code). */
   code?: string;
+  /** A failed outcome because the attempt id is held for another payment or another project (`RailOutcome.held`). */
+  held?: "conflict" | "unavailable";
+  /** A settled outcome the rail answered from its record of an earlier presentation (`RailOutcome.replayed`). */
+  replayed?: true;
   error?: string;
   /** What the payer is shown for an accepted receivable, as the rail handed it back. Presentation only; nothing here decides money. */
   instrument?: ChargeInstrument;

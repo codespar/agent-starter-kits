@@ -25,6 +25,10 @@ import { describeApiError, isUncertain, type SpendErrorCode } from "./client.js"
 const ATTEMPT_IN_FLIGHT: SpendErrorCode = "psp_attempt_in_flight";
 /** This attempt failed, moved no money and was compensated; the API will never run this id again. */
 const ATTEMPT_SPENT: SpendErrorCode = "psp_attempt_conflict";
+/** This attempt id was already used for a DIFFERENT payment (checked before its state); nothing was held or sent. */
+const ATTEMPT_ID_CONFLICT: SpendErrorCode = "attempt_id_conflict";
+/** Another project of this organization holds this attempt id; opaque by design, nothing was held or sent. */
+const ATTEMPT_ID_UNAVAILABLE: SpendErrorCode = "attempt_id_unavailable";
 
 export class CodeSparRail implements PaymentRail {
   readonly name = "codespar" as const;
@@ -63,6 +67,7 @@ export class CodeSparRail implements PaymentRail {
         receipt_id: outcome.receipt?.id ?? null,
         money_moved: outcome.payment.moneyMoved,
         sandbox: !outcome.payment.moneyMoved,
+        ...(outcome.idempotent_replay ? { replayed: true as const } : {}),
         raw: outcome,
       };
     } catch (err) {
@@ -71,10 +76,9 @@ export class CodeSparRail implements PaymentRail {
       if (failure.code === ATTEMPT_IN_FLIGHT) return { status: "uncertain", code: failure.code, message: failure.message };
       if (isUncertain(failure)) return { status: "uncertain", code: failure.code, message: failure.message };
       if (failure.code === ATTEMPT_SPENT) return { status: "failed", code: failure.code, message: failure.message, spent: true };
-      // Everything else is a refusal that sent nothing, carried with the API's own code and message. That includes the two
-      // ent#1671 codes `@codespar/sdk` 0.16.8 does not type yet, `attempt_id_conflict` (this id was used for a different
-      // payment) and `attempt_id_unavailable` (another project of the organization holds it): neither is branched on until
-      // the SDK documents them, and neither is `spent`, so neither moves a batch line to another id.
+      // Held, never spent: the id belongs to another payment or another project, so no generation may be derived past it.
+      if (failure.code === ATTEMPT_ID_CONFLICT) return { status: "failed", code: failure.code, message: failure.message, held: "conflict" };
+      if (failure.code === ATTEMPT_ID_UNAVAILABLE) return { status: "failed", code: failure.code, message: failure.message, held: "unavailable" };
       return { status: "failed", code: failure.code, message: failure.message };
     }
   }
@@ -87,7 +91,8 @@ export class CodeSparRail implements PaymentRail {
    *
    * - settled: `200` with the ORIGINAL body verbatim (same `transactionId`,
    *   same stored `receipt.id`, which the receipt route resolves) plus
-   *   `idempotent_replay: true`. Read as `settled`, exactly as the first answer.
+   *   `idempotent_replay: true`. Read as `settled`, exactly as the first
+   *   answer, and marked `replayed`.
    * - `psp_attempt_in_flight` (409): claimed, no outcome yet, on every rail.
    *   Read as `in_flight`; the next reconcile asks again with the SAME id.
    * - `psp_attempt_uncertain` (409): pinned, dispatch outcome unknown. Read as
@@ -95,8 +100,8 @@ export class CodeSparRail implements PaymentRail {
    * - `psp_attempt_conflict` (409): failed, compensated, no money. Read as
    *   `failed` and `spent`.
    * - `attempt_id_conflict` / `attempt_id_unavailable` (409): the id is held for
-   *   a different payment, or by another project. Read as `failed`: nothing
-   *   was held or sent by this call. Neither can come from re-presenting the
+   *   a different payment, or by another project. Read as `failed` and `held`,
+   *   never `spent`: nothing was held or sent by this call. Neither can come from re-presenting the
    *   payment this execution sent, whose tuple is the one the id was claimed
    *   with, so seeing one here is a defect worth its readable failure.
    * - an attempt the API never took: there is no record to answer from, so

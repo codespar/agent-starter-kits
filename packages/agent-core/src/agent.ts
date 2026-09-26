@@ -43,7 +43,7 @@ export interface BatchPresentation {
     amount_minor: number;
     amount: string;
     /** A line a previous run already covers is shown, and does not run again whatever the gesture says. */
-    status: "open" | "already_settled" | "in_progress";
+    status: "open" | "already_settled" | "in_progress" | "attempt_id_conflict";
   }>;
 }
 

@@ -455,7 +455,7 @@ export class ExecutionEngine {
         continue;
       }
       if (outcome.status === "failed") {
-        outcomes.push({ index, attempt_id: payment.attempt_id, status: "failed", code: outcome.code, error: `${outcome.code}: ${outcome.message}` });
+        outcomes.push({ index, attempt_id: payment.attempt_id, status: "failed", code: outcome.code, error: `${outcome.code}: ${outcome.message}`, ...(outcome.held ? { held: outcome.held } : {}) });
         continue;
       }
       if (outcome.status === "accepted") {
@@ -464,7 +464,7 @@ export class ExecutionEngine {
         this.recordInstrument(execution.id, payment.attempt_id, outcome.transaction_id, outcome.instrument);
         continue;
       }
-      outcomes.push({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: outcome.transaction_id, ...(outcome.receipt_id ? { receipt_id: outcome.receipt_id } : {}) });
+      outcomes.push({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: outcome.transaction_id, ...(outcome.receipt_id ? { receipt_id: outcome.receipt_id } : {}), ...(outcome.replayed ? { replayed: true as const } : {}) });
       const mismatch = await this.ingestSettlement(execution, index, payment, outcome.receipt_id, PAYMENT_SUCCEEDED);
       if (mismatch) sealMismatches.push(mismatch);
     }
@@ -655,10 +655,10 @@ export class ExecutionEngine {
         continue;
       }
       if (seen.status === "failed") {
-        replace({ index, attempt_id: payment.attempt_id, status: "failed", code: seen.code, error: `${seen.code}: ${seen.message}` });
+        replace({ index, attempt_id: payment.attempt_id, status: "failed", code: seen.code, error: `${seen.code}: ${seen.message}`, ...(seen.held ? { held: seen.held } : {}) });
         continue;
       }
-      replace({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: seen.transaction_id, ...(seen.receipt_id ? { receipt_id: seen.receipt_id } : {}) });
+      replace({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: seen.transaction_id, ...(seen.receipt_id ? { receipt_id: seen.receipt_id } : {}), ...(seen.replayed ? { replayed: true as const } : {}) });
       const mismatch = await this.ingestSettlement(execution, index, payment, seen.receipt_id, prior ? CHARGE_PAID : PAYMENT_SUCCEEDED);
       if (mismatch) sealMismatches.push(mismatch);
     }
@@ -1025,7 +1025,9 @@ function railAnswer(outcome: RailOutcome): Record<string, unknown> {
     case "accepted":
       return { transaction_id: outcome.transaction_id, sandbox: outcome.sandbox };
     case "settled":
-      return { transaction_id: outcome.transaction_id, receipt_id: outcome.receipt_id, money_moved: outcome.money_moved, sandbox: outcome.sandbox };
+      return { transaction_id: outcome.transaction_id, receipt_id: outcome.receipt_id, money_moved: outcome.money_moved, sandbox: outcome.sandbox, ...(outcome.replayed ? { idempotent_replay: true } : {}) };
+    case "failed":
+      return { code: outcome.code, message: outcome.message, ...(outcome.spent ? { spent: true } : {}), ...(outcome.held ? { held: outcome.held } : {}) };
     default:
       return { code: outcome.code, message: outcome.message };
   }

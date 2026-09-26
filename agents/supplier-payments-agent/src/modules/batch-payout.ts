@@ -68,8 +68,15 @@ export interface BatchLineReport {
   execution_id: string | null;
   state: string;
   reason: string | null;
-  /** Whether this line's money moved, could not move, or was deliberately not attempted again. */
-  dispatch: "settled" | "refused" | "awaiting_decision" | "uncertain" | "already_settled" | "in_progress";
+  /**
+   * Whether this line's money moved, could not move, or was deliberately not
+   * attempted again. `attempt_id_conflict`: the API holds this line's attempt
+   * id for a DIFFERENT payment (another amount, payee, mandate, rail or
+   * quote). Nothing was held or sent, the id is not spent, and presenting it
+   * again answers the same, so the line is never re-drafted under it and never
+   * moved to another id: a person decides what that other payment is.
+   */
+  dispatch: "settled" | "refused" | "awaiting_decision" | "uncertain" | "already_settled" | "in_progress" | "attempt_id_conflict";
 }
 
 /**
@@ -156,7 +163,7 @@ function presentedItems(batch: Batch, ctx: ToolContext): ExecutionItem[] {
  * What a claim already held means for this line: skip it, or drop it and
  * pay. `undefined` means nothing is held and the line is paid normally.
  */
-function priorVerdict(prior: Execution | undefined): "already_settled" | "in_progress" | undefined {
+function priorVerdict(prior: Execution | undefined): "already_settled" | "in_progress" | "attempt_id_conflict" | undefined {
   // A claim naming an execution the store does not have is a claim taken by a
   // run that died before it drafted. Nothing moved, so the line is open.
   if (!prior) return undefined;
@@ -165,13 +172,20 @@ function priorVerdict(prior: Execution | undefined): "already_settled" | "in_pro
   // for the same line is how a payee gets paid twice; the operator closes the
   // first one with `npm run approve`, `npm run resume` or `npm run reconcile`.
   if (!isTerminal(prior.state)) return "in_progress";
+  // Held for another payment: a retry presents the same derived id and gets the same refusal, so it is not retried.
+  if (heldForAnotherPayment(prior)) return "attempt_id_conflict";
   // `denied`, `expired`, `failed`: the core refused it or the rail declined
   // it, and in every one of those the money provably did not move. Retry.
   return undefined;
 }
 
+function heldForAnotherPayment(execution: Execution): boolean {
+  return execution.state === "failed" && execution.outcomes.some((o) => o.held === "conflict");
+}
+
 function dispatchOf(execution: Execution): BatchLineReport["dispatch"] {
   if (execution.state === "settled") return "settled";
+  if (heldForAnotherPayment(execution)) return "attempt_id_conflict";
   if (execution.state === "awaiting_approval") return "awaiting_decision";
   // Still `executing` after the channel ran it: the rail did not say. Never
   // re-sent here; `npm run reconcile` is what closes it.
@@ -352,7 +366,7 @@ function summarise(batch: Batch, presented: string, lines: BatchLineReport[], re
     lines,
     settled_minor: settledMinor,
     settled: formatBRL(settledMinor),
-    failed: lines.filter((l) => l.dispatch === "refused" || l.dispatch === "uncertain").map((l) => l.alias),
+    failed: lines.filter((l) => l.dispatch === "refused" || l.dispatch === "uncertain" || l.dispatch === "attempt_id_conflict").map((l) => l.alias),
     skipped: lines.filter((l) => l.dispatch === "already_settled" || l.dispatch === "in_progress").map((l) => l.alias),
     denied: lines.filter((l) => l.state === "denied" && l.reason === "denied_by_approver").map((l) => l.alias),
     total_minor: total,
@@ -371,7 +385,7 @@ function describe(line: PayableLine, index: number): Pick<BatchLineReport, "inde
  * same claim the loop reads, so what the model is told and what the loop
  * would do cannot drift.
  */
-export function lineStatus(batch: Batch, line: PayableLine, ctx: ToolContext): "open" | "already_settled" | "in_progress" {
+export function lineStatus(batch: Batch, line: PayableLine, ctx: ToolContext): "open" | "already_settled" | "in_progress" | "attempt_id_conflict" {
   const held = ctx.engine.claimed(claimKey(ctx.engine.mandate.id, batch.ref, line.alias));
   if (!held) return "open";
   return priorVerdict(ctx.engine.get(held)) ?? "open";

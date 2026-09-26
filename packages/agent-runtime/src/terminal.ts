@@ -178,7 +178,14 @@ export async function presentBatch(batch: BatchPresentation, options: TerminalOp
   const ask = options.ask ?? defaultAsk;
   say(`  lote ${batch.ref} — ${batch.label}: ${batch.count} linha(s), total ${batch.total}, batch_hash ${batch.batch_hash.slice(0, 19)}…`);
   for (const line of batch.lines) {
-    const note = line.status === "already_settled" ? " (ja paga; nao roda de novo)" : line.status === "in_progress" ? " (em andamento; nao roda de novo)" : "";
+    const note =
+      line.status === "already_settled"
+        ? " (ja paga; nao roda de novo)"
+        : line.status === "in_progress"
+          ? " (em andamento; nao roda de novo)"
+          : line.status === "attempt_id_conflict"
+            ? " (tentativa presa a outro pagamento; nao roda de novo)"
+            : "";
     say(`    ${line.index + 1}. ${line.beneficiary}: ${line.amount}${note}`);
   }
   let parsed: { vetoed: number[] } | undefined;

@@ -79,11 +79,18 @@ const settledBody = {
 };
 
 describe("CodeSparRail reads every answer to a repeated attempt_id (ent#1671)", () => {
-  it("settled: the original body with idempotent_replay is the original outcome, same transaction and same receipt", async () => {
+  it("settled: the original body with idempotent_replay is the original outcome, same transaction and same receipt, marked replayed", async () => {
     answer = { status: 200, body: { ...settledBody, idempotent_replay: true } };
     for (const outcome of [await rail().pay(payment()), await rail().lookup("ska_replay_0", payment())]) {
-      expect(outcome).toMatchObject({ status: "settled", transaction_id: "tx_original", receipt_id: "rcpt_original" });
+      expect(outcome).toMatchObject({ status: "settled", transaction_id: "tx_original", receipt_id: "rcpt_original", replayed: true });
     }
+  });
+
+  it("the call that settles it is not a replay", async () => {
+    answer = { status: 200, body: { ...settledBody, idempotent_replay: false } };
+    const outcome = await rail().pay(payment());
+    expect(outcome).toMatchObject({ status: "settled" });
+    expect("replayed" in outcome).toBe(false);
   });
 
   it("psp_attempt_in_flight: never a refusal. pay() reads it as unknown, lookup() as still running", async () => {
@@ -104,14 +111,15 @@ describe("CodeSparRail reads every answer to a repeated attempt_id (ent#1671)", 
     expect(await rail().lookup("ska_replay_0", payment())).toMatchObject({ status: "failed", spent: true });
   });
 
-  it("attempt_id_conflict and attempt_id_unavailable: a refusal that sent nothing, carried verbatim, and NOT spent", async () => {
-    for (const [code, details] of [
-      ["attempt_id_conflict", { mismatched_fields: ["quote"], attempt_id: "ska_replay_0" }],
-      ["attempt_id_unavailable", { attempt_id: "ska_replay_0" }],
+  it("attempt_id_conflict and attempt_id_unavailable: a refusal that sent nothing, held for another payment or project, and NEVER spent", async () => {
+    for (const [code, details, held] of [
+      ["attempt_id_conflict", { mismatched_fields: ["quote"], attempt_id: "ska_replay_0" }, "conflict"],
+      ["attempt_id_unavailable", { attempt_id: "ska_replay_0" }, "unavailable"],
     ] as const) {
       answer = refusal(code, details);
-      const outcome = await rail().pay(payment());
-      expect(outcome).toEqual({ status: "failed", code, message: `api: ${code}` });
+      for (const outcome of [await rail().pay(payment()), await rail().lookup("ska_replay_0", payment())]) {
+        expect(outcome).toEqual({ status: "failed", code, message: `api: ${code}`, held });
+      }
     }
   });
 
@@ -132,7 +140,8 @@ describe("the stub rail answers a repeat the way the API does", () => {
     const first = await r.pay(payment());
     const again = await r.pay(payment());
     expect(r.payCount).toBe(1);
-    expect(again).toMatchObject({ status: "settled", transaction_id: (first as { transaction_id: string }).transaction_id, receipt_id: (first as { receipt_id: string }).receipt_id });
+    expect(again).toMatchObject({ status: "settled", replayed: true, transaction_id: (first as { transaction_id: string }).transaction_id, receipt_id: (first as { receipt_id: string }).receipt_id });
+    expect("replayed" in first).toBe(false);
     expect((again as { raw: Record<string, unknown> }).raw["idempotent_replay"]).toBe(true);
   });
 
@@ -140,7 +149,7 @@ describe("the stub rail answers a repeat the way the API does", () => {
     const r = stub();
     await r.pay(payment());
     const changed = await r.pay(payment({ quote: { ...payment().quote!, at: "2026-09-23T18:00:00.000Z" } }));
-    expect(changed).toMatchObject({ status: "failed", code: "attempt_id_conflict" });
+    expect(changed).toMatchObject({ status: "failed", code: "attempt_id_conflict", held: "conflict" });
     expect((changed as { message: string }).message).toContain("quote");
     expect((changed as { spent?: true }).spent).toBeUndefined();
     const otherPayee = await r.pay(payment({ payee: MERCADO, quote: { ...payment().quote!, payee: MERCADO } }));
@@ -209,8 +218,8 @@ describe("a batch line's attempt id advances on a spent id, and on nothing else"
   }
 
   const held: Array<[string, RailOutcome]> = [
-    ["attempt_id_conflict", { status: "failed", code: "attempt_id_conflict", message: "used for a different payment" }],
-    ["attempt_id_unavailable", { status: "failed", code: "attempt_id_unavailable", message: "not available" }],
+    ["attempt_id_conflict", { status: "failed", code: "attempt_id_conflict", message: "used for a different payment", held: "conflict" }],
+    ["attempt_id_unavailable", { status: "failed", code: "attempt_id_unavailable", message: "not available", held: "unavailable" }],
     ["an unknown refusal", { status: "failed", code: "some_code_nobody_documented", message: "?" }],
     ["psp_attempt_in_flight", { status: "uncertain", code: "psp_attempt_in_flight", message: "claimed" }],
     ["psp_attempt_uncertain", { status: "uncertain", code: "psp_attempt_uncertain", message: "pinned" }],

@@ -651,7 +651,12 @@ describe("batch-payout: a batch is idempotent across machines (§39c)", () => {
       expect(receiptsOf(second)).toEqual(firstReceipts);
       // Recorded as the line's outcome — settled, with the first run's receipt — and never as a failure that invites a retry.
       expect(report.lines.map((l) => l.dispatch)).toEqual(["settled", "settled", "settled"]);
-      expect(payloadsOf(second, "rail.outcome").map((p) => p["status"])).toEqual(["settled", "settled", "settled"]);
+      expect(payloadsOf(second, "rail.outcome").map((p) => [p["status"], p["idempotent_replay"]])).toEqual([
+        ["settled", true],
+        ["settled", true],
+        ["settled", true],
+      ]);
+      expect(second.engine.list().flatMap((e) => e.outcomes.map((o) => o.replayed))).toEqual([true, true, true]);
     } finally {
       second.close();
       ledger.close();
@@ -797,7 +802,7 @@ describe("batch-payout: a batch is idempotent across machines (§39c)", () => {
       const pay = rail.pay.bind(rail);
       rail.pay = async (payment) => {
         const outcome = await pay(payment);
-        answers.push({ attempt_id: payment.attempt_id, status: outcome.status, replay: outcome.status === "settled" ? (outcome.raw as Record<string, unknown>)["idempotent_replay"] : undefined });
+        answers.push({ attempt_id: payment.attempt_id, status: outcome.status, replay: outcome.status === "settled" ? outcome.replayed : undefined });
         return outcome;
       };
       const report = await run(s, "fornecedores-2026-10");
@@ -806,14 +811,16 @@ describe("batch-payout: a batch is idempotent across machines (§39c)", () => {
       expect(answers[1]!.attempt_id).toBe(g1);
       expect(answers[2]).toEqual({ attempt_id: g2, status: "settled", replay: true });
       expect(railOf(s).payCount).toBe(0);
-      expect(s.engine.list().find((e) => e.batch?.index === 1 && e.state === "settled")!.outcomes[0]!.receipt_id).toBe(receipt);
+      const replayed = s.engine.list().find((e) => e.batch?.index === 1 && e.state === "settled")!.outcomes[0]!;
+      expect(replayed).toMatchObject({ receipt_id: receipt, replayed: true });
+      expect(payloadsOf(s, "rail.outcome").filter((p) => p["attempt_id"] === g2)).toEqual([expect.objectContaining({ status: "settled", idempotent_replay: true })]);
     } finally {
       s.close();
       ledger.close();
     }
   });
 
-  it("a refusal that is not the id being spent never moves the line to another id, on this run or the next", async () => {
+  it("a line whose id is held for another payment is reported attempt_id_conflict, never moved to another id, and never re-drafted", async () => {
     const ledger = newLedger();
     // The books hold the line's generation-0 id for a DIFFERENT payment, so the rail answers attempt_id_conflict.
     const s = machine("n", { ledger });
@@ -822,17 +829,18 @@ describe("batch-payout: a batch is idempotent across machines (§39c)", () => {
     const g0 = batchAttemptId(s.engine.mandate.id, { batch_hash: presented, index: 1 }, 0);
     ledger.stubRailPut(g0, { attempt_id: g0, mandate_id: s.engine.mandate.id, amount_minor: 1, currency: "BRL", payee: INSUMOS }, { status: "settled", transaction_id: "tx_other", receipt_id: null, money_moved: false, sandbox: true, raw: {} }, "2026-09-23T17:00:00.000Z");
     try {
-      for (const _ of [1, 2]) {
-        const report = await run(s, "fornecedores-2026-10");
-        expect(report.lines[1]!.dispatch).toBe("refused");
-      }
+      const first = await run(s, "fornecedores-2026-10");
+      expect(first.lines.map((l) => l.dispatch)).toEqual(["settled", "attempt_id_conflict", "settled"]);
+      expect(first.failed).toEqual(["insumos"]);
+      // The next run reads the claim and does not draft the line again: the same id would get the same refusal.
+      const second = await run(s, "fornecedores-2026-10");
+      expect(second.lines.map((l) => l.dispatch)).toEqual(["already_settled", "attempt_id_conflict", "already_settled"]);
       const tries = s.engine.list().filter((e) => e.batch?.index === 1);
-      expect(tries).toHaveLength(2);
-      for (const e of tries) {
-        expect(e.outcomes).toEqual([expect.objectContaining({ attempt_id: g0, status: "failed", code: "attempt_id_conflict" })]);
-        expect(e.attempt_generations).toBeUndefined();
-      }
+      expect(tries).toHaveLength(1);
+      expect(tries[0]!.outcomes).toEqual([expect.objectContaining({ attempt_id: g0, status: "failed", code: "attempt_id_conflict", held: "conflict" })]);
+      expect(tries[0]!.attempt_generations).toBeUndefined();
       expect(payloadsOf(s, "rail.attempt_spent")).toEqual([]);
+      expect(payloadsOf(s, "rail.dispatch").filter((p) => p["attempt_id"] === g0)).toHaveLength(1);
     } finally {
       s.close();
       ledger.close();

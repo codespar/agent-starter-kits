@@ -53,6 +53,13 @@ export type RailOutcome =
       receipt_id: string | null;
       money_moved: boolean;
       sandbox: boolean;
+      /**
+       * The rail answered from its record of an attempt that had ALREADY
+       * settled (`idempotent_replay`, ent#1671): every other field is the
+       * original answer, and nothing moved, was held or was sealed by this
+       * call. Absent on the call that settled it.
+       */
+      replayed?: true;
       raw: unknown;
     }
   | {
@@ -67,6 +74,14 @@ export type RailOutcome =
        * next generation of its id (`batchAttemptId`).
        */
       spent?: true;
+      /**
+       * The rail holds this `attempt_id` for something else: a DIFFERENT
+       * payment (`attempt_id_conflict`, checked before whatever became of it)
+       * or another project of the organization (`attempt_id_unavailable`).
+       * Nothing was held or sent. Never `spent`: the id is not free and not
+       * burned, it is someone else's, and presenting it again answers the same.
+       */
+      held?: "conflict" | "unavailable";
       raw?: unknown;
     }
   | {
