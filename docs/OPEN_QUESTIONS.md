@@ -533,7 +533,9 @@ fixes it** with a `realpathSync` on `argv[1]`, covered upstream by a test that
 packs, installs and runs the bin. So the script simply calls the bin again, and
 the path-resolution workaround this lane carried for one version is gone. The
 same rule applied to the five gaps in §46, and 0.2.0 closed all of them, which
-is the argument for reporting them. The pin is now 0.2.0.
+is the argument for reporting them. 0.3.0 then closed the four places 0.2.0
+differed from its own release note, plus the backwards clock of
+fabianocruz/whatsapp-simulator#2. The pin is now 0.3.0.
 
 Two things remain STUBS on our side and are named rather than implied.
 
@@ -663,7 +665,7 @@ separation the product already has. `--scripted` stays the real path for the
 gate. **Revisit** when a kit has a real operator, i.e. when an operator's
 decision in a kit is meant to be anything other than a demo.
 
-## 46. What the emulator did not do at 0.1.1, and what 0.2.0 closed
+## 46. What the emulator did not do at 0.1.1, what 0.2.0 closed, and what 0.3.0 corrected
 
 Driving the whole `collections-agent` flow through `dyvit-wa-sim` found five
 gaps. They were first measured at `2f1f8bc120ddbc1bfa23386622f9a93f3fdeb980`,
@@ -820,21 +822,78 @@ dropped with its id and type named on the console, which is honest, but the
 debtor can tap "À vista" and the agent does not hear it. Turning a button reply
 into a turn is a channel feature and is not in this change.
 
-### Where 0.2.0 differs from its release note
+### Where 0.2.0 differed from its release note — corrected in 0.3.0
 
-Measured on 2026-09-24. None of these affects a test or the gate, because both
-always name the conversation or the message.
+Found on 2026-09-24. None of these affected a test or the gate, because both
+always name the conversation or the message. `@dyvit/whatsapp-simulator-cli@0.3.0`
+corrects all four, and the pin moved to it on 2026-09-26. Each was measured
+against the published 0.3.0 binary by the integration test, in the block "what
+0.3.0 changed". The same file run against 0.2.0 fails 9 of its 21 cases: the
+seven cases of that block, plus the two older cases that now assert the
+corrected behaviour (the replay's 404 and the `list_reply` inside (e)). Against
+0.3.0 all 21 pass. The two cases whose answer depends on the whole emulator
+(1 below, and the global reset) start a private instance of the pinned version
+on a free port, so another run's send or another lane's conversations cannot
+be part of the answer.
 
-- `POST /_sim/status` with neither `key` nor `message_id` marked the last
-  message of the FIRST conversation the emulator held, not the most recent
-  send overall. We read the note as saying the latter.
-- It accepts `failed` after `read` for the same message, and accepts
-  `delivered` as an injectable status. Meta does not move a read message to
-  failed.
-- `list_reply` loses the `description` that Meta's `list_reply` carries.
-- The 404 of a partial replay counts the list after the redeliveries it
-  already made: seven deliveries before the call, "there are 8 (0..7)" in the
-  answer.
+- **The status with neither `key` nor `message_id`. CORRECTED.** 0.2.0 marked
+  the last message of the FIRST conversation the emulator held. Measured on
+  0.3.0: it marks the most recent send overall. Two conversations answer; the
+  second one sends last; `{"status":"read"}` marks that send as `read`, and the
+  first conversation has nothing read. On 0.2.0 the same send stays
+  `delivered`.
+- **Injectable statuses, and read or failed as final. CORRECTED.** Measured on
+  0.3.0:
+  - `delivered` answers `400` ("cannot be injected; use read or failed").
+  - `failed` after `read` answers `409`, and so do `read` after `failed` and
+    `failed` twice.
+  - After a `409`, the message is still `read`, the bill total is unchanged,
+    the reason code is not `NOT_BILLABLE_FAILED`, and no webhook goes out.
+  - (d) above still measures that a `failed` on a message that was never read
+    carries 131026 and leaves the bill.
+- **`list_reply` keeps `description`. CORRECTED.** Measured on 0.3.0: the
+  inbound webhook carries `list_reply.description` as sent, and (e) above now
+  compares the whole `interactive` object with a description in it.
+- **Replay is all-or-nothing. CORRECTED.** 0.2.0 redelivered the entries
+  before a missing index and counted the list after them. Measured on 0.3.0:
+  `[a, missing, a]` answers `404`, the webhook list does not grow, and the
+  message says "there are N" with N the length BEFORE the call, plus "Nothing
+  was redelivered." The "gotcha two" of (b) is gone: a 404 now means nothing
+  happened.
+
+### The backwards clock (fabianocruz/whatsapp-simulator#2, kits #42) — named in 0.3.0, not changed
+
+- **What 0.3.0 changed.** `POST /_sim/clock` moved to an instant before existing
+  messages now answers a `warning`, plus `ahead: [{ key, latest }]` naming each
+  conversation with later messages. Measured on 0.3.0: the key is named, and
+  `latest` is the inbound "from the future".
+- **What it did not change, deliberately.** The window still counts from those
+  messages. That is what Meta would do if time could go backwards, and it
+  never can. So the sequence of kits #42 (an inbound at 22:30, the clock back to
+  14:00, 26 hours on) still answers 200 to free-form text on 0.3.0, and the
+  test says exactly that.
+- **`POST /_sim/reset` is the new way out.**
+  - `{"key": "<phone_number_id>:<contact>"}` clears one conversation and
+    answers `{ ok, key, removed }`. Measured on 0.3.0: after it, the #42
+    sequence on that key answers 400/131047, and another conversation is
+    untouched.
+  - `{}` clears everything: conversations, webhooks, and the clock back to the
+    wall clock. Measured on a private instance only.
+
+**The kits keep the conversation per run of #42, and do not reset.** The
+emulator is shared: by the gate's runs, by the test files, and locally by other
+lanes pointing at the same port. A global reset in one run would wipe the
+others' conversations and webhooks in the middle of their cases. A reset by key
+is the alternative that does not have that problem, and it would work: call
+`POST /_sim/reset {"key": "<pnid>:<contact>"}` before a case uses a fixed key.
+It is not what the kits do. A fresh `phone_number_id` per run needs no call,
+cannot race, and leaves nothing behind for the next run to find.
+
+Two details measured on 0.3.0 and not in the note, both harmless:
+
+- a reset naming a key that does not exist answers `200` with
+  `removed: false`, not an error;
+- a numeric `key` (`{"key": 5}`) is accepted and read as the string `"5"`.
 
 ### And one gap that was ours, not the emulator's — now closed
 

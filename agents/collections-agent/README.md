@@ -72,9 +72,10 @@ Cloud API's own response shape and posts back the same signed
 It also has a clock we can move (`POST /_sim/clock`), which a replay finishing
 in seconds cannot otherwise have. No Meta account, no credential, and no
 traffic that leaves the machine. What it did not cover at 0.1.1 was measured, with
-the exact payloads, in `docs/OPEN_QUESTIONS.md` §46; the pinned 0.2.0 closes
-all five, chief among them that it now ENFORCES the 24-hour window with Meta's
-own 400/131047 instead of only pricing it.
+the exact payloads, in `docs/OPEN_QUESTIONS.md` §46; 0.2.0 closed
+all five, chief among them that it ENFORCES the 24-hour window with Meta's
+own 400/131047 instead of only pricing it, and the pinned 0.3.0 corrects the
+four places 0.2.0 differed from its release note.
 
 `--scripted` replays the debtor's turns from `channels/whatsapp/<name>.json`,
 which is what an agent ships for this channel: the contact the conversation is
