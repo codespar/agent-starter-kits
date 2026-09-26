@@ -171,7 +171,9 @@ stay under a threshold; never to claim a payment unless the tool result says
 ### 4. Write `tools.json` minimal
 
 `meta_tools` are named `codespar_*` with `effect` `payment`, `charge` or
-`read`; `local_tools` are the agent's own read-only helpers. Each entry has
+`read`; `local_tools` are the agent's own helpers, `read` or `state` (a local
+tool that keeps durable state of the agent's own and moves no money, like a
+cart). Each entry has
 `name`, `effect`, `description`, `input_schema` (JSON Schema). Names are
 unique. The shapes are the kit's own, not the MCP's: a meta-tool entry borrows
 the name for the job it does, the model sees only what it needs (an alias,

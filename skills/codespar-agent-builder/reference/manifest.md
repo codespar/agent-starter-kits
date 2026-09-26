@@ -91,8 +91,9 @@ your `policyExtension`; it does not interpret the keys). Strict.
 ```
 
 Names `^[a-z][a-z0-9_]*$`, unique across both lists; meta-tools start with
-`codespar_`; `effect` is `payment`, `charge` or `read`. Both lists may be
-empty. Strict.
+`codespar_`; `effect` is `payment`, `charge`, `read` or `state`. `state` is a
+local tool that changes durable local state and moves no money (a cart in
+`state.db`); a meta-tool may not declare it. Both lists may be empty. Strict.
 
 ## `mandate.example.json` (`packages/agent-core/src/mandate.ts`)
 

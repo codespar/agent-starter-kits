@@ -25,7 +25,7 @@ import type { PaymentRail, RailOutcome, RailPayment } from "./rail.js";
 import type { MandateStatusReport, MandateStatusSource } from "./revocation.js";
 import { isTerminal, transition, type Execution, type ExecutionState } from "./state-machine.js";
 import type { StateStore } from "./state/store.js";
-import type { Actor, ApprovalArtifact, ApprovalMode, ExecutionBatch, ExecutionItem, ExecutionReason, ItemOutcome } from "./types.js";
+import type { Actor, ApprovalArtifact, ApprovalMode, ExecutionBatch, ExecutionComposition, ExecutionItem, ExecutionReason, ItemOutcome } from "./types.js";
 
 export interface ProposedItem {
   /** An alias from the mandate's named payees, or a raw payee key. */
@@ -62,6 +62,13 @@ export interface Proposal {
    * it. The core never invents one and never fills one in.
    */
   batch?: ExecutionBatch;
+  /**
+   * What the proposal's amount is composed of, when it is composed of lines
+   * (a cart behind one order). The kit computes `compositionHash` over the
+   * resolved lines; the core stamps it on the execution and every artifact of
+   * it, and never computes, fills in or reads the lines.
+   */
+  composition?: ExecutionComposition;
 }
 
 export type DraftResult =
@@ -128,6 +135,7 @@ export class ExecutionEngine {
     const items = proposal.items.map((p) => this.resolveItem(p));
     const total = items.reduce((sum, i) => sum + i.amount, 0);
     if (proposal.batch) assertBatchBinding(proposal.batch);
+    if (proposal.composition) assertCompositionBinding(proposal.composition);
     const id = newId("exe");
     const execution: Execution<"drafted"> = {
       id,
@@ -141,6 +149,7 @@ export class ExecutionEngine {
       ...(proposal.claimed_total !== undefined ? { model_claimed_total: proposal.claimed_total } : {}),
       items_hash: itemsHash(items),
       ...(proposal.batch ? { batch: proposal.batch } : {}),
+      ...(proposal.composition ? { composition: proposal.composition } : {}),
       mandate: { id: this.deps.mandate.id, version: this.deps.mandate.version },
       idempotency_key: `idk_${sha256Hex(`${this.deps.runId}:${id}`).slice(0, 32)}`,
       blocking_reasons: [],
@@ -150,9 +159,56 @@ export class ExecutionEngine {
       updated_at: now.toISOString(),
     };
     this.deps.store.saveExecution(execution);
-    this.record("execution.drafted", id, { items: execution.items, total, model_claimed_total: proposal.claimed_total ?? null, mode: this.deps.mode, batch: execution.batch ?? null });
+    this.record("execution.drafted", id, { items: execution.items, total, model_claimed_total: proposal.claimed_total ?? null, mode: this.deps.mode, batch: execution.batch ?? null, ...(execution.composition ? { composition: execution.composition } : {}) });
 
     return { ok: true, execution: await this.evaluateDraft(execution) };
+  }
+
+  /**
+   * The proposal behind an OPEN execution changed, and the execution follows
+   * it: a customer who changes the cart after the order was approved is
+   * changing the order, not opening a second one. The items, the total, the
+   * `items_hash` and the composition are replaced; the state, the approval
+   * and the idempotency key are NOT.
+   *
+   * That is the point. No transition happens here and nothing is judged: an
+   * `approved` execution keeps the artifact it was approved with, and the
+   * last gate (`execute`) compares the two and sends it back to
+   * `awaiting_approval` with `items_hash_mismatch` — the same edge a list
+   * tampered after approval takes, reached honestly. An `awaiting_approval`
+   * one is judged again by whoever decides it, on what it says now.
+   *
+   * The payees may not change, in number or in order: a restatement changes
+   * what is charged or paid, never to whom. Nothing is dispatched by an open
+   * execution, so no attempt can exist under the key it keeps.
+   */
+  restate(executionId: string, proposal: Proposal): Execution {
+    const execution = this.mustGet(executionId);
+    if (execution.state !== "awaiting_approval" && execution.state !== "approved") throw new Error(`execution ${executionId} is ${execution.state}; only an open execution (awaiting_approval, approved) can be restated`);
+    if (proposal.batch) throw new Error("a batch line is not restated; the batch is presented again");
+    if (proposal.composition) assertCompositionBinding(proposal.composition);
+    const items = proposal.items.map((p) => this.resolveItem(p));
+    const before = execution.items.map((i) => i.payee);
+    if (items.length !== before.length || items.some((item, i) => item.payee !== before[i])) throw new Error(`execution ${executionId}: a restatement may not change the payees`);
+    const total = items.reduce((sum, i) => sum + i.amount, 0);
+    const { composition: _composition, model_claimed_total: _claimed, ...rest } = execution;
+    const restated: Execution = {
+      ...rest,
+      items,
+      total,
+      ...(proposal.claimed_total !== undefined ? { model_claimed_total: proposal.claimed_total } : {}),
+      items_hash: itemsHash(items),
+      ...(proposal.composition ? { composition: proposal.composition } : {}),
+      updated_at: this.clock().toISOString(),
+    };
+    this.deps.store.saveExecution(restated);
+    this.record("execution.restated", execution.id, {
+      state: execution.state,
+      items_hash: { from: execution.items_hash, to: restated.items_hash },
+      total: { from: execution.total, to: total },
+      composition: { from: execution.composition ?? null, to: restated.composition ?? null },
+    });
+    return restated;
   }
 
   // ---- deterministic policy ---------------------------------------------
@@ -882,7 +938,7 @@ export class ExecutionEngine {
   private storeApproval(artifact: ApprovalArtifact): void {
     this.deps.store.saveApproval(artifact);
     this.deps.bundle.approval(artifact);
-    this.record("approval.created", artifact.execution_id, { approval_id: artifact.approval_id, approver: artifact.approver, items_hash: artifact.items_hash, batch: artifact.batch ?? null, escalation: artifact.escalation ?? null });
+    this.record("approval.created", artifact.execution_id, { approval_id: artifact.approval_id, approver: artifact.approver, items_hash: artifact.items_hash, batch: artifact.batch ?? null, ...(artifact.composition ? { composition: artifact.composition } : {}), escalation: artifact.escalation ?? null });
   }
 
   private persist<S extends ExecutionState>(execution: Execution<S>): Execution<S> {
@@ -921,6 +977,13 @@ function assertBatchBinding(batch: ExecutionBatch): void {
   if (!Number.isInteger(batch.index) || batch.index < 0 || batch.index >= batch.count) {
     throw new Error(`batch.index must be a position inside the batch (0..${batch.count - 1}), got ${batch.index}`);
   }
+}
+
+/** A composition binding is the kit's to compute and the core's to refuse when it cannot be true. */
+function assertCompositionBinding(composition: ExecutionComposition): void {
+  if (!composition.ref.trim()) throw new Error("composition.ref must name what was composed");
+  if (!/^sha256:[0-9a-f]{64}$/.test(composition.composition_hash)) throw new Error("composition.composition_hash must be the compositionHash of the resolved lines");
+  if (!Number.isInteger(composition.line_count) || composition.line_count < 1) throw new Error(`composition.line_count must be a positive integer, got ${composition.line_count}`);
 }
 
 /**
