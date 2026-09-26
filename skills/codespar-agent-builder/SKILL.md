@@ -254,6 +254,7 @@ examples. What you may set, and nothing else is yours:
 | `usage` | The text `--help` prints | everyone |
 | `describeExecution`, `oneShotPayload` | The console lines and the `--json` body | everyone |
 | `settlement` | `immediate` (money out) or `await-payer` (money in, `poll`/`webhook`) | collector |
+| `followUp`, `resumeFollowUps` | Work that follows an outcome without being part of it (a sale's service invoice after `settled`); it can never move the execution it follows | a seller (`agents/checkout-agent`) |
 | `executeOnApproval` | `false` when approving and issuing are two moments (a sale: the order is confirmed, the charge goes out when the customer asks); the agent's own tool then calls `engine.execute` | a seller (`agents/checkout-agent`) |
 | `presentInstrument`, `announceOutcome` | The QR the payer reads, the one message per outcome | collector |
 | `ensureMandate`, `consent` | The consent that mints the mandate | payer |

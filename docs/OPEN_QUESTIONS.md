@@ -945,8 +945,41 @@ c. **`quantity-swapped` ships twice.** In `mandate` it is `must_escalate`: the a
 
 d. **`cap-exceeded`** answers `per_tx_cap_exceeded`: the mandate's per-transaction cap and the envelope's `max_order_minor` are the same R$ 2.000,00, and the core's check runs first.
 
-e. **`nfse-failed`** is not in this PR: it comes with the NFS-e execution. Thirteen of the fourteen scenarios of checkout §6 ship.
+e. **`nfse-failed`** shipped with the NFS-e execution (§58 to §61): all fourteen scenarios of checkout §6 are in.
 
 ## 57. `pix_copy_paste` in `--json` is the payable code while the charge is open
 
 Checkout §7.5 lists `pix_copy_paste` in the one-shot's `--json`. It is there while the order is `executing (awaiting_settlement)` (exit 3, "open"). Once paid, the core replaces the attempt's outcome with the settled one, which carries no instrument, so a one-shot that ran with `--simulate-payer` ends with `pix_copy_paste: null` next to `state: settled` and the `charge_id`. The code a person paid with is in the conversation (stderr) and in the charge record, not in the settled execution.
+
+## 58. The NFS-e execution: what "retry only what proves `unsent`" can mean on today's wire
+
+Checkout §4 and decision 4: after `settled` the order opens a second execution with its own outbox, `codespar_invoice` is called by code, a failure never un-sells, and only a failure that proves `dispatch: "unsent"` is retried; anything else stops at `failed (invoice_uncertain)`. `src/modules/nfse-invoice.ts` does that: one record per paid order in `state.db`, one row in the core's `outbox` table (`kind: nfse.issue`, flipped to `sent` before each call), `pending → issuing → accepted | failed`, the attendant told on every failure through the console and a `message.attendant` event, the customer never.
+
+The spec's condition cannot be read off the wire as written. `MetaToolStrategyError` carries `dispatch: "unsent" | "rejected" | undefined` (`meta-tools/strategy-error.ts:115` at enterprise `07659b1e`), and neither transport puts it on the response: `routes/session-execute.ts:591-595` and the chat loop in `routes/sessions.ts` write `{ error, code, details? }` only. The case that matters is the provider's. `attemptCandidate` raises `provider_error` for a 4xx the issuer ANSWERED (`dispatch: "rejected"`, nothing issued), for a timeout and for a 5xx (`dispatch` undefined, maybe issued), and they look the same to a caller. The kit classifies by structure and code, never by the message:
+
+- `success: true` with a document id: `accepted`. Without one: uncertain.
+- `success: false` from our side (`server: "agentgate"`, the unregistered-tool envelope, or a code the strategy raises BEFORE the provider call: `no_eligible_providers`, `transform_unknown`, `tool_unknown`, `credential_unavailable`, `invalid_args`, `org_paused`): `unsent`, retried up to three times under the same outbox key, then `failed (invoice_unsent)`.
+- A 4xx from the route itself (schema, auth, policy, rate): `unsent`. A session that would not open: `unsent`, because no document was sent.
+- `provider_error`, an output of `null`, a timeout or a 5xx: `failed (invoice_uncertain)`, never re-sent. **So today an issuer's refusal arrives as `invoice_uncertain`, not as `invoice_refused` with its code.** Checkout §4 wants that refusal terminal, sent to the attendant with the issuer's code, and the wire does not allow it. The stub issuer produces all four classes, so the scenario shows the intended behaviour. The classifier already reads `data.dispatch` and uses it the day it is there.
+
+**Open, for the API (a companion to ent#1675):** put `dispatch` on the execute output next to `code`, on both transports. That is what turns "retry only what provably did not leave" and "an issuer refusal is terminal" into branches a caller can take.
+
+## 59. The `nfse` rail fails over between two issuers
+
+`meta-tools/catalog.ts` has two `codespar_invoice × nfse` rows at enterprise `07659b1e`: `nfe-io` (`:435`) and `bling` (`:687`). The failover loop in `real-strategy.ts` (`:2190-2345`) records a candidate's failure and moves to the next within the rail, whether that failure was `rejected` or unknown. On an organization with both connected, a timeout at nfe.io, after which the note may exist, is followed IN THE SAME CALL by an issuance at Bling. That is two irreversible documents for one sale, and the kit cannot see or prevent it: the caller gets one answer and a `failover_trail`. The kit's own rule (never re-send an uncertain issuance) does not cover a second send the API made itself. **Open, for the API:** on a fiscal rail with no idempotency key, fail over only on a candidate failure that proves `unsent`.
+
+## 60. What the kit sends to `codespar_invoice`, and two things the transform does not do for it
+
+There is no REST twin for invoices like `POST /v1/charges`. The kit calls the meta-tool through a session: `POST /v1/sessions` (`servers: ["nfe-io"]`), then `POST /v1/sessions/{id}/execute` with `tool: "codespar_invoice"` and `{ action: "issue", type: "nfse", recipient, items, metadata }`. The recipient's name, CPF, e-mail and address come from the customer book, and the lines from the cart. The description names the store, the cart and the lines, and `additionalInformation` names the charge.
+
+a. **`servicesAmount` is passed explicitly.** Without it, `invoice_nfse_v1` (`transforms.ts:2069`) derives the amount as the sum of `unit_price × quantity`, which is what the customer did NOT pay whenever a discount or a coupon applied: a discounted sale would be invoiced at list price. The kit sends the amount that was paid (`metadata.servicesAmount`, in major units).
+
+b. **`cityServiceCode` is left to the transform's default (`0107`, "general services").** The code a municipality expects depends on the ISSUING company's city and registration, which is the organization's nfe.io configuration and not the kit's. The catalog carries each service's national item (LC 116: `8.02`, `17.01`, `12.07`) on the lines for the day a per-item code has somewhere to go. **Open:** whether the connection's metadata or the catalog should own it.
+
+`accepted` means the issuer took the request and named a document (`flowStatus` such as `WaitingSend`). The municipal authorization that follows is not readable through the meta-tool (checkout §9.14: `action=status` reads product invoices), so the kit never says "autorizada".
+
+## 61. The NFS-e path was not run against the nfe.io sandbox
+
+Not faked, and not run. What was built: the API rail above, typechecked against `@codespar/sdk@0.16.8`'s generated types for both routes, and unit-tested against the documented envelope (a session that will not open, a 403, a 503, a success with and without an id, each strategy code). What ran end to end is the stub issuer, in the CI. The stub applies one rule a real issuer applies (a borrower with no address is refused, which is Rafael's registration) and one script of its own (Beatriz's issuance times out after the request left).
+
+What stopped the sandbox run: the environment this lane built in has no `csk_test_` key. No `CODESPAR_API_KEY` is in the environment and no `.env` is in any lane directory, and the brief was not to hunt for one. Nothing in the enterprise code says the path is closed. The demo organization listed `nfe-io` among its connections on staging (§22), and `codespar_invoice × nfse × nfe-io` is a catalog row. So the first run with the kits' staging key is what closes this entry: `npm start -- --scenario happy-path --rail api --wait 120` on staging issues the charge and, after `settled`, the NFS-e.
