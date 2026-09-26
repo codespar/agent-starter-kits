@@ -32,6 +32,7 @@ function payment(over: Partial<RailPayment> = {}): RailPayment {
     purpose: "contas do mes",
     agent_id: "bills-agent",
     quote: { seller: "Escola Aurora", resource: "outubro", price_minor: 185000, payee: ESCOLA },
+    approval: { items_hash: `sha256:${"1".repeat(64)}` },
     actor,
     ...over,
   };

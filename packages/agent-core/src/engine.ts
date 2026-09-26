@@ -21,7 +21,7 @@ import { newId } from "./ids.js";
 import { mandateExpired, payeeAllowed, resolveBeneficiary, windowCap, windowStart, type Mandate } from "./mandate.js";
 import type { Manifest } from "./manifest.js";
 import { checkQuote, quoteFromApproval } from "./quote.js";
-import type { PaymentRail, RailOutcome, RailPayment } from "./rail.js";
+import { spendApprovalOf, type PaymentRail, type RailOutcome, type RailPayment } from "./rail.js";
 import type { MandateStatusReport, MandateStatusSource } from "./revocation.js";
 import { isTerminal, transition, type Execution, type ExecutionState } from "./state-machine.js";
 import type { StateStore } from "./state/store.js";
@@ -566,7 +566,7 @@ export class ExecutionEngine {
   private async saveReceipt(executionId: string, receiptId: string, payment: RailPayment): Promise<string | undefined> {
     const receipt = await this.deps.rail.receipt(receiptId, this.agentActor);
     if (!receipt) return undefined;
-    const path = this.deps.bundle.receipt(receipt);
+    const path = this.deps.bundle.receipt(receipt, { approval_id: this.deps.store.getExecution(executionId)?.approval_id });
     this.record("receipt.saved", executionId, { receipt_id: receiptId, path });
     if (receipt.kind === "charge" || receipt.payment.payee === payment.payee) return undefined;
     const sealed = receipt.payment.payee === null ? null : maskPayee(receipt.payment.payee);
@@ -895,7 +895,10 @@ export class ExecutionEngine {
    * The attempts of an execution. Each carries the quote of the SAME line of
    * the approval artifact — what was approved, not what the execution says
    * now — so a line that drifted after approval is a quote that disagrees,
-   * refused before the call.
+   * refused before the call. Each also carries the artifact's hashes, which
+   * the API seals into the receipt (OPEN_QUESTIONS §3): the artifact is fixed
+   * per execution, so a reconcile presents the same approval the first
+   * dispatch did, and a batch line's hashes are the same on every machine.
    */
   private paymentsFor(execution: Execution, artifact: ApprovalArtifact): RailPayment[] {
     return execution.items.map((item, index) => {
@@ -916,6 +919,7 @@ export class ExecutionEngine {
         ...(item.description ? { description: item.description } : {}),
         ...(item.due_date ? { due_date: item.due_date } : {}),
         ...(quote ? { quote } : {}),
+        approval: spendApprovalOf(artifact),
         actor: this.agentActor,
       };
     });

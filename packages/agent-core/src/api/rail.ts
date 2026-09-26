@@ -14,10 +14,10 @@
  * spend carries `agent_id`, which the mandate binds; the full actor is
  * stamped on the local receipt copy and on every event of the bundle.
  */
-import type { ApiClient } from "@codespar/sdk";
+import type { ApiClient, ApiOperation, ApiRequestBody } from "@codespar/sdk";
 import type { Mandate } from "../mandate.js";
 import { checkQuote } from "../quote.js";
-import type { PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt } from "../rail.js";
+import { checkSpendApproval, type PaymentRail, type RailLookup, type RailOutcome, type RailPayment, type RailReceipt, type SpendApproval } from "../rail.js";
 import type { Actor } from "../types.js";
 import { describeApiError, isUncertain, type SpendErrorCode } from "./client.js";
 
@@ -29,6 +29,29 @@ const ATTEMPT_SPENT: SpendErrorCode = "psp_attempt_conflict";
 const ATTEMPT_ID_CONFLICT: SpendErrorCode = "attempt_id_conflict";
 /** Another project of this organization holds this attempt id; opaque by design, nothing was held or sent. */
 const ATTEMPT_ID_UNAVAILABLE: SpendErrorCode = "attempt_id_unavailable";
+
+/**
+ * UNTYPED UNTIL THE SDK TYPES IT — the one place the kit sends a field
+ * `@codespar/sdk` does not declare. The API takes `approval` on both spend
+ * bodies since ent#1670 (codespar-enterprise#1698) and seals it into the
+ * receipt; @codespar/sdk@0.16.9 was generated before that. The field is
+ * spread into the two bodies below, which the object-literal excess-property
+ * check does not reach. The SDK refresh that types it (0.16.10) deletes this
+ * function and `SdkLacksApproval`, and writes `approval: payment.approval` in
+ * both bodies, where the compiler checks it.
+ */
+function untypedApproval(approval: SpendApproval): { approval: SpendApproval } {
+  return { approval };
+}
+
+/**
+ * Compiles while the SDK does not type `approval` on either spend body, and
+ * stops compiling the day it does: the bump cannot land with the untyped
+ * spread above still in place.
+ */
+type SdkLacksApproval<Path extends "/v1/consumer-payments/execute" | "/v1/consumers/mandates/{id}/spend"> = "approval" extends keyof ApiRequestBody<ApiOperation<Path, "post">> ? false : true;
+const sdkLacksApproval: SdkLacksApproval<"/v1/consumer-payments/execute"> & SdkLacksApproval<"/v1/consumers/mandates/{id}/spend"> = true;
+void sdkLacksApproval;
 
 export class CodeSparRail implements PaymentRail {
   readonly name = "codespar" as const;
@@ -42,6 +65,9 @@ export class CodeSparRail implements PaymentRail {
     // Without the quote the sealed receipt names no payee (OPEN_QUESTIONS §18), and the API pays a quote that disagrees. Neither goes out.
     const quoted = checkQuote(payment);
     if (!quoted.ok) return { status: "failed", code: quoted.code, message: `${quoted.detail}; nothing was sent` };
+    // Without it the receipt seals no link to what was approved (OPEN_QUESTIONS §3), and the API refuses a malformed one with 400 anyway.
+    const approval = checkSpendApproval(payment);
+    if (!approval.ok) return { status: "failed", code: approval.code, message: `${approval.detail}; nothing was sent` };
     try {
       const outcome =
         this.envelope?.canonical && this.envelope.signature
@@ -55,11 +81,12 @@ export class CodeSparRail implements PaymentRail {
                 payee: payment.payee,
                 attempt_id: payment.attempt_id,
                 quote: quoted.quote,
+                ...untypedApproval(approval.approval),
               },
             })
           : await this.api.post("/v1/consumers/mandates/{id}/spend", {
               path: { id: payment.mandate_id },
-              body: { amount_minor: payment.amount_minor, payee: payment.payee, agent_id: payment.agent_id, attempt_id: payment.attempt_id, quote: quoted.quote },
+              body: { amount_minor: payment.amount_minor, payee: payment.payee, agent_id: payment.agent_id, attempt_id: payment.attempt_id, quote: quoted.quote, ...untypedApproval(approval.approval) },
             });
       return {
         status: "settled",
