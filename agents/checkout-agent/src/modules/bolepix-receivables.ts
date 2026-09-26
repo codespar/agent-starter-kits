@@ -41,6 +41,8 @@ export interface OrderDeps {
   runId: string;
   timezone: string;
   clock: () => Date;
+  /** The customer a channel's conversation is bound to, when one is: an order in this conversation is theirs. */
+  boundCustomer?: () => string | undefined;
 }
 
 const OPEN = new Set(["awaiting_approval", "approved"]);
@@ -112,6 +114,10 @@ export function makeChargeHandlers(deps: OrderDeps): Record<string, ToolHandler>
     }
     if (typeof input.customer !== "string" || !input.customer.trim()) throw new Error("codespar_charge: customer must be the alias of the customer you are talking to (their first name, lowercase)");
     const customer = input.customer.trim().toLowerCase();
+    // The contact binding is what identifies the customer on a channel. A charge in anybody else's name — even another
+    // customer of the store, whom the policy would allow — is refused before an order exists.
+    const bound = deps.boundCustomer?.();
+    if (bound && customer !== bound) throw new Error(`codespar_charge: this conversation is with ${bound}; an order here is charged to ${bound} and to nobody else. Nothing was ordered.`);
 
     const existing = orderOf(ctx.engine, cart);
     if (existing && (OPEN.has(existing.state) || existing.state === "executing" || existing.state === "settled")) {
