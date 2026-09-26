@@ -32,7 +32,7 @@ import { relative } from "node:path";
 import { ProofBundle, type ChargeInstrument, type Execution } from "@codespar/agent-core";
 import type { Agent } from "../agent.js";
 import { runsDir, type Setup } from "../setup.js";
-import { waitForPayer } from "../terminal.js";
+import { followUp, waitForPayer } from "../terminal.js";
 import { resolveConversation } from "../channels/index.js";
 import { buildWhatsApp, simulatedCost, type WhatsAppBackendName } from "../channels/whatsapp/open.js";
 import { EmulatorUnreachableError } from "../channels/whatsapp/emulator.js";
@@ -176,6 +176,7 @@ export async function pollWhatsApp(options: PollWhatsAppOptions): Promise<number
       const closed = result.execution;
       if (closed.state !== "executing") await s.engine.collectReceipts(closed.id);
       const delivery = await tellOutcome(channel, s, closed);
+      await followUp(closed, s, say);
       results.push({
         id: closed.id,
         state: closed.state,
