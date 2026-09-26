@@ -21,6 +21,7 @@ import {
   resolveFixedClock,
   type AgentRuntime,
   type ApprovalMode,
+  type ConversationScript,
   type Execution,
   type Guardrails,
   type LoadedManifest,
@@ -96,6 +97,13 @@ export interface Setup {
   system: string;
   handlers: Record<string, ToolHandler>;
   tools: ReturnType<typeof loadToolsFile>;
+  /**
+   * The conversation this run is bound to, when a channel binds one (WhatsApp):
+   * its contact and its subject. Set by the channel's start, read by a kit
+   * whose rules depend on who the person is — a sale is charged to the
+   * customer the conversation is with, and to nobody else.
+   */
+  conversation?: ConversationScript | undefined;
   /** `onBatch` is for a channel that takes one gesture per batch; without it every line is decided in `onExecution`. */
   makeLoop(runtime: AgentRuntime, onExecution: (execution: Execution) => Promise<Execution>, onBatch?: ToolContext["onBatch"]): AgentLoop;
   makeRuntime(): AgentRuntime;

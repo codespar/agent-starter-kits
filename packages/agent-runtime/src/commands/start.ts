@@ -179,6 +179,7 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
   const startedAt = Date.now();
   try {
     if (args.channel === "whatsapp") {
+      s.conversation = conversationScript;
       return await startWhatsApp({
         agent,
         setup: s,
