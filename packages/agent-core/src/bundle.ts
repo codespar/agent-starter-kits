@@ -5,6 +5,7 @@
  */
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { canonicalJson } from "./hash.js";
 import type { Mandate } from "./mandate.js";
 import type { RailReceipt } from "./rail.js";
 import type { ApprovalArtifact } from "./types.js";
@@ -174,6 +175,9 @@ export function copyDisagreesWithRead(copy: Record<string, unknown>, read: Recor
     ["payment.at", field(copy["payment"], "at"), field(read["payment"], "at")],
     ["payment.payee", field(copy["payment"], "payee"), typeof readPayee === "string" ? maskPayee(readPayee) : null],
   ];
+  // Written onto the copy since the rail reads them through the SDK's types (0.16.10); a copy from before carries neither, and is not faulted for it.
+  if ("chain_version" in copy) expected.push(["chain_version", copy["chain_version"], read["chain_version"]]);
+  if ("approval" in copy) expected.push(["approval", canonicalJson(copy["approval"] ?? null), canonicalJson(read["approval"] ?? null)]);
   return expected.filter(([, a, b]) => a !== b).map(([name]) => name);
 }
 

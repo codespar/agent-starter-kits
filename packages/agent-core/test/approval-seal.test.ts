@@ -13,7 +13,8 @@ import type { ApiClient } from "@codespar/sdk";
 import { describe, expect, it, vi } from "vitest";
 import { CodeSparRail } from "../src/api/rail.js";
 import { copyDisagreesWithRead, maskPayee } from "../src/bundle.js";
-import { checkSpendApproval, spendApprovalOf, type RailPayment } from "../src/rail.js";
+import { ReceiptSealMismatchError } from "../src/engine.js";
+import { checkSpendApproval, spendApprovalOf, type PaymentRail, type RailPayment, type SealedSpendApproval } from "../src/rail.js";
 import { ESCOLA, harness, MERCADO } from "./helpers.js";
 
 const approver = { id: "usr_demo", channel: "terminal" };
@@ -36,9 +37,22 @@ function payment(over: Partial<RailPayment> = {}): RailPayment {
   };
 }
 
-function fakeApi() {
+function fakeApi(receiptBody?: unknown) {
   const post = vi.fn(async (_path: string, _init: { body: Record<string, unknown> }) => ({ payment: { transactionId: "tx_1", moneyMoved: false }, receipt: { id: "rcpt_1" } }));
-  return { api: { post, get: vi.fn() } as unknown as ApiClient, post };
+  return { api: { post, get: vi.fn(async () => receiptBody) } as unknown as ApiClient, post };
+}
+
+/** The stub rail, but the receipt it hands back seals whatever approval the test says. */
+function sealingApproval(sealed: SealedSpendApproval | null) {
+  return (inner: PaymentRail): PaymentRail => ({
+    name: inner.name,
+    pay: (p) => inner.pay(p),
+    lookup: (id, p, tx) => inner.lookup(id, p, tx),
+    receipt: async (id, a) => {
+      const r = await inner.receipt(id, a);
+      return r && { ...r, approval: sealed };
+    },
+  });
 }
 
 function recording() {
@@ -113,6 +127,57 @@ describe("the CodeSpar rail", () => {
   });
 });
 
+describe("the receipt seals the approval the spend sent, or the run stops", () => {
+  it("the CodeSpar rail reads chain_version, the sealed approval and sig_sha256 through the SDK's types", async () => {
+    const read = {
+      receipt_id: "rcpt_1",
+      state: "paid",
+      chain_version: 4,
+      mandate: { id: "cm_1", nonce: "n", scope: "s", currency: "BRL", sig: "x", sig_sha256: "d".repeat(64) },
+      quote: { seller: "Escola Aurora", resource: "outubro", price_minor: 185000, payee: ESCOLA, session_id: null, sig: "q", at: "2026-09-23T18:00:00.000Z" },
+      approval: { items_hash: ITEMS_HASH, batch_hash: null },
+      payment: { rail: "pix-consent", provider: "pix", tx_id: "tx_1", amount_minor: 185000, amount_atomic: null, sandbox: true, attempt_id: "att_seal_0", money_moved: false, at: "2026-09-23T18:00:01.000Z" },
+      delivery: null,
+      chain: "c".repeat(64),
+      receipt_sig: "s",
+      exceptions: [],
+    };
+    const receipt = await new CodeSparRail(fakeApi(read).api).receipt("rcpt_1", actor);
+    expect(receipt).toMatchObject({ chain_version: 4, approval: { items_hash: ITEMS_HASH, batch_hash: null }, mandate: { id: "cm_1", sig_sha256: "d".repeat(64) } });
+    expect(JSON.stringify({ ...receipt, raw: undefined })).not.toContain('"sig":"x"');
+    const { approval: _a, ...older } = read;
+    expect((await new CodeSparRail(fakeApi({ ...older, chain_version: 1 }).api).receipt("rcpt_1", actor))?.approval).toBeNull();
+  });
+
+  for (const [name, sealed] of [
+    ["another list", { items_hash: `sha256:${"9".repeat(64)}`, batch_hash: null }],
+    ["no approval at all", null],
+  ] as const) {
+    it(`a receipt that seals ${name} is ReceiptSealMismatchError, after the outcome is saved`, async () => {
+      const h = harness({ mode: "human", wrapRail: sealingApproval(sealed) });
+      const d = await h.engine.draft({ items: [{ payee: "escola", amount: 185000 }] });
+      if (!d.ok) throw new Error("refused");
+      const approved = h.engine.approve(d.execution.id, approver);
+      const artifact = h.store.getApproval(approved.approval_id!)!;
+      await expect(h.engine.execute(approved.id)).rejects.toBeInstanceOf(ReceiptSealMismatchError);
+      expect(h.engine.get(approved.id)?.state).toBe("settled");
+      const mismatch = h.bundle.readEvents().find((e) => e["type"] === "receipt.seal_mismatch");
+      expect(mismatch?.["payload"]).toMatchObject({ sealed_approval: sealed, sent_approval: { items_hash: artifact.items_hash } });
+    });
+  }
+
+  it("the same hash in the other spelling of the prefix is the same approval", async () => {
+    const h = harness({ mode: "human" });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 185000 }] });
+    if (!d.ok) throw new Error("refused");
+    const approved = h.engine.approve(d.execution.id, approver);
+    const bare = h.store.getApproval(approved.approval_id!)!.items_hash.replace(/^sha256:/, "");
+    const spelled = harness({ mode: "human", dir: h.dir, wrapRail: sealingApproval({ items_hash: bare, batch_hash: null }) });
+    expect((await spelled.engine.execute(approved.id)).state).toBe("settled");
+    expect(spelled.bundle.readEvents().some((e) => e["type"] === "receipt.seal_mismatch")).toBe(false);
+  });
+});
+
 describe("the stub rail", () => {
   it("makes the same refusal, so a scenario cannot pass without the hashes", async () => {
     const h = harness();
@@ -157,5 +222,12 @@ describe("the bundle's receipt copy", () => {
     expect(copyDisagreesWithRead({ ...copy, payment: { ...copy.payment, amount_minor: 1 } }, read)).toEqual(["payment.amount_minor"]);
     expect(copyDisagreesWithRead({ ...copy, payment: { ...copy.payment, payee: maskPayee(MERCADO) } }, read)).toEqual(["payment.payee"]);
     expect(copyDisagreesWithRead({ ...copy, chain: "d".repeat(64) }, read)).toEqual(["chain"]);
+    // A copy written since 0.16.10 carries what was sealed, and is held to it; one from before carries neither and is not faulted.
+    const sealedRead = { ...read, chain_version: 4, approval: { items_hash: ITEMS_HASH, batch_hash: null } };
+    const sealedCopy = { ...copy, chain_version: 4, approval: { batch_hash: null, items_hash: ITEMS_HASH } };
+    expect(copyDisagreesWithRead(sealedCopy, sealedRead)).toEqual([]);
+    expect(copyDisagreesWithRead({ ...sealedCopy, approval: { items_hash: `sha256:${"9".repeat(64)}`, batch_hash: null } }, sealedRead)).toEqual(["approval"]);
+    expect(copyDisagreesWithRead({ ...sealedCopy, chain_version: 3 }, sealedRead)).toEqual(["chain_version"]);
+    expect(copyDisagreesWithRead(copy, sealedRead)).toEqual([]);
   });
 });
