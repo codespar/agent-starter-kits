@@ -688,7 +688,7 @@ on 2026-09-24.
 
 Each gap below keeps the payload that failed, then what was measured against
 0.2.0. The measuring is done by
-`packages/agent-runtime/test/whatsapp-emulator.integration.test.ts`: its five
+`test/whatsapp-emulator.integration.test.ts`: its five
 `GAP:` tests pinned the old behaviour, and they are now tests of the fixed one,
 each written so it goes red if the gap reopens. A refusal is checked for what
 it did NOT do (record the message, fire a webhook), not only for its status.
