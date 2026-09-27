@@ -21,7 +21,8 @@ The run ends with `recibo: runs/<run-id>/receipts/rcpt_....json`. Last timed run
 
 - `ANTHROPIC_API_KEY` can stay empty: the agent then replays the recorded happy path. The old placeholder `sk-ant-your_key_here` counts as empty.
 - One-shot form: `npm start -- --input "pague a escola de outubro" --approve`. It needs the consent first and stops at `no signed mandate yet` otherwise; the interactive `npm start` runs the consent on its own.
-- Staging key: uncomment `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` before the consent. A production key needs nothing else.
+- Staging key: uncomment `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` before the consent. A production key needs nothing else to sign the mandate.
+- **A new production test account does not reach its first receipt today** (measured 2026-09-27). The spend answers `insufficient_funds` and the run ends `failed (rail_failed)`, because the consumer's test wallet starts empty and the consent's credit step answers `no_provider_account`. That is on the API's side and is being fixed there. [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §17 says what was measured, and the manual funding call used to finish the measurement, which is not a step of this kit.
 - `npm start` and `npm run consent` at the root drive this agent. Inside `agents/bills-agent` the same scripts work once the root is installed.
 - Scaffold instead of cloning: `npx -y @codespar/cli@0.14.0 init my-agent --template bills-agent`, then the same `.env`, install and consent inside `my-agent/`.
 
