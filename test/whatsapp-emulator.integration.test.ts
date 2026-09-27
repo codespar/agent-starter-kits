@@ -23,6 +23,16 @@
  *   it answered, because a 400 that still recorded the message would be the
  *   old gap wearing a new status.
  *
+ * It lives in the repository's own `test/`, not in `packages/agent-runtime`,
+ * because it is a test of THIS repository's tooling: the emulator version
+ * `scripts/whatsapp-emulator.mjs` pins. `codespar init` copies the runtime
+ * package verbatim into every template and copies no `scripts/` and no root
+ * `test/`, so a test of the pin kept inside the runtime failed every
+ * scaffold's `npm test` on a file that is not there. Here it ships nowhere,
+ * and in this repository it runs with no guard: a moved pin is a red ENOENT,
+ * not a skip. `test/templates-read-nothing-outside.test.ts` keeps the next
+ * one out of the packages.
+ *
  * Two cases need an emulator nobody else is talking to: "the MOST RECENT send"
  * and "reset everything" are about the whole emulator, and on a shared one
  * another run's send or another lane's conversations are part of the answer.
@@ -35,10 +45,10 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { EMULATOR_DEFAULTS, EmulatorDriver } from "../src/channels/whatsapp/emulator.js";
-import { buildSendRequest, WhatsAppCloudApi, type CloudApiConfig } from "../src/channels/whatsapp/cloud-api.js";
-import { WhatsAppChannel } from "../src/channels/whatsapp/index.js";
-import type { ChannelLogLine } from "../src/channels/types.js";
+import { EMULATOR_DEFAULTS, EmulatorDriver } from "../packages/agent-runtime/src/channels/whatsapp/emulator.js";
+import { buildSendRequest, WhatsAppCloudApi, type CloudApiConfig } from "../packages/agent-runtime/src/channels/whatsapp/cloud-api.js";
+import { WhatsAppChannel } from "../packages/agent-runtime/src/channels/whatsapp/index.js";
+import type { ChannelLogLine } from "../packages/agent-runtime/src/channels/types.js";
 
 const URL_BASE = process.env["WHATSAPP_SIM_URL"] ?? "http://127.0.0.1:4290";
 
@@ -57,7 +67,7 @@ const up = await (async () => {
 if (!up) process.stderr.write(`[whatsapp] no emulator at ${URL_BASE}; its integration cases are skipped. Start it with \`npm run whatsapp:emulator\`.\n`);
 
 /** The version the repo pins, read from the one place that pins it; `WHATSAPP_SIM_VERSION` overrides it for a private instance. */
-const PINNED = /EMULATOR_VERSION = "([^"]+)"/.exec(readFileSync(resolve(import.meta.dirname, "../../../scripts/whatsapp-emulator.mjs"), "utf8"))![1]!;
+const PINNED = /EMULATOR_VERSION = "([^"]+)"/.exec(readFileSync(resolve(import.meta.dirname, "../scripts/whatsapp-emulator.mjs"), "utf8"))![1]!;
 const PRIVATE_VERSION = process.env["WHATSAPP_SIM_VERSION"] ?? PINNED;
 
 /** An emulator of our own, for the cases whose answer is about the whole emulator. */
