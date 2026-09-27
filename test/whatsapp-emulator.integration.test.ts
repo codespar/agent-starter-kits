@@ -102,6 +102,8 @@ async function privateEmulator(): Promise<{ url: string; stop: () => void }> {
 /** A fresh phone-number id per case, because the emulator keys a conversation on it. */
 const pnid = () => `9${String(Math.floor(Math.random() * 1e11)).padStart(11, "0")}`;
 const TO = "5511987654321";
+/** Where the emulator under test delivers webhooks: its `--webhook` port, which a machine running more than one emulator moves (the runner reads the same variable). */
+const WEBHOOK_PORT = Number(process.env["WHATSAPP_SIM_WEBHOOK_PORT"]?.trim() || EMULATOR_DEFAULTS.webhookPort);
 
 const config = (phoneNumberId: string): CloudApiConfig => ({
   baseUrl: URL_BASE,
@@ -283,7 +285,7 @@ describe.skipIf(!up)("the five gaps 0.2.0 closed, and what 0.3.0 changed in them
 
   it("(b) and our receiver hands a redelivered message on once, which is what Meta's at-least-once delivery needs of it", async () => {
     const id = pnid();
-    const backend = new WhatsAppCloudApi({ config: { ...config(id), webhookPort: EMULATOR_DEFAULTS.webhookPort }, conversation: { contact: `+${TO}` }, say: () => undefined });
+    const backend = new WhatsAppCloudApi({ config: { ...config(id), webhookPort: WEBHOOK_PORT }, conversation: { contact: `+${TO}` }, say: () => undefined });
     await backend.open();
     try {
       await new EmulatorDriver(URL_BASE).inbound({ phoneNumberId: id, from: `+${TO}`, text: "fechado, pago à vista" });
@@ -518,7 +520,7 @@ describe.skipIf(!up)("§46's three product gaps, against the binary: statuses, t
   async function opened() {
     const id = pnid();
     const failed: ChannelLogLine[] = [];
-    const backend = new WhatsAppCloudApi({ config: { ...config(id), webhookPort: EMULATOR_DEFAULTS.webhookPort }, conversation: { contact: `+${TO}` }, say: () => undefined });
+    const backend = new WhatsAppCloudApi({ config: { ...config(id), webhookPort: WEBHOOK_PORT }, conversation: { contact: `+${TO}` }, say: () => undefined });
     const channel = new WhatsAppChannel({ backend, conversation: { contact: `+${TO}` }, now: () => new Date(), templates, onDeliveryFailed: (l) => failed.push(l) });
     await channel.open();
     const driver = new EmulatorDriver(URL_BASE);

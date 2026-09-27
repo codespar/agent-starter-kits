@@ -21,7 +21,7 @@ import { newId } from "./ids.js";
 import { mandateExpired, payeeAllowed, resolveBeneficiary, windowCap, windowStart, type Mandate } from "./mandate.js";
 import type { Manifest } from "./manifest.js";
 import { checkQuote, quoteFromApproval } from "./quote.js";
-import { spendApprovalOf, type PaymentRail, type RailOutcome, type RailPayment, type SealedSpendApproval, type SpendApproval } from "./rail.js";
+import { sameWireActor, spendApprovalOf, wireActorOf, type PaymentRail, type RailOutcome, type RailPayment, type SealedSpendApproval, type SpendApproval } from "./rail.js";
 import { sameApprovalHash } from "./receipt-chain.js";
 import type { MandateStatusReport, MandateStatusSource } from "./revocation.js";
 import { isTerminal, transition, type Execution, type ExecutionState } from "./state-machine.js";
@@ -583,6 +583,11 @@ export class ExecutionEngine {
     if (receipt.approval !== undefined && payment.approval && !sealsApproval(receipt.approval, payment.approval)) {
       this.record("receipt.seal_mismatch", executionId, { receipt_id: receiptId, attempt_id: payment.attempt_id, sealed_approval: receipt.approval, sent_approval: payment.approval });
       mismatches.push(`receipt ${receiptId} seals approval ${receipt.approval ? receipt.approval.items_hash : "none"}; attempt ${payment.attempt_id} sent ${payment.approval.items_hash}`);
+    }
+    // §2: the actor the spend declared, as the API recorded it. A different one, or none, is an event and not a seal mismatch:
+    // the money and its link to the approval are what the receipt proves, and who triggered it is what it RECORDS.
+    if (receipt.sealed_actor !== undefined && !sameWireActor(receipt.sealed_actor, wireActorOf(payment.actor))) {
+      this.record("receipt.actor_mismatch", executionId, { receipt_id: receiptId, attempt_id: payment.attempt_id, sealed_actor: receipt.sealed_actor, sent_actor: wireActorOf(payment.actor) });
     }
     return mismatches.length > 0 ? mismatches.join("; ") : undefined;
   }
