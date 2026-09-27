@@ -23,8 +23,12 @@ export interface TerminalOptions {
   simulatePayer?: boolean | undefined;
   say?: ((line: string) => void) | undefined;
   ask?: ((question: string) => Promise<string>) | undefined;
-  /** Where the lines for the counterparty go (the conversation); `say` is the operator's console. */
-  tell?: ((line: string) => void) | undefined;
+  /**
+   * Where the lines for the counterparty go (the conversation); `say` is the
+   * operator's console. `about` is the execution whose OUTCOME the line tells,
+   * so a channel can tie a failed delivery of it back to that outcome.
+   */
+  tell?: ((line: string, about?: Execution) => void) | undefined;
   /**
    * How a payable receivable is put in front of the counterparty. Defaults to
    * the kit's own, which writes lines to a console. A channel overrides it,
@@ -121,7 +125,8 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
     } else if (current.state === "executing") {
       say(labels.uncertainDispatch);
     }
-    announceOutcome(current, setup, tell);
+    const told = current;
+    announceOutcome(told, setup, (line) => tell(line, told));
     await followUp(current, setup, say);
   }
   return current;

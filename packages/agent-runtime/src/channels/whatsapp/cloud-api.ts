@@ -24,7 +24,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import type { ChannelBackend, InboundMessage, OutboundBody, SentMessage } from "../types.js";
+import type { ChannelBackend, DeliveryState, InboundMessage, InboundReply, OutboundBody, SentMessage, StatusUpdate } from "../types.js";
 
 export interface CloudApiConfig {
   /**
@@ -140,23 +140,36 @@ interface CloudApiEnvelope {
       value?: {
         messaging_product?: string;
         metadata?: { phone_number_id?: string };
-        messages?: Array<{ id?: string; from?: string; timestamp?: string; type?: string; text?: { body?: string } }>;
-        statuses?: Array<{ id?: string; status?: string }>;
+        messages?: Array<{
+          id?: string;
+          from?: string;
+          timestamp?: string;
+          type?: string;
+          text?: { body?: string };
+          interactive?: { type?: string; button_reply?: { id?: string; title?: string }; list_reply?: { id?: string; title?: string } };
+          button?: { payload?: string; text?: string };
+          context?: { id?: string };
+        }>;
+        statuses?: Array<{ id?: string; status?: string; timestamp?: string; errors?: Array<{ code?: number; title?: string; message?: string; error_data?: { details?: string } }> }>;
       };
     }>;
   }>;
 }
 
 /**
- * The text messages inside one delivery. A delivery carries several entries,
- * each with several changes, each with several messages — and also status
- * updates, which are not messages. Anything that is not a `text` is dropped
- * with its id named: this channel reads words, and an image or a location the
- * agent cannot read must not be silently treated as an empty message.
+ * What one delivery carries. A delivery holds several entries, each with
+ * several changes, each with messages and with STATUS updates about messages
+ * we sent. A message is read when it is text, or a tapped quick reply (an
+ * interactive `button_reply` / `list_reply`, or a template's `button`), which
+ * keeps its id — the channel decides whether that id means anything. Anything
+ * else (an image, a location) is dropped with its id named: this channel
+ * reads words and taps, and an unreadable message must not become an empty
+ * turn.
  */
-export function parseInbound(payload: unknown): { messages: InboundMessage[]; ignored: Array<{ id: string; type: string }> } {
+export function parseInbound(payload: unknown): { messages: InboundMessage[]; statuses: StatusUpdate[]; ignored: Array<{ id: string; type: string }> } {
   const envelope = payload as CloudApiEnvelope;
   const messages: InboundMessage[] = [];
+  const statuses: StatusUpdate[] = [];
   const ignored: Array<{ id: string; type: string }> = [];
   for (const entry of envelope.entry ?? []) {
     for (const change of entry.changes ?? []) {
@@ -164,15 +177,51 @@ export function parseInbound(payload: unknown): { messages: InboundMessage[]; ig
         const id = message.id;
         const from = message.from;
         if (!id || !from) continue;
-        if (message.type !== "text" || !message.text?.body) {
-          ignored.push({ id, type: message.type ?? "unknown" });
+        const base = { id, from: from.startsWith("+") ? from : `+${from}`, timestamp: Number(message.timestamp ?? 0) };
+        const reply = replyOf(message);
+        if (reply) {
+          messages.push({ ...base, text: reply.title, reply: { ...reply, ...(message.context?.id ? { context_id: message.context.id } : {}) } });
           continue;
         }
-        messages.push({ id, from: from.startsWith("+") ? from : `+${from}`, text: message.text.body, timestamp: Number(message.timestamp ?? 0) });
+        if (message.type !== "text" || !message.text?.body) {
+          ignored.push({ id, type: message.type === "interactive" ? `interactive:${message.interactive?.type ?? "unknown"}` : message.type ?? "unknown" });
+          continue;
+        }
+        messages.push({ ...base, text: message.text.body });
+      }
+      for (const status of change.value?.statuses ?? []) {
+        if (!status.id || !isDeliveryState(status.status)) continue;
+        statuses.push({
+          message_id: status.id,
+          status: status.status,
+          timestamp: Number(status.timestamp ?? 0),
+          errors: (status.errors ?? []).map((e) => ({
+            ...(typeof e.code === "number" ? { code: e.code } : {}),
+            ...(e.title ?? e.message ? { title: e.title ?? e.message } : {}),
+            ...(e.error_data?.details ? { details: e.error_data.details } : {}),
+          })),
+        });
       }
     }
   }
-  return { messages, ignored };
+  return { messages, statuses, ignored };
+}
+
+type CloudMessage = NonNullable<NonNullable<NonNullable<NonNullable<CloudApiEnvelope["entry"]>[number]["changes"]>[number]["value"]>["messages"]>[number];
+
+function replyOf(message: CloudMessage): Omit<InboundReply, "context_id"> | undefined {
+  if (message.type === "interactive") {
+    const kind = message.interactive?.type;
+    const picked = kind === "button_reply" ? message.interactive?.button_reply : kind === "list_reply" ? message.interactive?.list_reply : undefined;
+    if ((kind === "button_reply" || kind === "list_reply") && picked?.id) return { type: kind, id: picked.id, title: picked.title ?? picked.id };
+    return undefined;
+  }
+  if (message.type === "button" && message.button?.payload) return { type: "button", id: message.button.payload, title: message.button.text ?? message.button.payload };
+  return undefined;
+}
+
+function isDeliveryState(value: unknown): value is DeliveryState {
+  return value === "sent" || value === "delivered" || value === "read" || value === "failed";
 }
 
 export interface SendRequest {
@@ -215,13 +264,25 @@ export function buildSendRequest(config: CloudApiConfig, to: string, body: Outbo
           template: {
             name: body.template,
             language: { code: body.language },
-            ...(body.variables.length ? { components: [{ type: "body", parameters: body.variables.map((text) => ({ type: "text", text })) }] } : {}),
+            ...templateComponents(body),
           },
         }),
       };
     case "media":
       return { unsupported: "media_upload_unimplemented" };
   }
+}
+
+/**
+ * A template's parameters as Meta takes them: the body's variables, and one
+ * `quick_reply` button component per declared reply, whose `payload` is the
+ * reply id — what comes back as `button.payload` when the person taps it.
+ */
+function templateComponents(body: Extract<OutboundBody, { kind: "template" }>): { components?: unknown[] } {
+  const components: unknown[] = [];
+  if (body.variables.length) components.push({ type: "body", parameters: body.variables.map((text) => ({ type: "text", text })) });
+  for (const [index, button] of (body.buttons ?? []).entries()) components.push({ type: "button", sub_type: "quick_reply", index: String(index), parameters: [{ type: "payload", payload: button.id }] });
+  return components.length ? { components } : {};
 }
 
 /** Meta's error for a free-form message outside the 24 hours after the person's last one. */
@@ -279,6 +340,7 @@ export class WhatsAppCloudApi implements ChannelBackend {
   /** Message ids already handed on. Meta delivers at-least-once, so the same message can arrive twice. */
   private readonly seen = new Set<string>();
   private waiting: ((m: InboundMessage | undefined) => void) | undefined;
+  private statusListener: ((status: StatusUpdate) => void) | undefined;
   private closed = false;
 
   constructor(private readonly options: CloudApiOptions) {
@@ -316,15 +378,16 @@ export class WhatsAppCloudApi implements ChannelBackend {
           res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ error: "bad_signature" }));
           return;
         }
-        let parsed: { messages: InboundMessage[]; ignored: Array<{ id: string; type: string }> };
+        let parsed: ReturnType<typeof parseInbound>;
         try {
           parsed = parseInbound(JSON.parse(raw));
         } catch {
           res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "invalid_json" }));
           return;
         }
-        for (const ignored of parsed.ignored) say(`[whatsapp] ignored ${ignored.type} message ${ignored.id}: this channel reads text`);
+        for (const ignored of parsed.ignored) say(`[whatsapp] ignored ${ignored.type} message ${ignored.id}: this channel reads text and taps`);
         for (const message of parsed.messages) this.push(message);
+        for (const status of parsed.statuses) this.statusListener?.(status);
         // Always 200 once read: Meta retries on anything else, and a duplicate is not an error.
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ received: parsed.messages.length }));
       });
@@ -352,6 +415,10 @@ export class WhatsAppCloudApi implements ChannelBackend {
       return;
     }
     this.queue.push(message);
+  }
+
+  onStatus(listener: (status: StatusUpdate) => void): void {
+    this.statusListener = listener;
   }
 
   async next(): Promise<InboundMessage | undefined> {
