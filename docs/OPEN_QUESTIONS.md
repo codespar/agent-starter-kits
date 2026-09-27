@@ -6,9 +6,27 @@ Kept as the prompt asks: when the spec and the real API diverge, the code follow
 
 `agent.yaml` pins `cli: "@codespar/cli@0.13.0"` (verified on npm on 2026-09-23; 0.6.0 is stale, and 0.12.1, the pin of the first delivery, predates the agent commands). 0.13.0 ships the three commands section 14.5 asks for, with the shapes its `--help` prints: `codespar agent run <dir> [--input <text>] [--approve|--deny]`, `codespar eval <dir>` and `codespar mandate revoke <id> [--reason <text>]`. The READMEs show them with `npx -y @codespar/cli@0.13.0`. The manifest schema accepts any exact version; the check only refuses an unpinned one. The `mcp` pin `@codespar/mcp@0.5.8` matches; `@codespar/sdk` is pinned at 0.16.10 in `packages/agent-core/package.json` and, to the same version, in `agents/checkout-agent/package.json` (the spec's plan measured 0.16.2; 0.16.4 was the first pin, 0.16.5 added the sandbox payer route to the OpenAPI document, section 31c, and 0.16.6 types `consumer_id` on the charge create, section 31a). Decision taken 2026-09-23 (#3). Later the same day both pins moved to `@codespar/cli@0.14.0` and `@codespar/sdk@0.16.5`, the versions npm published that day; 0.14.0 adds `init --template bills-agent|collections-agent`. The sdk pin moved once more, to 0.16.6, with #13, to 0.16.7 with the typed receipt seal (§47), and to 0.16.8 with the organization kill switch on the mandate read (§4), to 0.16.9 with the attempt replay codes (§39c), and to 0.16.10 with the typed approval seal (§3). **v5.2:** update section 14.4 and the example in 4.3.
 
-## 2. `actor` has no field on the wire
+## 2. `actor` on the wire — CLOSED 2026-09-27 for the spend; the charge still records none
 
-Section 4.5 says every API call carries `actor`. `POST /v1/consumers/mandates/{id}/spend` and `POST /v1/consumer-payments/execute` carry `agent_id` and nothing else about who acts; the receipt (`GET /v1/consumers/receipts/{id}`) carries no actor either. What the code does: the spend sends `agent_id` (which the mandate binds, so attribution is the mandate's, not the caller's); the full `actor` object (`agent` + `on_behalf_of`, or `human` + `channel`) is stamped on every event of `events.jsonl`, on every approval artifact and on the local copy of every receipt. The CI checks the local copies. **Open:** does the API want an `actor` (or `on_behalf_of`) field on spend, and should the receipt carry it? Until then "actor on everything" is true locally and not on the wire.
+Section 4.5 says every API call carries `actor`. It did not: the spend routes carried `agent_id` and nothing else about who acts, and the receipt carried no actor.
+
+**Closed for the spend.** `@codespar/sdk@0.16.10` types `actor?: PaymentActor` on both routes, `POST /v1/consumers/mandates/{id}/spend` and `POST /v1/consumer-payments/execute`. The receipt reads (`GET /v1/consumers/receipts/{id}`, the list, the delivery) return it: the actor the caller declared, and `null` when none was declared.
+
+- **What is sent.** Every spend sends the kit's actor in that shape (`wireActorOf` in `rail.ts`):
+  - an agent is `{ type: "agent", id: "<name>@<version>", on_behalf_of: <the mandate's consumer> }`;
+  - a person is `{ type: "human", id, channel }`.
+  
+  The API refuses an `on_behalf_of` that is not the mandate's consumer with `actor_consumer_mismatch`. The kit's `on_behalf_of` is the mandate's `consumer_id` by construction. `agent_id` still goes: it names the agent the mandate was SIGNED for, which is an authority and not the event.
+- **What comes back.** `CodeSparRail.receipt` reads the recorded actor into `sealed_actor`. The bundle's receipt copy carries both: `actor` (the kit's stamp, as before) and `sealed_actor` (what the API recorded). `verify`'s copy check compares `sealed_actor` with the read's `actor`.
+- **The comparison.** The engine compares what came back with what the spend sent. A different actor, or `null`, is a `receipt.actor_mismatch` event (sealed, sent, receipt id, attempt id). It is an event and not a `ReceiptSealMismatchError`: the payee and the approval link are what the receipt PROVES and a mismatch there stops the run (§18, §3); the actor is what it RECORDS about who triggered it, and a divergence is evidence to keep, not money in doubt.
+- **The stub rail records the actor the same way**, so a scenario's receipt copy has a `sealed_actor` too.
+
+Measured in `packages/agent-core/test/actor-on-the-wire.test.ts`: both routes carry it; the read gives it back, `null` included; the same actor raises no event; another actor or none raises one. By mutation:
+- a spend without the actor fails 1 test;
+- the engine not comparing fails 2;
+- the stub not recording it fails 1.
+
+**Still open.** The actor is recorded, not sealed. The receipt's chain (v4) links the approval and not the actor, so a third party verifying the Ed25519 signature learns nothing about who triggered the spend. Whether the actor belongs in the chain is the API's to decide. A paid CHARGE records no actor at all: `POST /v1/charges` takes none. The receiving side's "actor on everything" is still true locally only.
 
 ## 3. Who signs the approval artifact — CLOSED 2026-09-26 for WHAT was approved; WHO approved stays local
 
@@ -100,7 +118,7 @@ What the compiler does **not** catch:
 4. `POST /v1/consents/{token}/submit` answers `mandate: { [key: string]: unknown }`. The signed mandate's fields (`cap_minor`, `merchant_allowlist`, `expires_at`, `periodic_cap`) are read without a type, and `MandateSchema.parse` is what checks them.
 5. `GET /v1/charges/{chargeId}` does not type `settled_at`. It is a column of the charge row, and the kit's charge receipt copy reads it as its `at`, falling back to the moment of the read. That is now the one field in `api/*` read outside a type. Whether the route sends it was not established.
 6. `issuance_unconfirmed` is documented on the charge read's 409 and not on the create. The rail still treats it as uncertain on the create, which is the safe reading.
-7. The spend routes now accept `actor?: PaymentActor` (`{ type: "agent", id, on_behalf_of } | { type: "human", id, channel? }`), the same shape the kit stamps locally. §2 says the API has no actor field on the wire, and that is no longer true for the spend. Sending it is its own change.
+7. The spend routes now accept `actor?: PaymentActor` (`{ type: "agent", id, on_behalf_of } | { type: "human", id, channel? }`), the same shape the kit stamps locally. Sent on every spend since 2026-09-27 (§2).
 
 Found while typing, on the kit's side, and fixed: the charge read's 409 is `issuance_unconfirmed | charge_reference_ambiguous`, and `CodeSparChargeRail.read` mapped any 409 to `in_flight`, so a reference that matched more than one charge would have been polled forever as a charge still issuing. The read now branches on the typed code. `issuance_unconfirmed` is the only 409 that stays `in_flight`. `charge_reference_ambiguous` is terminal for that reference: the lookup answers `failed` with that code and a message to reconcile by the charge id, the key is not tried after an ambiguous id, and the execution closes `failed` instead of staying `executing`. A 409 with any other code, or with none, is `failed` too. The kit's references are its own attempt ids, so the ambiguous case has not been seen live.
 
