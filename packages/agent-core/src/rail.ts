@@ -10,13 +10,22 @@
  * the same id arrives with a different payment. A payment sent WITHOUT an id
  * is a new payment every time; nothing here sends one.
  */
+import type { ApiOperation, ApiRequestBody } from "@codespar/sdk";
 import type { SpendQuote } from "./quote.js";
 import type { Actor, ApprovalArtifact, ChargeInstrument } from "./types.js";
 
-/** The `approval` a spend presents: `sha256:<64 lowercase hex>`, as `itemsHash` and `batchHash` write it. */
-export interface SpendApproval {
+/**
+ * The `approval` a spend presents (`SpendApproval` in the API's document,
+ * typed since @codespar/sdk 0.16.10): `sha256:<64 lowercase hex>`, as
+ * `itemsHash` and `batchHash` write it. Taken from the SDK so a change on
+ * the API's side fails `tsc` here.
+ */
+export type SpendApproval = NonNullable<ApiRequestBody<ApiOperation<"/v1/consumer-payments/execute", "post">>["approval"]>;
+
+/** What a receipt says it SEALED as the approval link: `batch_hash` is null when the spend sent none. */
+export interface SealedSpendApproval {
   items_hash: string;
-  batch_hash?: string;
+  batch_hash: string | null;
 }
 
 /** The hashes of what was approved, for a spend of any line of this artifact: the ones the artifact's own HMAC covers. */
@@ -133,7 +142,16 @@ export interface RailReceipt {
   /** `payment` (the API's sealed receipt) or `charge` (the paid receivable as the API reports it; no seal exists for it today). */
   kind?: "payment" | "charge";
   state: string;
-  mandate: { id: string };
+  /** `sig_sha256` is SHA-256 of the mandate's own signature, which a v4 chain seals in place of it; never the signature itself, which is a bearer proof. */
+  mandate: { id: string; sig_sha256?: string };
+  /**
+   * The chain format the receipt was sealed under (4 once it carries the
+   * approval link), and the approval it sealed, as the API read them back:
+   * `null` when it sealed none. Absent when the rail cannot say — a charge,
+   * which seals nothing.
+   */
+  chain_version?: number;
+  approval?: SealedSpendApproval | null;
   /** `payee` is the one the receipt SEALED — the quote's, on a payment — and null when it sealed none. Never copied from the execution. */
   payment: { amount_minor: number; payee: string | null; attempt_id: string; money_moved: boolean; sandbox: boolean; at: string };
   /** Null when the API seals nothing for this kind of record. */

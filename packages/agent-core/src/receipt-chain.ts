@@ -113,6 +113,11 @@ export type RecipeRead = { ok: true; recipe: ChainRecipe } | { ok: false; reason
  * implemented here is refused whole rather than followed halfway.
  */
 export function readChainRecipe(keyDocument: unknown): RecipeRead {
+  // OUTSIDE THE SDK'S TYPES, and the one place it is read: the well-known
+  // document's schema does not declare `chain_recipe` yet (ent#1759), so no
+  // SDK type exists to read it through. It is validated field by field below
+  // instead. When ent#1759 lands and the SDK types it, this read moves onto
+  // that type and the validation stays: a verifier checks what it is served.
   const raw = isRecord(keyDocument) ? keyDocument["chain_recipe"] : undefined;
   if (raw === undefined || raw === null) {
     return { ok: false, reason: "recipe_unpublished", message: "the key set publishes no `chain_recipe`, so the receipt's body cannot be bound to its chain (a deployment older than ent#1670)" };

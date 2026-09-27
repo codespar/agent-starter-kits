@@ -176,6 +176,9 @@ export class StubRail implements PaymentRail {
       receipt_id: receiptId,
       state: "paid",
       mandate: { id: req.mandate_id },
+      // Like the API since ent#1670: the approval the spend carried is sealed and read back, batch_hash null when none was sent.
+      chain_version: req.approval ? 4 : 1,
+      approval: req.approval ? { items_hash: req.approval.items_hash, batch_hash: req.approval.batch_hash ?? null } : null,
       payment: { amount_minor: req.amount_minor, payee: req.quote?.payee ?? null, attempt_id: req.attempt_id, money_moved: false, sandbox: true, at: sealed.at },
     };
     const chain = `sha256:${sha256Hex(JSON.stringify(req.quote ? { ...body, quote: req.quote } : body))}`;
