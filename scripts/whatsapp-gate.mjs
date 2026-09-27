@@ -207,7 +207,7 @@ async function runWindowCase(mode, { agentNow = NOW_AFTER_WINDOW, check = checkW
     // Friday. The CONVERSATION's clock is the emulator's and moves here; the
     // agent's own is `--now` on the poll below, and the two are different
     // things (#16).
-    const moved = await fetch(`${EMULATOR}/_sim/clock`, {
+    const moved = await emulatorFetch(`${EMULATOR}/_sim/clock`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ advance_hours: WINDOW_ADVANCE_HOURS }),
@@ -243,7 +243,7 @@ async function runWindowCase(mode, { agentNow = NOW_AFTER_WINDOW, check = checkW
  * recorded, so the probe leaves the conversation as it found it.
  */
 async function providerRefusesFreeForm(contact, phoneNumberId) {
-  const response = await fetch(`${EMULATOR}/v22.0/${phoneNumberId}/messages`, {
+  const response = await emulatorFetch(`${EMULATOR}/v22.0/${phoneNumberId}/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: contact.replace(/^\+/, ""), type: "text", text: { preview_url: false, body: "sonda da janela" } }),
@@ -468,7 +468,7 @@ async function runCheckoutWindow(mode) {
     const failures = [];
     if (first.payload.executions?.[0]?.state !== "executing") failures.push(`after ordering the execution is ${first.payload.executions?.[0]?.state}, expected executing (nobody has paid yet)`);
     if (conversationOf(first.payload.channel?.log).some((l) => l.direction === "out" && /pedido confirmado/i.test(String(l.text ?? "")))) failures.push("the customer was told the order was confirmed before anybody paid");
-    const moved = await fetch(`${EMULATOR}/_sim/clock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ advance_hours: WINDOW_ADVANCE_HOURS }), signal: AbortSignal.timeout(5000) }).catch((err) => ({ ok: false, detail: String(err) }));
+    const moved = await emulatorFetch(`${EMULATOR}/_sim/clock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ advance_hours: WINDOW_ADVANCE_HOURS }), signal: AbortSignal.timeout(5000) }).catch((err) => ({ ok: false, detail: String(err) }));
     if (!moved.ok) return { failures: [...failures, `could not move the emulator clock: ${moved.detail ?? moved.status}`] };
     failures.push(...(await providerRefusesFreeForm(CHECKOUT_CONTACT, phoneNumberId)));
     const polled = agent(["poll", "--agent", CHECKOUT, "--channel", "whatsapp", "--conversation", CHECKOUT_CONVERSATION, "--simulate-payer", "--now", NOW_AFTER_WINDOW, "--json"], env);
@@ -479,6 +479,22 @@ async function runCheckoutWindow(mode) {
   } finally {
     rmSync(state, { recursive: true, force: true });
     rmSync(runs, { recursive: true, force: true });
+  }
+}
+
+/**
+ * One call to the emulator, retried ONCE when the connection itself failed.
+ * The gate talks to the emulator in bursts separated by whole agent runs, and
+ * an idle keep-alive socket the emulator has already closed is reset under the
+ * next call (`ECONNRESET`, measured on 0.3.0 once a run is long enough). That
+ * is transport, not an answer: a status or a body is never retried.
+ */
+async function emulatorFetch(url, init) {
+  try {
+    return await fetch(url, init);
+  } catch (err) {
+    if (!(err instanceof TypeError)) throw err;
+    return fetch(url, { ...init, signal: AbortSignal.timeout(5000) });
   }
 }
 
