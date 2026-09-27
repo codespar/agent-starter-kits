@@ -1197,6 +1197,8 @@ Not faked, and not run. What was built: the API rail above, typechecked against 
 
 What stopped the sandbox run: the environment this lane built in has no `csk_test_` key. No `CODESPAR_API_KEY` is in the environment and no `.env` is in any lane directory, and the brief was not to hunt for one. Nothing in the enterprise code says the path is closed. The demo organization listed `nfe-io` among its connections on staging (§22), and `codespar_invoice × nfse × nfe-io` is a catalog row. So the first run with the kits' staging key is what closes this entry: `npm start -- --scenario happy-path --rail api --wait 120` on staging issues the charge and, after `settled`, the NFS-e.
 
+
+**Update 2026-09-27.** With the production test key available, the NFS-e path is still not exercised. The NFS-e follows a paid order, and the order never reached `settled`: the bolepix create was refused (§63, "no receiving identity at the provider for this consumer"). Issuing an NFS-e directly, without a sale, would test the rail and skip the rule this entry is about (the invoice follows `settled`), so it was not done. What closes this entry is unchanged: one run where the charge settles.
 ## 62. The checkout-agent on WhatsApp: what the channel decides that the terminal cannot
 
 Checkout decision 6: terminal first, then WhatsApp through the adapter the collections-agent already uses. The adapter did not change. The agent ships two conversations (`pedido-marina`, the runbook; `pedido-beatriz`, checkout §5.4 on the channel) and three templates (`pedido_confirmado`, `pedido_cobranca_vencida`, `pedido_cobranca_cancelada`, with the order's total as `{{1}}`). The CI's WhatsApp gate runs the sale three times from zero on the emulator, plus the ordered-tonight-paid-tomorrow case across a shut window, confirmed by template. The clocks-apart run stays the collections-agent's: it proves a property of the channel, not of an agent. Three things were decided on the way:
@@ -1222,3 +1224,23 @@ What to read off it:
 - **The NFS-e.** It shows in the same bundle: `invoice.opened`, `invoice.dispatch` and `invoice.outcome`. The `accepted` / `refused` / `uncertain` it records closes §61. Under §58's reading, `uncertain` is what a nfe.io refusal will look like until ent#1675 lands.
 
 The same run with `--mode mandate` is the policy-approved version. The numbers belong in this entry, and the README's badge waits for them.
+
+
+**Measured 2026-09-27 against PRODUCTION in test mode, and the cycle does not close there: the bolepix is refused at issuance.** A `csk_test_` key for the production API (`https://api.codespar.dev`, test mode, no real money) was made available on 2026-09-27. Staging refuses that key. It was loaded only inside the command and appears in no bundle, log or file of this repository (the secret scan of the run's bundle finds nothing).
+
+- **The run.** `npm start -- --scenario happy-path --mode human --rail api --wait 120 --json`, at 12:17 BRT, inside the service hours. The replay provider stood in for the model; everything after it was real.
+- **Up to issuance, what the kit does.** The cart was priced (R$ 479,90), the order drafted and confirmed by the attendant (the artifact carries `items_hash` and `composition`), and `issue` passed the last gate.
+- **The create.** `POST /v1/charges` (`method: boleto`, due today, `consumer_id: merchant_demo_loja`, `idempotency_key` = the attempt id) went out at 15:17:25.121Z. It answered at 15:17:25.702Z (0.6 s) with a 5xx carrying `provider_error`:
+  > `charge_boleto_brl_celcoin_v1: no receiving identity at the provider for this consumer — a BOLEPIX charge settles into the consumer's own account and registered Pix key at the provider, both resolved server-side. Onboard the consumer (codespar_kyc) and register the key first.`
+- **What the kit made of it.** It read the answer as `uncertain`, which is what a 5xx is to it. The order stayed `executing` with `rail_uncertain`, and nothing was issued again.
+- **Nothing was issued.** The run then looked for the charge 20 times over 62 s (`GET /v1/charges/{attempt id}`, until 15:18:27Z), and every look answered `absent`. No charge exists for that attempt at the API, so there is nothing to reconcile or cancel there. The scenario's state was a temporary directory.
+- **Not reached.** `settled` was not reached, and neither was the NFS-e that follows it (§61). The mandate-mode run was not attempted: it reaches the same create.
+- **Stopped here, as briefed.** The consumer was not onboarded and no other `consumer_id` was tried.
+
+Three findings, for whoever owns the production test project and the API:
+
+1. **The production test project has no Celcoin receiving identity for `merchant_demo_loja`.** The shared sandbox receiver that closed the cycle on staging (§22, ent#1613/#1616) was seeded on staging only. Closing the cycle in production test mode takes onboarding that consumer (`codespar_kyc`, then a registered Pix key), or a `consumer_id` that has both. That is setup, not code.
+2. **The refusal is pre-dispatch by its own text, and the wire does not say so.** The transform refused before anything reached Celcoin. It arrived as a 5xx `provider_error`, the same code a timeout gets. The kit therefore had to read it as "maybe issued" and leave the order `executing (rail_uncertain)` for a person, when "nothing was issued" was knowable. This is §58's missing `dispatch` provenance again, this time on the money path. **Ask:** a distinct code for it (e.g. `receiving_identity_missing`, a 4xx), or `dispatch: "unsent"` on the wire, so a caller can close the order `failed` and tell the customer, instead of holding it.
+3. **The kit behaved as it should under that reading.** It never issued a second charge for an attempt it could not account for, and 20 reads proved the attempt absent. Turning "absent after N reads of an uncertain create" into `failed` is a decision the kit deliberately does not take on its own: a charge can register late. It stays a person's call.
+
+The §8 numbers stay unmeasured. The command above is the measurement once finding 1 is resolved.
