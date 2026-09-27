@@ -21,7 +21,8 @@ import { newId } from "./ids.js";
 import { mandateExpired, payeeAllowed, resolveBeneficiary, windowCap, windowStart, type Mandate } from "./mandate.js";
 import type { Manifest } from "./manifest.js";
 import { checkQuote, quoteFromApproval } from "./quote.js";
-import { spendApprovalOf, type PaymentRail, type RailOutcome, type RailPayment } from "./rail.js";
+import { spendApprovalOf, type PaymentRail, type RailOutcome, type RailPayment, type SealedSpendApproval, type SpendApproval } from "./rail.js";
+import { sameApprovalHash } from "./receipt-chain.js";
 import type { MandateStatusReport, MandateStatusSource } from "./revocation.js";
 import { isTerminal, transition, type Execution, type ExecutionState } from "./state-machine.js";
 import type { StateStore } from "./state/store.js";
@@ -561,17 +562,29 @@ export class ExecutionEngine {
    * including one that sealed no payee — is recorded and answered as a
    * mismatch, which the caller raises once the execution's outcome is saved:
    * the money is where the rail says it is, and it is the EVIDENCE that
-   * disagrees. A paid charge carries no seal, so there is nothing to compare.
+   * disagrees. The same holds for the approval link (§3): a receipt that
+   * seals other hashes than the ones this attempt sent, or none, does not
+   * say this payment was made against the approved list. A rail that cannot
+   * report the link leaves it `undefined`, and nothing is compared. A paid
+   * charge carries no seal, so there is nothing to compare at all.
    */
   private async saveReceipt(executionId: string, receiptId: string, payment: RailPayment): Promise<string | undefined> {
     const receipt = await this.deps.rail.receipt(receiptId, this.agentActor);
     if (!receipt) return undefined;
     const path = this.deps.bundle.receipt(receipt, { approval_id: this.deps.store.getExecution(executionId)?.approval_id });
     this.record("receipt.saved", executionId, { receipt_id: receiptId, path });
-    if (receipt.kind === "charge" || receipt.payment.payee === payment.payee) return undefined;
-    const sealed = receipt.payment.payee === null ? null : maskPayee(receipt.payment.payee);
-    this.record("receipt.seal_mismatch", executionId, { receipt_id: receiptId, attempt_id: payment.attempt_id, sealed_payee: sealed, paid_payee: maskPayee(payment.payee) });
-    return `receipt ${receiptId} seals payee ${sealed ?? "none"}; attempt ${payment.attempt_id} paid ${maskPayee(payment.payee)}`;
+    if (receipt.kind === "charge") return undefined;
+    const mismatches: string[] = [];
+    if (receipt.payment.payee !== payment.payee) {
+      const sealed = receipt.payment.payee === null ? null : maskPayee(receipt.payment.payee);
+      this.record("receipt.seal_mismatch", executionId, { receipt_id: receiptId, attempt_id: payment.attempt_id, sealed_payee: sealed, paid_payee: maskPayee(payment.payee) });
+      mismatches.push(`receipt ${receiptId} seals payee ${sealed ?? "none"}; attempt ${payment.attempt_id} paid ${maskPayee(payment.payee)}`);
+    }
+    if (receipt.approval !== undefined && payment.approval && !sealsApproval(receipt.approval, payment.approval)) {
+      this.record("receipt.seal_mismatch", executionId, { receipt_id: receiptId, attempt_id: payment.attempt_id, sealed_approval: receipt.approval, sent_approval: payment.approval });
+      mismatches.push(`receipt ${receiptId} seals approval ${receipt.approval ? receipt.approval.items_hash : "none"}; attempt ${payment.attempt_id} sent ${payment.approval.items_hash}`);
+    }
+    return mismatches.length > 0 ? mismatches.join("; ") : undefined;
   }
 
 
@@ -1037,19 +1050,25 @@ function railAnswer(outcome: RailOutcome): Record<string, unknown> {
   }
 }
 
+/** The approval link a receipt sealed is the one a spend sent: the same hashes, in either spelling of the `sha256:` prefix. */
+function sealsApproval(sealed: SealedSpendApproval | null, sent: SpendApproval): boolean {
+  return sealed !== null && sameApprovalHash(sealed.items_hash, sent.items_hash) && sameApprovalHash(sealed.batch_hash, sent.batch_hash ?? null);
+}
+
 /**
  * A payment settled and the receipt CodeSpar sealed for it names a different
- * payee, or none. Raised after the execution's outcome is saved, never
- * instead of it: the rail's answer is the record of where the money went, and
- * this error is about the evidence. Not a warning, because a receipt that
- * does not name the payee that was paid proves nothing about that payment.
+ * payee, or none, or seals another approval than the one the spend sent.
+ * Raised after the execution's outcome is saved, never instead of it: the
+ * rail's answer is the record of where the money went, and this error is
+ * about the evidence. Not a warning, because a receipt that does not name
+ * what was paid proves nothing about that payment.
  */
 export class ReceiptSealMismatchError extends Error {
   constructor(
     readonly executionId: string,
     readonly mismatches: string[],
   ) {
-    super(`execution ${executionId}: the sealed receipt does not name the payee that was paid — ${mismatches.join("; ")}`);
+    super(`execution ${executionId}: the sealed receipt does not seal what was paid — ${mismatches.join("; ")}`);
     this.name = "ReceiptSealMismatchError";
   }
 }
