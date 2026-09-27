@@ -57,7 +57,7 @@ export type GuardedPayResult = SandboxPayResult | { ok: false; refused: PayerRef
  *
  * The route itself settles whatever it is handed: a charge still
  * `PROCESSING`, and on staging on 2026-09-27 a charge the issuer ended in
- * `ERROR`, after which the read answers `CONFIRMED` (ent#1814,
+ * `ERROR`, after which the read answers `CONFIRMED` (ent#1816,
  * OPEN_QUESTIONS §63). A payer that trusted it turned an issuance that failed
  * into a "settled" order no customer could have paid. No live payer can pay a
  * charge with no instrument, so neither does this one.

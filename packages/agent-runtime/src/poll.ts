@@ -87,7 +87,7 @@ export async function pollUntilClosed(engine: ExecutionEngine, executionId: stri
     // The sandbox payer plays once every receivable is payable, the QR shown first, as in the scene, and never before. It used to
     // play after a few looks whatever it found, because the API's test route settles a charge still registering; on staging on
     // 2026-09-27 that route settled a charge the issuer had ended in ERROR, with no QR at all, and the scenario called the order
-    // settled (OPEN_QUESTIONS §63, ent#1814). A payer can only pay what it can see, so a registration that never ends payable
+    // settled (OPEN_QUESTIONS §63, ent#1816). A payer can only pay what it can see, so a registration that never ends payable
     // leaves the order open until the wait runs out, or closes it with the issuer's own failure.
     const issued = execution.outcomes.filter((o) => o.status === "accepted" && o.transaction_id);
     const allPayable = issued.length > 0 && issued.every((o) => o.instrument?.payable);

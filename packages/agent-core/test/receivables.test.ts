@@ -323,7 +323,7 @@ describe("paySandboxCharge: the SDK's typed call to the payer route", () => {
   });
 });
 
-describe("payIfPayable: the sandbox payer pays only what a payer could have paid (OPEN_QUESTIONS §63, ent#1814)", () => {
+describe("payIfPayable: the sandbox payer pays only what a payer could have paid (OPEN_QUESTIONS §63, ent#1816)", () => {
   const view = (over: Record<string, unknown>) => ({ id: "chg_1", status: "PENDING", local_status: "pending", status_conflict: false, method: "boleto", currency: "BRL", amount: 1080, amount_minor: 108000, due_date: "2026-09-30", payable: true, boleto_bar_code: "1".repeat(44), boleto_bank_line: "2".repeat(47), pix_copy_paste: "000201...", credit_correlation_armed: true, payment_in_flight: false, settlement: null, issuance_unconfirmed: false, ...over });
   const paid = { charge_id: "chg_1", status: "paid", local_status: "settled", simulated: true, settled_against: "sandbox_fixture", money_moved: false, quoted_minor: 108000, paid_minor: 108000, payment: "full", idempotent_replay: false };
 

@@ -33,7 +33,7 @@ export interface StubChargeRailOptions {
   issuerErrorPayees?: string[];
   /**
    * Debtor documents whose charge never becomes payable and is settled anyway at the second look: what the API's test
-   * pay route did to a charge in `ERROR` on staging (ent#1814). Here so the scenario gate can be shown refusing it.
+   * pay route did to a charge in `ERROR` on staging (ent#1816). Here so the scenario gate can be shown refusing it.
    */
   settlesUnpayablePayees?: string[];
 }

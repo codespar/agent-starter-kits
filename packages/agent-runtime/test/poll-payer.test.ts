@@ -2,7 +2,7 @@
  * The sandbox payer in the poll pays a receivable only once it is payable.
  * It used to also pay "after a few looks", whatever it found, and on staging
  * that paid a charge the issuer had ended in ERROR: the order read `settled`
- * with no QR ever shown (OPEN_QUESTIONS §63, ent#1814). These drive the poll
+ * with no QR ever shown (OPEN_QUESTIONS §63, ent#1816). These drive the poll
  * with a rail that stays unpayable for longer than the old patience.
  */
 import { describe, expect, it } from "vitest";

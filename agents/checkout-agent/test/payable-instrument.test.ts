@@ -2,7 +2,7 @@
  * The false green of OPEN_QUESTIONS §63: on staging (2026-09-27) the issuer
  * ended the bolepix in ERROR, with no QR and no boleto line, and the run still
  * answered `settled` with a cycle time, because the sandbox payer paid what
- * nobody could have paid and the API's test route settled it (ent#1814). The
+ * nobody could have paid and the API's test route settled it (ent#1816). The
  * stub scripts both halves here: an issuer that ends in ERROR, and a charge
  * that is settled without ever becoming payable.
  */
