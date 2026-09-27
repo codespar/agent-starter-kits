@@ -80,7 +80,7 @@ npm run check                               # the manifest agrees with its files
 npm run inspect -- <run-id>                 # the bundle as a timeline
 ```
 
-`--json` puts one JSON object on stdout (`cart_id`, `cart_hash`, `total_minor`, the state, `charge_id`, `pix_copy_paste`) and everything a person reads on stderr.
+`--json` puts one JSON object on stdout (`cart_id`, `cart_hash`, `total_minor`, the state, `charge_id`, `pix_copy_paste`, and `rail_error` with the API's own code and message when an issue failed or was left unknown) and everything a person reads on stderr.
 
 ## Scenarios and the adversarial suite
 

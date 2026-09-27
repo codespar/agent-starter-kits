@@ -13,14 +13,14 @@ import { relative } from "node:path";
 import qrcode from "qrcode-terminal";
 import {
   CodeSparChargeRail,
-  NotATestKeyError,
   StubChargeRail,
   createCodeSparClient,
-  isTestKey,
+  assertTestKey,
   loadMandate,
   paySandboxCharge,
   type Execution,
   type StubChargeRailOptions,
+  railErrorOf,
 } from "@codespar/agent-core";
 import { defineAgent, type AgentKit } from "@codespar/agent-runtime";
 import { formatBRL, formatDate } from "./agreements.js";
@@ -64,7 +64,7 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
   buildRail: (ctx) => {
     const mandate = ctx.mandate ?? loadMandate(ctx.manifest.resolvePath(ctx.manifest.manifest.mandate_schema));
     if (ctx.kind === "api") {
-      if (!isTestKey(ctx.env["CODESPAR_API_KEY"])) throw new NotATestKeyError();
+      assertTestKey(ctx.env["CODESPAR_API_KEY"]);
       const client = createCodeSparClient({ apiKey: ctx.env["CODESPAR_API_KEY"], baseUrl: ctx.env["CODESPAR_API_URL"], projectId: ctx.env["CODESPAR_PROJECT_ID"] });
       return {
         rail: new CodeSparChargeRail(client),
@@ -145,6 +145,7 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
       id: e.id,
       state: e.state,
       reason: e.reason ?? null,
+      rail_error: railErrorOf(e),
       escalation: e.escalation ?? null,
       total_minor: e.total,
       items: e.items.map((i) => ({ debtor: i.beneficiary, amount_minor: i.amount, due_date: i.due_date ?? null })),

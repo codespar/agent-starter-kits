@@ -272,8 +272,8 @@ describe("codespar-agent verify --from-api", () => {
     return new Promise((done) => {
       const child = spawn(process.execPath, [BIN, "verify", ...args], {
         cwd,
-        // The placeholder passes the csk_test_ guard and is the one test-key-shaped string the secret scan allows.
-        env: { ...process.env, CODESPAR_API_KEY: "csk_test_your_key_here", CODESPAR_API_URL: baseUrl, ANTHROPIC_API_KEY: "" },
+        // Not the placeholder, which the guard refuses (#50); the underscore keeps it below the secret scan's key shape.
+        env: { ...process.env, CODESPAR_API_KEY: "csk_test_unit_0000", CODESPAR_API_URL: baseUrl, ANTHROPIC_API_KEY: "" },
       });
       let stdout = "";
       let stderr = "";

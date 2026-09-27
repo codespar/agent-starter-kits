@@ -3,7 +3,7 @@
  * example mandate, the generic console words, and no tools. A read-only agent
  * spreads this and adds its handlers; a payer or a collector replaces the rail.
  */
-import { StubRail, loadMandate, type Execution } from "@codespar/agent-core";
+import { StubRail, loadMandate, railErrorOf, type Execution } from "@codespar/agent-core";
 import { relative } from "node:path";
 import type { AgentKit } from "./kit.js";
 
@@ -71,6 +71,7 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
       id: e.id,
       state: e.state,
       reason: e.reason ?? null,
+      rail_error: railErrorOf(e),
       escalation: e.escalation ?? null,
       total_minor: e.total,
       items: e.items.map((i) => ({ beneficiary: i.beneficiary, amount_minor: i.amount })),

@@ -17,14 +17,14 @@ import { join, relative } from "node:path";
 import {
   ApiMandateStatusSource,
   CodeSparRail,
-  NotATestKeyError,
   StubRail,
   createCodeSparClient,
-  isTestKey,
+  assertTestKey,
   loadMandate,
   MandateSchema,
   type Execution,
   type Mandate,
+  railErrorOf,
 } from "@codespar/agent-core";
 import { existsSync, readFileSync } from "node:fs";
 import { NoMandateError, defineAgent, type AgentKit } from "@codespar/agent-runtime";
@@ -66,7 +66,7 @@ a batch runs one execution per line: in \`human\` the terminal asks once for the
 
   buildRail: (ctx) => {
     if (ctx.kind === "api") {
-      if (!isTestKey(ctx.env["CODESPAR_API_KEY"])) throw new NotATestKeyError();
+      assertTestKey(ctx.env["CODESPAR_API_KEY"]);
       const api = createCodeSparClient({ apiKey: ctx.env["CODESPAR_API_KEY"], baseUrl: ctx.env["CODESPAR_API_URL"], projectId: ctx.env["CODESPAR_PROJECT_ID"] });
       const mandate = ctx.mandate ?? loadLocalMandate(mandatePath(ctx.agentDir));
       if (!mandate) throw new NoMandateError();
@@ -117,6 +117,7 @@ a batch runs one execution per line: in \`human\` the terminal asks once for the
       id: e.id,
       state: e.state,
       reason: e.reason ?? null,
+      rail_error: railErrorOf(e),
       escalation: e.escalation ?? null,
       total_minor: e.total,
       items: e.items.map((i) => ({ beneficiary: i.beneficiary, amount_minor: i.amount })),
