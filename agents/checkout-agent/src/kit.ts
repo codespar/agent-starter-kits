@@ -23,7 +23,7 @@ import {
   createCodeSparClient,
   isTestKey,
   loadMandate,
-  paySandboxCharge,
+  payIfPayable,
   type Execution,
   type StubChargeRailOptions,
 } from "@codespar/agent-core";
@@ -124,8 +124,8 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
         payer: {
           kind: "api" as const,
           async pay(chargeId: string) {
-            const result = await paySandboxCharge(client, chargeId);
-            if (!result.ok) return { ok: false as const, detail: `${result.failure.code}: ${result.failure.message}` };
+            const result = await payIfPayable(client, chargeId);
+            if (!result.ok) return { ok: false as const, detail: "refused" in result ? `${result.refused.code}: ${result.refused.message}` : `${result.failure.code}: ${result.failure.message}` };
             const s = result.state;
             return { ok: true as const, detail: `sandbox payer: ${s.charge_id} ${s.status} (${s.payment}, ${s.paid_minor} of ${s.quoted_minor}), simulated=${s.simulated}, settled_against=${s.settled_against}, money_moved=${s.money_moved}${s.idempotent_replay ? ", replay" : ""}` };
           },
