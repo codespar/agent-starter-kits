@@ -37,6 +37,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EMULATOR_DEFAULTS, EmulatorDriver } from "../src/channels/whatsapp/emulator.js";
 import { buildSendRequest, WhatsAppCloudApi, type CloudApiConfig } from "../src/channels/whatsapp/cloud-api.js";
+import { WhatsAppChannel } from "../src/channels/whatsapp/index.js";
+import type { ChannelLogLine } from "../src/channels/types.js";
 
 const URL_BASE = process.env["WHATSAPP_SIM_URL"] ?? "http://127.0.0.1:4290";
 
@@ -144,7 +146,8 @@ describe.skipIf(!up)("what our adapter depends on, and the emulator provides", (
   it("has a conversation clock we can pin and move, which is the only way a 24h window ever closes in a replay", async () => {
     const driver = new EmulatorDriver(URL_BASE);
     const pinned = (await driver.pin(new Date("2026-09-23T17:00:00.000Z"))) as { now: string };
-    expect(pinned.now).toBe("2026-09-23T17:00:00.000Z");
+    // To the millisecond is not the contract: 0.3.0 answers a pin with the clock it now reads, which can already be a millisecond on.
+    expect(Math.abs(Date.parse(pinned.now) - Date.parse("2026-09-23T17:00:00.000Z"))).toBeLessThan(1000);
     const moved = (await driver.advanceHours(26)) as { now: string };
     expect(Date.parse(moved.now) - Date.parse(pinned.now)).toBeGreaterThanOrEqual(26 * 3600 * 1000);
   });
@@ -491,6 +494,85 @@ describe.skipIf(!up)("what 0.3.0 changed, asked of the binary (§46, fabianocruz
       expect(Math.abs(Date.parse(clock.now) - Date.now())).toBeLessThan(60_000);
     } finally {
       own.stop();
+    }
+  });
+});
+
+describe.skipIf(!up)("§46's three product gaps, against the binary: statuses, taps and the template's buttons", () => {
+  const templates = [
+    { name: "acordo_quitado", language: "pt_BR", description: "paid", body: "Oi! {{1}} quitado." },
+    { name: "acordo_cobranca_vencida", language: "pt_BR", description: "expired", body: "Oi! A cobranca do {{1}} venceu.", buttons: [{ id: "emitir_nova", title: "Emitir nova", intent: "quero que voce emita uma nova cobranca para o meu acordo" }] },
+  ];
+
+  /** Our channel over our receiver, on the port the emulator delivers to, in a conversation of its own. */
+  async function opened() {
+    const id = pnid();
+    const failed: ChannelLogLine[] = [];
+    const backend = new WhatsAppCloudApi({ config: { ...config(id), webhookPort: EMULATOR_DEFAULTS.webhookPort }, conversation: { contact: `+${TO}` }, say: () => undefined });
+    const channel = new WhatsAppChannel({ backend, conversation: { contact: `+${TO}` }, now: () => new Date(), templates, onDeliveryFailed: (l) => failed.push(l) });
+    await channel.open();
+    const driver = new EmulatorDriver(URL_BASE);
+    // The emulator's clock and ours agree for this conversation, so the window our channel reads is the one the provider enforces.
+    await driver.pin(new Date());
+    return { id, channel, failed, driver };
+  }
+
+  async function until(check: () => boolean, ms = 4000): Promise<boolean> {
+    for (let waited = 0; waited < ms; waited += 50) {
+      if (check()) return true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return check();
+  }
+
+  it("a failed status injected at the emulator reaches our receiver as 131026, tied to the outcome the message told", async () => {
+    const { id, channel, failed, driver } = await opened();
+    try {
+      await driver.inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
+      await channel.next();
+      const sent = await channel.send({ kind: "text", text: "Recebemos, acordo quitado.", about: { execution_id: "exe_x", state: "settled" } });
+      expect(sent.state).toBe("sent");
+      await driver.status({ status: "failed", messageId: sent.id, reason: "not on whatsapp" });
+      expect(await until(() => channel.deliveryOf(sent.id) === "failed")).toBe(true);
+      expect(failed).toHaveLength(1);
+      expect(failed[0]).toMatchObject({ direction: "status", message_id: sent.id, about: { execution_id: "exe_x", state: "settled" } });
+      expect(failed[0]!.errors?.[0]?.code).toBe(131026);
+    } finally {
+      await channel.close();
+    }
+  });
+
+  it("a read reaches us too, and is recorded only", async () => {
+    const { id, channel, failed, driver } = await opened();
+    try {
+      await driver.inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
+      await channel.next();
+      const sent = await channel.send({ kind: "text", text: "Oi!" });
+      await driver.status({ status: "read", messageId: sent.id });
+      expect(await until(() => channel.deliveryOf(sent.id) === "read")).toBe(true);
+      expect(failed).toEqual([]);
+    } finally {
+      await channel.close();
+    }
+  });
+
+  it("a template goes out with its quick replies, the emulator takes them, and a tap on one comes back as the declared intent", async () => {
+    const { id, channel, driver } = await opened();
+    try {
+      await driver.inbound({ phoneNumberId: id, from: `+${TO}`, text: "oi" });
+      await channel.next();
+      const sent = await channel.send({ kind: "template", template: "acordo_cobranca_vencida", language: "pt_BR", variables: ["acordo-1042"] });
+      expect(sent.state).toBe("sent");
+      expect(channel.log().at(-1)?.offered).toEqual(["emitir_nova"]);
+      await driver.inbound({ phoneNumberId: id, from: `+${TO}`, reply: { id: "emitir_nova", title: "Emitir nova" } });
+      expect((await channel.next())?.text).toBe("quero que voce emita uma nova cobranca para o meu acordo");
+      // And a tap on something nobody offered is not a turn: the next one the channel hands on is the text after it.
+      await driver.inbound({ phoneNumberId: id, from: `+${TO}`, reply: { id: "pagar_tudo", title: "Pagar tudo" } });
+      await driver.inbound({ phoneNumberId: id, from: `+${TO}`, text: "e agora?" });
+      expect((await channel.next())?.text).toBe("e agora?");
+      expect(channel.log().filter((l) => l.kind === "reply").map((l) => [l.reply?.id, l.refused?.rule ?? null])).toEqual([["emitir_nova", null], ["pagar_tudo", "reply_not_offered"]]);
+    } finally {
+      await channel.close();
     }
   });
 });

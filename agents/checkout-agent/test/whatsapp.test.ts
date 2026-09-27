@@ -110,6 +110,17 @@ describe.skipIf(!emulatorUp)("the sale closes over the WhatsApp channel", () => 
   });
 });
 
+describe.skipIf(!emulatorUp)("§46: a tap is a turn on the checkout-agent too", () => {
+  it("a tapped 'Falar agora' on the fallback template is handed to the model as the intent the template declared", () => {
+    const out = start(["--channel", "whatsapp", "--conversation", "pedido-marina-retomada", "--scripted", "--mode", "mandate", "--transcript", "test/fixtures/tap-falar-agora-marina.transcript.jsonl", "--json", ...NOW]);
+    expect(out.code).toBe(0);
+    const p = JSON.parse(out.stdout.split("\n").filter(Boolean).pop()!) as { channel: { taps: unknown[]; log: string } };
+    expect(p.channel.taps).toEqual([{ id: "falar_agora", turn: true }]);
+    const tap = conversationOf(p as unknown as Payload).find((l) => l.kind === "reply") as ChannelLine & { reply?: { id: string } };
+    expect(tap.text).toBe("quero saber qual e a atualizacao do meu atendimento");
+  });
+});
+
 describe("the conversation decides who is charged, with no emulator in sight", () => {
   it("an order in Marina's conversation for another customer of the store is refused before it exists", async () => {
     const dir = mkdtempSync(join(tmpdir(), "checkout-wa-bind-"));

@@ -811,13 +811,49 @@ with `POST /_sim/status`:
 - Two templates sent outside the window are both billed (total > 0). Failing
   one marks it `NOT_BILLABLE_FAILED`, and the total drops but stays above zero.
 
-**Ours, and open:** our receiver ignores status webhooks entirely.
-`parseInbound` reads messages, so the delivery state on an outbound line is
-only ever what the send answered. The emulator can now show a read receipt or
-a failure, and the channel does not listen. **Open:** whether a `failed`
-(131026: not on WhatsApp, blocked) belongs in the record and on the operator's
-console. It is a normal outcome on WhatsApp, and right now it would pass
-unnoticed.
+**Ours: the receiver ignored status webhooks. CLOSED (2026-09-27).** Decided:
+a `failed` belongs in the record, on the operator's console, and on the outcome
+it was telling. What the channel does now:
+
+- `parseInbound` reads `statuses` (id, state, timestamp, Meta's `errors`)
+  beside the messages of a delivery.
+- The channel records every status as a `status` line in `channel.jsonl`. The
+  line names the outcome the message told when it told one: an outbound line
+  that tells an outcome carries `about: { execution_id, state }`, set by the
+  terminal's `tell` and the poll.
+- **`failed`:**
+  - It is an event: `message.debtor.failed` when the message told an outcome,
+    `message.failed` otherwise, with the errors.
+  - The operator is told on the console: "ENTREGA FALHOU … a pessoa NAO foi
+    avisada".
+  - A cursor records the failure, so a later poll reports `delivery_failed`
+    instead of `already_told`.
+  - `markTold` stays held. A failed delivery is not retried by itself, because
+    its usual causes (not a WhatsApp number, blocked) fail again.
+  - The poll waits a bounded moment after telling an outcome
+    (`WHATSAPP_STATUS_GRACE_MS`, default 1000), so a failure the provider
+    reports in that window turns the delivery into `{ told: false, reason:
+    "delivery_failed" }` and the exit code into 1. A conversation run waits
+    the same moment before closing its receiver, if it told an outcome.
+- **`read` is recorded and nothing more.** It says a device displayed the
+  message. It is not consent, not an acknowledgement of a debt or an order, and
+  not a reply. It is not a turn and not an event.
+
+Measured against 0.3.0:
+- `POST /_sim/status {"status":"failed","message_id":…}` reaches our receiver as
+  131026 and is tied to the outcome.
+- In a real `poll` process, the paid-agreement template reported failed ends
+  `settled` with `delivery_failed`, exit 1, and one `message.debtor.failed`.
+- The emulator posts a send's own `sent`/`delivered` statuses synchronously,
+  BEFORE the send answers. So a status can name a message id the log does not
+  hold yet. A `failed` in that position is kept and acted on once the message
+  is logged.
+
+**Still open:** a status delivered while nothing is listening is not heard.
+The WhatsApp receiver lives only as long as a run or a poll does; in
+production Meta retries a webhook for a while, and a persistent receiver for
+the channel (as `npm run webhook` is for charges) is what would catch a
+failure reported an hour later.
 
 **e. An inbound interactive reply degraded to an empty text message. CLOSED.**
 On 0.1.1, `POST /_sim/inbound` with `type: "interactive"` and a `button_reply`
@@ -828,10 +864,39 @@ Measured on 0.2.0: `button_reply`, `list_reply` and `nfm_reply` each go out as
 `response_json` for `nfm_reply`). A reply without `id`, or an `nfm_reply`
 without `response_json`, answers 400, and the webhook log does not grow.
 
-**Ours, and open:** `parseInbound` reads text only. A tapped button is now
-dropped with its id and type named on the console, which is honest, but the
-debtor can tap "À vista" and the agent does not hear it. Turning a button reply
-into a turn is a channel feature and is not in this change.
+**Ours: a tapped button was dropped. CLOSED (2026-09-27): a tap is a turn, as
+the intent the template declared.**
+
+- **The template declares the buttons and what they mean.** A template in
+  `channels/whatsapp/templates.json` may declare up to three quick replies
+  `{ id, title, intent }`. `intent` is the turn the model receives, written by
+  whoever wrote the template. A template goes out with the replies its
+  declaration offers (Meta's `quick_reply` button components, `payload` = the
+  id), and the outbound line records `offered`.
+- **What arrives.** `parseInbound` reads `button_reply`, `list_reply` and a
+  template's `button` (payload) with the id, the title and `context.id` when
+  the provider sends it.
+- **The channel hands on a turn only for a declared id, and the turn's text is
+  that id's intent,** never the title and never the model's reading of either.
+  An undeclared id, or a `context.id` naming a message this conversation did not
+  send with that reply, is recorded (`kind: reply`, refused
+  `reply_not_offered`), told to the operator and skipped.
+- **A tap reopens the 24-hour window,** like any inbound.
+- **`npm run check`** refuses a reply id declared twice, and a conversation
+  script that taps an id no template offers. A script turn is now `text` or
+  `reply`.
+- **Measured against 0.3.0:**
+  - a template with buttons is accepted;
+  - a tap injected with `/_sim/inbound` interactive comes back as the intent;
+  - an undeclared tap is not a turn;
+  - in real processes, the collections-agent's `acordo-1042-retomada` (a tap on
+    "Emitir nova") issues and settles with the declared intent as the model's
+    only user turn, and the checkout-agent's `pedido-marina-retomada` taps
+    "Falar agora".
+
+**Not done:** the agent composing its own interactive message (buttons in free
+text) inside the window. Buttons exist only where a template declares them,
+which keeps "what a tap means" in the file a reviewer reads.
 
 ### Where 0.2.0 differed from its release note — corrected in 0.3.0
 
@@ -943,12 +1008,34 @@ count, so the three things Meta answers with a 4xx are refused locally instead.
 Whether Meta approved the copy is a status in a Business account this
 repository does not have. That is (a) of §42 and is unchanged.
 
-**Open, and smaller:** an outcome with no declared template. The collections
-agent declares three (paid, expired, cancelled) and returns nothing for a rail
-failure or a denial, because nobody has written copy for telling a debtor
-those, days later, in a template. The poll REPORTS such an outcome and exits
-non-zero rather than sending an approximate one — the record says settled and
-the person does not know — which is the right behaviour and not a solution.
+**An outcome with no declared template. CLOSED (2026-09-27): the registry
+declares a fallback, and `npm run check` requires it.**
+
+- **The gap.** The collections agent declares three templates (paid, expired,
+  cancelled) and has none for a rail failure, a denial or an expired approval.
+  The poll used to report those and exit non-zero, and the person was never
+  told.
+- **The fallback.** Every WhatsApp agent's registry now declares exactly one
+  template with `fallback: true`, taking no variables (`npm run check`:
+  `channels_templates_fallback`). The collections one is
+  `atendimento_atualizacao`, the checkout one `pedido_atualizacao`, both
+  reading "Oi! Temos uma atualizacao sobre o seu atendimento. Responda esta
+  mensagem para continuarmos por aqui.", with a "Falar agora" button.
+- **When the poll uses it.** When the kit has no template for the outcome
+  (`outcomeTemplate` answers undefined), the poll sends the fallback, reports
+  `{ told: true, carrier: "template", template, fallback: true }`, and records
+  `fallback: true` on `message.debtor`.
+- **Why it cannot be the wrong news.** It states no outcome. The person
+  answers, the answer reopens the window, and the agent says what happened in
+  free text.
+- **What it does not cover.** A kit that names a template the registry does not
+  declare is still a defect (`no_template_for_outcome`), not a case for the
+  fallback.
+- **Measured against 0.3.0:** the collections-agent with `outcomeTemplate`
+  answering nothing sends `atendimento_atualizacao`, which offers
+  `falar_agora`, and exits 0.
+- **Also added:** `expired`, the collections `acordo_cobranca_vencida` and the
+  checkout `pedido_cobranca_vencida` now offer "Emitir nova" / "Agora nao".
 
 ## 47. What `npm run verify` proves (wave 5), and since ent#1670 the body behind the signature
 
