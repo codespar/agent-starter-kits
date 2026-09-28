@@ -40,6 +40,7 @@ import { stderr, stdout } from "node:process";
 import {
   DEFAULT_BASE_URL,
   DEFAULT_RECEIPT_KEYS_URL,
+  NotATestKeyError,
   VERDICT_EXIT_CODES,
   copyDisagreesWithRead,
   createCodeSparClient,
@@ -55,7 +56,7 @@ import {
   type ReceiptVerification,
 } from "@codespar/agent-core";
 import { findAgentDir } from "../agent.js";
-import { readDotEnv } from "../setup.js";
+import { envFileOf, readDotEnv } from "../setup.js";
 
 const USAGE =
   "usage: npm run verify <receipt-file> [--json] [--keys <key-set.json> | --url <https://.../.well-known/codespar-receipt-keys.json>] [--approval <approval.json> [--approval-id <apr_...>]] [--from-api]";
@@ -241,6 +242,7 @@ async function readFromApi(receiptId: string, receiptFile: string, apiBase: stri
     if (!isReceiptRead(body)) return { ok: false, detail: "the API answered something that is not a receipt read" };
     return { ok: true, body };
   } catch (err) {
+    if (err instanceof NotATestKeyError) return { ok: false, detail: new NotATestKeyError(err.problem, agentDir ? envFileOf(agentDir) : undefined).message };
     const failure = describeApiError(err);
     return { ok: false, detail: `${failure.code}: ${failure.message}` };
   }

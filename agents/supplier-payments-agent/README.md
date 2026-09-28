@@ -69,7 +69,7 @@ Not in this kit: WhatsApp, `embedded-consent` (see above), scheduling a batch fo
 | Command | Does |
 |---|---|
 | `npm start` | Interactive terminal on the stub rail (or the sandbox, with a `csk_test_` key and a signed mandate). |
-| `npm start -- --input "roda a folha de outubro" [--approve] [--json] [--now <ISO>]` | One turn, no prompt. `--approve` decides every line of the batch the same way. `--json`: machine data on stdout, people on stderr. `--now 2026-09-23T14:00:00-03:00` pins the clock the guardrails read (`escalate_above.outside_hours`) instead of the wall clock; `CODESPAR_AGENT_NOW` is the same pin for every command. |
+| `npm start -- --input "roda a folha de outubro" [--approve] [--json] [--now <ISO>]` | One turn, no prompt. `--approve` decides every line of the batch the same way. `--json`: machine data on stdout, people on stderr. `--now 2026-09-23T14:00:00-03:00` pins the clock the guardrails read (`escalate_above.outside_hours`) instead of the wall clock; `CODESPAR_AGENT_NOW` is the same pin for every command. An execution that failed, or whose outcome the rail left unknown, carries `rail_error` in `--json`: the API's code and message, verbatim. |
 | `npm start -- --scenario <name> [--mode human\|mandate]` | A scenario pack from `scenarios/`. |
 | `npm run check` | The manifest gate: fails if the prompt, tools or guardrails contradict `agent.yaml`, if `AGENTS.md` and `CLAUDE.md` differ, or if `mcp`, `cli` or `schema` are missing. |
 | `npm run eval` | The adversarial suite (`evals/adversarial/`) and every scenario in every mode, on the replay provider. |

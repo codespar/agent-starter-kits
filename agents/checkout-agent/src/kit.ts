@@ -18,14 +18,14 @@ import { relative } from "node:path";
 import qrcode from "qrcode-terminal";
 import {
   CodeSparChargeRail,
-  NotATestKeyError,
   StubChargeRail,
   createCodeSparClient,
-  isTestKey,
+  assertTestKey,
   loadMandate,
   paySandboxCharge,
   type Execution,
   type StubChargeRailOptions,
+  railErrorOf,
 } from "@codespar/agent-core";
 import { defineAgent, envName, type AgentKit, type Setup } from "@codespar/agent-runtime";
 import { formatBRL, formatDate } from "./catalog.js";
@@ -114,7 +114,7 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
   buildRail: (ctx) => {
     const mandate = ctx.mandate ?? loadMandate(ctx.manifest.resolvePath(ctx.manifest.manifest.mandate_schema));
     if (ctx.kind === "api") {
-      if (!isTestKey(ctx.env["CODESPAR_API_KEY"])) throw new NotATestKeyError();
+      assertTestKey(ctx.env["CODESPAR_API_KEY"]);
       const client = createCodeSparClient({ apiKey: ctx.env["CODESPAR_API_KEY"], baseUrl: ctx.env["CODESPAR_API_URL"], projectId: ctx.env["CODESPAR_PROJECT_ID"] });
       return {
         rail: new CodeSparChargeRail(client),
@@ -214,6 +214,7 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
           id: e.id,
           state: e.state,
           reason: e.reason ?? null,
+          rail_error: railErrorOf(e),
           escalation: e.escalation ?? null,
           cart_id: cart?.cart_id ?? null,
           cart_hash: e.composition?.composition_hash ?? null,

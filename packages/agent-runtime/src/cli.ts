@@ -5,7 +5,8 @@
  */
 import { stderr } from "node:process";
 import { loadAgent, type Agent } from "./agent.js";
-import { readDotEnv } from "./setup.js";
+import { NotATestKeyError } from "@codespar/agent-core";
+import { envFileOf, readDotEnv } from "./setup.js";
 import { check } from "./commands/check.js";
 import { decide } from "./commands/decide.js";
 import { runEval } from "./commands/eval.js";
@@ -43,7 +44,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   if (AGENTLESS.includes(command)) return verify(rest);
   const agent = await loadAgent(dir);
   readDotEnv(agent.dir);
-  return run(agent, command, rest);
+  try {
+    return await run(agent, command, rest);
+  } catch (err) {
+    // A key refusal is the first thing a newcomer meets (#50): one sentence naming the file this agent reads, never a stack trace.
+    if (err instanceof NotATestKeyError) {
+      stderr.write(new NotATestKeyError(err.problem, envFileOf(agent.dir)).message + "\n");
+      return 1;
+    }
+    throw err;
+  }
 }
 
 async function run(agent: Agent, command: string, argv: string[]): Promise<number> {

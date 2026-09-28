@@ -6,6 +6,7 @@
  */
 import { relative } from "node:path";
 import { stderr, stdout } from "node:process";
+import { railErrorOf } from "@codespar/agent-core";
 import type { Agent } from "../agent.js";
 import { setup } from "../setup.js";
 import { handleExecution } from "../terminal.js";
@@ -48,6 +49,7 @@ export async function decide(agent: Agent, decision: "approve" | "deny", argv: s
           execution_id: final.id,
           state: final.state,
           reason: final.reason ?? null,
+          rail_error: railErrorOf(final),
           approval_id: final.approval_id ?? null,
           ...(awaitsPayer ? { charge_ids: final.outcomes.map((o) => o.transaction_id ?? null) } : {}),
           receipt_ids: final.outcomes.filter((o) => o.receipt_id).map((o) => o.receipt_id),

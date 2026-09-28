@@ -5,7 +5,7 @@
  * rail, the tool handlers and the policy extension, through its kit.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import {
   AgentLoop,
   ExecutionEngine,
@@ -32,6 +32,7 @@ import {
   type StubRailOptions,
   type ToolContext,
   type ToolHandler,
+  CODESPAR_KEY_PLACEHOLDER,
 } from "@codespar/agent-core";
 import { AnthropicRuntime } from "@codespar/agent-core/providers/anthropic";
 import type { ApiClient } from "@codespar/sdk";
@@ -40,7 +41,21 @@ import type { AgentKit, RailKind, SandboxPayer, Settlement } from "./kit.js";
 
 /** The `.env.example` placeholder counts as no key: a copied example must replay, not call Anthropic with a fake key. */
 export const ANTHROPIC_KEY_PLACEHOLDER = "sk-ant-your_key_here";
-export const CODESPAR_KEY_PLACEHOLDER = "csk_test_your_key_here";
+export { CODESPAR_KEY_PLACEHOLDER };
+
+/**
+ * The `.env` an agent reads (`readDotEnv(agent.dir)`), as a person would type
+ * it from where they ran the command: relative when it is below, absolute when
+ * it is not. `npm run` moves a workspace script into the agent's directory, so
+ * where the PERSON ran it is `INIT_CWD`, which npm sets; `npm run consent` at
+ * the root names `agents/bills-agent/.env`, not `.env`. The key refusals name
+ * this path, never a guess (#50).
+ */
+export function envFileOf(agentDir: string, cwd: string = process.env["INIT_CWD"] || process.cwd()): string {
+  const path = join(agentDir, ".env");
+  const rel = relative(cwd, path);
+  return rel === "" || rel.startsWith("..") || isAbsolute(rel) ? path : rel;
+}
 
 export type ProviderKind = "anthropic" | "replay";
 
