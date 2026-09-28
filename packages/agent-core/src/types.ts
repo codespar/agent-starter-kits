@@ -123,6 +123,11 @@ export type ExecutionReason =
   | "charge_expired"
   | "charge_cancelled"
   /**
+   * The issuer ended the receivable's registration in an error state (`ERROR`): no Pix, no boleto, nothing a payer can
+   * pay, and nothing will be. Terminal, and nothing was collected. Measured on staging on 2026-09-27 (OPEN_QUESTIONS §63).
+   */
+  | "charge_issuer_error"
+  /**
    * An ISSUED receivable whose read now answers that its reference matches more than one charge. Terminal for the
    * execution, but not "nothing moved": the charge exists and may still be paid. Reconcile it by the charge id; never
    * issue another to the same payee until that is done, which is why the core refuses one (`policy`).

@@ -506,7 +506,7 @@ export class ExecutionEngine {
       this.deps.store.updateOutbox(execution.idempotency_key, "failed", execution.outcomes, at);
       // `org_paused` is the API refusing the spend itself: the kill switch was pressed after the gate read the status. Nothing moved.
       const reason: ExecutionReason =
-        failed.code === "charge_expired" || failed.code === "charge_cancelled" || failed.code === "org_paused" || failed.code === "charge_reference_ambiguous" ? failed.code : "rail_failed";
+        failed.code === "charge_expired" || failed.code === "charge_cancelled" || failed.code === "charge_issuer_error" || failed.code === "org_paused" || failed.code === "charge_reference_ambiguous" ? failed.code : "rail_failed";
       return this.persist(transition(updated, "failed", { at, actor: this.agentActor, reason, detail: failed.error ?? "rail refused" }));
     }
     if (execution.outcomes.filter((o) => o.status === "settled").length === attempts) {

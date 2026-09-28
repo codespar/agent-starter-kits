@@ -241,7 +241,7 @@ async function runScenarioCommand(agent: Agent, args: Args, railKind: RailKind, 
     });
     const check = checkScenario(scenario, run);
     for (const reply of run.replies) say(`agente: ${reply}`);
-    say(check.ok ? `== ok — ${agent.settlement === "await-payer" ? `${run.cycle_seconds}s — ` : ""}bundle em ${relative(process.cwd(), run.bundle_dir)}` : `== FAIL: ${check.failures.join("; ")}`);
+    say(check.ok ? `== ok — ${agent.settlement === "await-payer" ? (run.cycle_seconds === null ? "sem ciclo medido — " : `${run.cycle_seconds}s — `) : ""}bundle em ${relative(process.cwd(), run.bundle_dir)}` : `== FAIL: ${check.failures.join("; ")}`);
     results.push({ mode, ok: check.ok, failures: check.failures, run });
   }
   if (args.json) stdout.write(JSON.stringify({ scenario: scenario.name, ...(picksRail ? { rail } : {}), results }) + "\n");
