@@ -6,6 +6,7 @@
  */
 import type { ProofBundle } from "./bundle.js";
 import type { ExecutionEngine } from "./engine.js";
+import { detectLanguage, replyLanguageDirective, type ReplyLanguage } from "./language.js";
 import type { AgentRuntime, ConversationMessage, ToolCall, ToolSpec } from "./providers/types.js";
 import { isReply } from "./providers/types.js";
 import type { Execution } from "./state-machine.js";
@@ -81,6 +82,8 @@ export class AgentLoop {
   private readonly allowed: Set<string>;
   private readonly specs: ToolSpec[];
   private readonly clock: () => Date;
+  /** The language the person last wrote in, kept when a turn gives no lead of its own ("ok"). */
+  private language: ReplyLanguage | undefined;
 
   constructor(private readonly options: AgentLoopOptions) {
     this.allowed = allowedToolNames(options.tools);
@@ -98,11 +101,14 @@ export class AgentLoop {
     const calls: TurnResult["tool_calls"] = [];
     const executions: Execution[] = [];
 
+    this.language = detectLanguage(userText) ?? this.language;
+    const system = this.language ? `${this.options.system.trimEnd()}\n\n${replyLanguageDirective(this.language)}\n` : this.options.system;
+
     this.messages.push({ role: "user", content: userText });
-    bundle.transcript({ at: this.now(), kind: "user", text: userText });
+    bundle.transcript({ at: this.now(), kind: "user", text: userText, reply_language: this.language ?? null });
 
     for (let step = 0; step < maxSteps; step += 1) {
-      const out = await runtime.step({ system: this.options.system, messages: this.messages }, this.specs);
+      const out = await runtime.step({ system, messages: this.messages }, this.specs);
       if (isReply(out)) {
         this.messages.push({ role: "assistant", content: out.text });
         bundle.transcript({ at: this.now(), kind: "assistant_step", reply: out.text });

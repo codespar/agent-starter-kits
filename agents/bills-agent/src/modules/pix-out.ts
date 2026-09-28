@@ -4,7 +4,7 @@
  * whatever the core decided); it cannot pay. `codespar_ledger` and
  * `list_bills` are reads.
  */
-import { isReplayedSettlement, type ToolHandler } from "@codespar/agent-core";
+import { daysUntil, isReplayedSettlement, type Execution, type ToolHandler } from "@codespar/agent-core";
 import { formatBRL } from "../bills.js";
 import { BILLS, MONTH } from "../bills.js";
 
@@ -17,9 +17,11 @@ interface PayInput {
 export const listBills: ToolHandler = async (_input, ctx) => {
   const settled = ctx.engine.list({ state: "settled" });
   const paidAliases = new Set(settled.flatMap((e) => e.items.map((i) => i.alias)).filter(Boolean));
+  const today = ctx.engine.today();
   return {
     month: MONTH,
-    bills: BILLS.map((b) => ({ ...b, amount: formatBRL(b.amount_minor), paid_this_window: paidAliases.has(b.alias) })),
+    today,
+    bills: BILLS.map((b) => ({ ...b, amount: formatBRL(b.amount_minor), days_until_due: daysUntil(today, b.due), paid_this_window: paidAliases.has(b.alias) })),
     payees: ctx.engine.mandate.beneficiaries.map((b) => ({ alias: b.alias, name: b.name })),
   };
 };
@@ -49,6 +51,7 @@ export const codesparPay: ToolHandler = async (raw, ctx) => {
     items: execution.items.map((i) => ({ payee: i.beneficiary, amount: formatBRL(i.amount) })),
     ...(execution.reason ? { reason: execution.reason, detail: execution.detail } : {}),
     ...(execution.escalation ? { escalated_by: execution.escalation.trigger } : {}),
+    approved_by: approvedBy(execution),
     receipt_ids: execution.outcomes.filter((o) => o.receipt_id).map((o) => o.receipt_id),
     // Settled by an earlier presentation of the same attempt: the payment exists, and this call did not make it.
     replayed: isReplayedSettlement(execution),
@@ -73,3 +76,14 @@ export const codesparLedger: ToolHandler = async (raw, ctx) => {
   }
   throw new Error(`codespar_ledger: unsupported action ${String(input.action)}`);
 };
+
+/**
+ * Who moved the execution to `approved`: the person (`human`), the signed
+ * allowance (`mandate`), or nobody yet (`null`). The model is told which
+ * approval modes exist but not which one ran, and without this it guesses.
+ */
+export function approvedBy(execution: Execution): "human" | "mandate" | null {
+  const step = execution.history.find((h) => h.to === "approved");
+  if (!step) return null;
+  return step.actor.type === "human" ? "human" : "mandate";
+}

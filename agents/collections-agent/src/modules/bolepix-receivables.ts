@@ -28,6 +28,8 @@ export function makeHandlers(envelope: Envelope): Record<string, ToolHandler> {
     const settledAliases = new Set(settled.flatMap((e) => e.items.map((i) => i.alias)).filter(Boolean));
     const issuedAliases = new Set(open.flatMap((e) => e.items.map((i) => i.alias)).filter(Boolean));
     return {
+      // Due dates are proposed by the model inside `due_date_window_days` of today; it has no calendar but this one.
+      today: ctx.engine.today(),
       agreements: AGREEMENTS.map((a) => ({
         alias: a.alias,
         debtor_first_name: a.first_name,

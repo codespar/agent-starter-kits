@@ -13,7 +13,7 @@
  */
 import { checkApprovalArtifact, createApprovalArtifact, type ApprovalSigner } from "./approval.js";
 import { maskPayee, type ProofBundle } from "./bundle.js";
-import { evaluateEscalation, type Escalation } from "./escalate.js";
+import { evaluateEscalation, localDate, type Escalation } from "./escalate.js";
 import { CHARGE_CANCELLED, CHARGE_EXPIRED, CHARGE_PAID, PAYMENT_FAILED, PAYMENT_SUCCEEDED, type PublishedEvent } from "./events.js";
 import type { Guardrails } from "./guardrails.js";
 import { batchAttemptId, itemsHash, sha256Hex } from "./hash.js";
@@ -129,6 +129,16 @@ export class ExecutionEngine {
 
   get mandate(): Mandate {
     return this.deps.mandate;
+  }
+
+  /**
+   * The day it is for the person, in the guardrails' timezone, at this
+   * engine's clock (so `--now` pins it too). A tool that shows a due date
+   * shows this next to it: the model has no calendar of its own, and without
+   * it a bill due next week reads as one that already fell due.
+   */
+  today(): string {
+    return localDate(this.clock(), this.deps.guardrails.timezone);
   }
 
   // ---- the model's only entry point -------------------------------------
