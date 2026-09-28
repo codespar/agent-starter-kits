@@ -53,6 +53,37 @@ describe("npm start -- --input ... --json", () => {
     expect(out.code).toBe(1);
     expect(out.stdout).toBe("");
     expect(out.stderr).toContain("csk_test_");
+    expect(out.stderr).toContain("a live key is refused");
+  });
+});
+
+// #50: no key, the placeholder and a live key are three mistakes with three fixes, and each refusal names the .env this agent reads,
+// as the person would type it from where they ran npm (INIT_CWD): the repository root, here.
+describe("a key the kit cannot use says which mistake it is", () => {
+  const REPO = resolve(AGENT_DIR, "../..");
+  const cases = [
+    ["no key at all", "", /CODESPAR_API_KEY is not set: copy agents\/bills-agent\/\.env\.example to agents\/bills-agent\/\.env/],
+    ["the .env.example placeholder", "csk_test_your_key_here", /still the placeholder from \.env\.example \(csk_test_your_key_here\): replace it in agents\/bills-agent\/\.env/],
+    ["a live key", ["csk", "live", "0000000000"].join("_"), /a live key is refused/],
+  ] as const;
+  for (const [name, key, message] of cases) {
+    it(`consent with ${name}: its own sentence, exit 1, no stack trace`, () => {
+      const stateDir = mkdtempSync(join(tmpdir(), "bills-key-"));
+      const out = run("consent", ["--yes"], { BILLS_STATE_DIR: stateDir, CODESPAR_API_KEY: key, INIT_CWD: REPO });
+      expect(out.code).toBe(1);
+      expect(out.stderr).toMatch(message);
+      expect(out.stderr).not.toMatch(/\n\s+at /);
+      if (key !== cases[2][1]) expect(out.stderr).not.toContain("live");
+    });
+  }
+
+  it("start --rail api names the same file, and without INIT_CWD the path is relative to where the command ran", () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "bills-key-"));
+    const fromRoot = run("start", ["--input", "pague a escola de outubro", "--rail", "api", "--json"], { BILLS_STATE_DIR: stateDir, CODESPAR_API_KEY: "", INIT_CWD: REPO });
+    expect(fromRoot.code).toBe(1);
+    expect(fromRoot.stderr).toContain("copy agents/bills-agent/.env.example to agents/bills-agent/.env");
+    const here = run("start", ["--input", "pague a escola de outubro", "--rail", "api", "--json"], { BILLS_STATE_DIR: stateDir, CODESPAR_API_KEY: "", INIT_CWD: "" });
+    expect(here.stderr).toContain("copy .env.example to .env");
   });
 });
 
@@ -210,6 +241,10 @@ describe("partial failure of a multi-item execution, and rerun reproducing it", 
     // paid all the same: an attempt's outcome is that attempt's business.
     expect(payload.executions[0]?.state).toBe("failed");
     expect(payload.executions[0]?.receipt_ids).toHaveLength(3);
+    // #50: the rail's own code and message, verbatim, next to the reason — on stdout for a script, on stderr for a person.
+    const railError = (payload.executions[0] as unknown as { rail_error: unknown }).rail_error;
+    expect(railError).toMatchObject({ outcome: "failed", code: "psp_dispatch_failed", message: "stub: provider refused payee +5511999990001" });
+    expect(first.stderr).toContain("-> failed (rail_failed): psp_dispatch_failed — stub: provider refused payee +5511999990001");
     expect(payload.receipts).toHaveLength(3);
     const events = readFileSync(join(runsDir, payload.run_id, "events.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; payload: { status?: string } });
     expect(events.filter((e) => e.type === "rail.outcome").map((e) => e.payload.status)).toEqual(["settled", "failed", "settled", "settled"]);

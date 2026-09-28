@@ -8,7 +8,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stderr, stdout } from "node:process";
 import { relative } from "node:path";
-import type { AgentRuntime, BatchGesture, BatchPresentation, ChargeInstrument, Execution } from "@codespar/agent-core";
+import { railErrorOf, type AgentRuntime, type BatchGesture, type BatchPresentation, type ChargeInstrument, type Execution } from "@codespar/agent-core";
 import { pollUntilClosed, type PollResult } from "./poll.js";
 import type { Setup } from "./setup.js";
 
@@ -103,13 +103,13 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
         return current;
       }
     }
-    say(`  -> ${current.state}${current.reason ? ` (${current.reason})` : ""}`);
+    say(transitionLine(current));
   }
 
   // An agent that issues on request (`executeOnApproval: false`) leaves the approved execution for its own tool to issue.
   if (current.state === "approved" && setup.kit.executeOnApproval !== false) {
     current = await engine.execute(current.id);
-    say(`  -> ${current.state}${current.reason ? ` (${current.reason})` : ""}`);
+    say(transitionLine(current));
     if (setup.settlement === "immediate") {
       receiptLines(current, setup, say);
       if (current.state === "executing") say(labels.uncertainDispatch);
@@ -120,7 +120,7 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
     if (current.state === "executing" && current.reason === "awaiting_settlement") {
       const result = await waitForPayer(current.id, options);
       current = result.execution;
-      say(`  -> ${current.state}${current.reason ? ` (${current.reason})` : ""} apos ${result.rounds} consulta(s), ${result.seconds}s${result.timed_out ? " (tempo esgotado; `npm run poll` continua de onde parou)" : ""}`);
+      say(`${transitionLine(current)} apos ${result.rounds} consulta(s), ${result.seconds}s${result.timed_out ? " (tempo esgotado; `npm run poll` continua de onde parou)" : ""}`);
       receiptLines(current, setup, say);
     } else if (current.state === "executing") {
       say(labels.uncertainDispatch);
@@ -260,4 +260,16 @@ export async function interactive(options: TerminalOptions & { runtime: AgentRun
     stdout.write(result.reply + "\n");
   }
   closeTerminal();
+}
+
+/**
+ * `  -> failed (rail_failed): insufficient_funds — wallet cannot reserve the requested amount`.
+ * The reason says which gate closed the execution; on a failure, or an answer
+ * that left an attempt unknown, the rail's own code and message follow it,
+ * verbatim, so the first failure explains itself (#50).
+ */
+export function transitionLine(execution: Execution): string {
+  const failure = execution.state === "failed" || execution.state === "executing" ? railErrorOf(execution) : null;
+  const answer = failure ? `: ${failure.code}${failure.message && failure.message !== failure.code ? ` — ${failure.message}` : ""}` : "";
+  return `  -> ${execution.state}${execution.reason ? ` (${execution.reason})` : ""}${answer}`;
 }

@@ -9,11 +9,11 @@
  */
 import { stderr, stdout } from "node:process";
 import { relative, resolve } from "node:path";
-import { NotATestKeyError, declaredReplies, isTestKey, loadManifest, resolveFixedClock, type ApprovalMode, type ChannelName } from "@codespar/agent-core";
+import { NotATestKeyError, declaredReplies, loadManifest, testKeyProblem, resolveFixedClock, type ApprovalMode, type ChannelName } from "@codespar/agent-core";
 import { join } from "node:path";
 import type { Agent } from "../agent.js";
 import type { RailKind } from "../kit.js";
-import { resolveProvider, resolveRailKind, setup, type ProviderKind } from "../setup.js";
+import { envFileOf, resolveProvider, resolveRailKind, setup, type ProviderKind } from "../setup.js";
 import { checkScenario, listScenarios, loadScenario, runScenario, scenariosDir } from "../scenarios.js";
 import { closeTerminal, defaultAsk, handleExecution, interactive } from "../terminal.js";
 import { loadTemplates, resolveConversation } from "../channels/index.js";
@@ -125,8 +125,9 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
 
   // Sandbox by construction: a live key dies here, before anything else runs.
   const railKind = resolveRailKind(process.env, args.rail);
-  if (railKind === "api" && !isTestKey(process.env["CODESPAR_API_KEY"])) {
-    say(new NotATestKeyError().message);
+  const keyProblem = railKind === "api" ? testKeyProblem(process.env["CODESPAR_API_KEY"]) : undefined;
+  if (keyProblem) {
+    say(new NotATestKeyError(keyProblem, envFileOf(agent.dir)).message);
     return 1;
   }
 
