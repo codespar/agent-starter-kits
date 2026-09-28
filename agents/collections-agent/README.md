@@ -18,7 +18,7 @@ pagador> oi, recebi a mensagem sobre o acordo do pedido 1042
 
 You type as the customer. In `human` mode the operator's approval is asked on the same keyboard, labelled `[operador]`. Without a real `ANTHROPIC_API_KEY` (empty or the `.env.example` placeholder) the agent replays the recorded scenario.
 
-Scaffold instead of cloning: `npx -y @codespar/cli@0.14.0 init my-agent --template collections-agent`.
+Scaffold instead of cloning: `npx -y @codespar/cli@0.18.0 init my-agent --template collections-agent`.
 
 ## What it shows
 
