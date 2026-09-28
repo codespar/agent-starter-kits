@@ -1,6 +1,6 @@
 # CodeSpar Agent Starter Kits
 
-[![ci](https://github.com/codespar/agent-starter-kits/actions/workflows/ci.yml/badge.svg)](https://github.com/codespar/agent-starter-kits/actions/workflows/ci.yml) [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![node ≥ 22](https://img.shields.io/badge/node-%E2%89%A5%2022-339933?logo=node.js&logoColor=white)](package.json) [![@codespar/cli](https://img.shields.io/npm/v/@codespar/cli?label=%40codespar%2Fcli&color=cb3837&logo=npm)](https://www.npmjs.com/package/@codespar/cli) [![@codespar/mcp](https://img.shields.io/npm/v/@codespar/mcp?label=%40codespar%2Fmcp&color=cb3837&logo=npm)](https://www.npmjs.com/package/@codespar/mcp) [![clone → receipt: 77 s](https://img.shields.io/badge/clone_%E2%86%92_receipt-77_s-8A2BE2)](#quickstart-clone-to-first-receipt)
+[![ci](https://github.com/codespar/agent-starter-kits/actions/workflows/ci.yml/badge.svg)](https://github.com/codespar/agent-starter-kits/actions/workflows/ci.yml) [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![node ≥ 22](https://img.shields.io/badge/node-%E2%89%A5%2022-339933?logo=node.js&logoColor=white)](package.json) [![@codespar/cli](https://img.shields.io/npm/v/@codespar/cli?label=%40codespar%2Fcli&color=cb3837&logo=npm)](https://www.npmjs.com/package/@codespar/cli) [![@codespar/mcp](https://img.shields.io/npm/v/@codespar/mcp?label=%40codespar%2Fmcp&color=cb3837&logo=npm)](https://www.npmjs.com/package/@codespar/mcp) [![clone → receipt: 8 s](https://img.shields.io/badge/clone_%E2%86%92_receipt-8_s-8A2BE2)](#quickstart-clone-to-first-receipt)
 
 Agents that move money under a mandate. The person signs the limits once (cap per payment, cap per month, named payees, expiry), the agent proposes payments, and deterministic code decides what actually runs. Every payment ends in an approval record and a receipt.
 
@@ -28,7 +28,7 @@ npm start                                                    # talk to the agent
 > pague a escola de outubro
 ```
 
-The agent drafts the payment, asks you to approve it, pays in the sandbox and prints the receipt path: `recibo: runs/<run-id>/receipts/rcpt_....json`. Our last timed run (staging, 2026-09-23) took 77 seconds from `git clone` to a receipt the API confirmed.
+The agent drafts the payment, asks you to approve it, pays in the sandbox and prints the receipt path: `recibo: runs/<run-id>/receipts/rcpt_....json`. Our last timed run (production test mode, 2026-09-28) took 8 seconds from `git clone` to a receipt the API confirmed. That number starts after signup: it does not count creating the account and the key, it ran with a warm npm cache, and it used the replay model (no `ANTHROPIC_API_KEY`). The run before it, on staging (2026-09-23), took 77 seconds. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §12 has both.
 
 Notes:
 
@@ -40,10 +40,10 @@ Check the receipt against the API (key read from `.env`, never printed):
 
 ```sh
 set -a; . agents/bills-agent/.env; set +a
-npx -y @codespar/cli@0.14.0 consumers get-receipts rcpt_...   # expect sandbox: true, money_moved: false
+npx -y @codespar/cli@0.18.0 consumers get-receipts rcpt_...   # expect sandbox: true, money_moved: false
 ```
 
-Prefer a fresh directory over a clone? `npx -y @codespar/cli@0.14.0 init my-agent --template bills-agent` (or `collections-agent`) scaffolds the same agent.
+Prefer a fresh directory over a clone? `npx -y @codespar/cli@0.18.0 init my-agent --template bills-agent` (or `collections-agent`) scaffolds the same agent.
 
 ## How it works
 

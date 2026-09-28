@@ -36,7 +36,7 @@ from memory. As of the anchor agent's manifest:
 
 ```yaml
 mcp: "@codespar/mcp@0.5.8"
-cli: "@codespar/cli@0.14.0"
+cli: "@codespar/cli@0.18.0"
 ```
 
 **Read the current values from `agents/bills-agent/agent.yaml` at the moment
