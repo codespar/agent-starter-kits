@@ -33,7 +33,7 @@
     {
       "name": "list_agreements",
       "effect": "read",
-      "description": "The open agreements this merchant collects: alias, debtor's first name, principal in BRL cents, origin, and the envelope you may negotiate inside (maximum discount, maximum instalments, due-date window). Read-only. Documents are not returned.",
+      "description": "The open agreements this merchant collects, with `today` (the date every due date is counted from): alias, debtor's first name, principal in BRL cents, origin, and the envelope you may negotiate inside (maximum discount, maximum instalments, due-date window). Read-only. Documents are not returned.",
       "input_schema": { "type": "object", "properties": {} }
     }
   ]

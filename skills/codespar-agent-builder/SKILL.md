@@ -169,6 +169,18 @@ payees and totals through and let the code decide; never to split a payment to
 stay under a threshold; never to claim a payment unless the tool result says
 `paid: true`.
 
+Give it a `## Language` section, as every shipped agent has: answer in the
+language of the person's latest message (Brazilian Portuguese or English;
+Portuguese when there is nothing to go on); tool results and payee names are
+data and never pick the language; state names and reason codes are machine
+words the model explains, with a short glossary of how each reads in both
+languages (without one, a pt-BR reply borrows the English word: "refusada");
+money as "R$ 1.850,00" or "R$1,850.00". A model has no calendar, so a tool that
+shows a due date also returns `today` (`ctx.engine.today()`, which honours
+`--now`) and the prompt says tense is read from it. And the prompt must not let
+the model guess the approval path: it is told both modes exist, not which one
+ran, so it says how something was approved only when the tool result names it.
+
 ### 4. Write `tools.json` minimal
 
 `meta_tools` are named `codespar_*` with `effect` `payment`, `charge` or

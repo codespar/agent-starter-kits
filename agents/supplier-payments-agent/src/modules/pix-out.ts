@@ -11,7 +11,7 @@
  * it proposes one execution the way the bills-agent does, for the one-off
  * supplier payment that is not part of a run.
  */
-import { isReplayedSettlement, type ToolHandler } from "@codespar/agent-core";
+import { daysUntil, isReplayedSettlement, type ToolHandler } from "@codespar/agent-core";
 import { BATCHES, MONTH, batchTotal, findBatch, formatBRL } from "../payables.js";
 import { lineStatus, runBatch } from "./batch-payout.js";
 
@@ -23,13 +23,16 @@ interface PayInput {
 }
 
 export const listPayables: ToolHandler = async (_input, ctx) => {
+  const today = ctx.engine.today();
   return {
     month: MONTH,
+    today,
     batches: BATCHES.map((b) => ({
       batch_ref: b.ref,
       kind: b.kind,
       label: b.label,
       due: b.due,
+      days_until_due: daysUntil(today, b.due),
       total: formatBRL(batchTotal(b)),
       total_minor: batchTotal(b),
       lines: b.lines.map((l) => ({
