@@ -34,7 +34,7 @@ Notes:
 
 - `ANTHROPIC_API_KEY` is optional. Leave it empty and the agent replays a recorded conversation, so you can see the whole flow without a model key.
 - With a key, the model is `claude-sonnet-5` unless `ANTHROPIC_MODEL` says otherwise. The first two runs with a real model, on production test mode on 2026-09-28, covered the bills-agent and the supplier batch: every receipt verified, no off-script request paid anything, about US$ 0.13 of tokens per run. Two runs are not a distribution; [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §64 has the table and what they do not prove.
-- Every agent's prompt tells it to answer in the language you write in, Brazilian Portuguese or English (those two runs answered English in Portuguese, which is what changed). The terminal's own lines, such as the approval question and the batch gesture, are still Portuguese only (§64).
+- The agents are meant to answer in the language you write in, Brazilian Portuguese or English: the loop reads it from what you type and states it to the model on every step (§64 has why a prompt rule alone lost to Portuguese tool results). Not yet measured with a real model. The terminal's own lines, such as the approval question and the batch gesture, are still Portuguese only (§64).
 - Run the consent before `npm start -- --input ...`. The one-shot form refuses to run without a signed mandate; the interactive `npm start` offers the consent on its own.
 - Using a staging key? Uncomment `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` first.
 
