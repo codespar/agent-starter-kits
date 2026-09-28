@@ -22,6 +22,7 @@ import {
   assertTestKey,
   loadMandate,
   MandateSchema,
+  isReplayedSettlement,
   type Execution,
   type Mandate,
   railErrorOf,
@@ -98,6 +99,7 @@ a batch runs one execution per line: in \`human\` the terminal asks once for the
     if (execution.escalation) lines.push(`    escalado por: ${execution.escalation.trigger} — ${execution.escalation.detail}`);
     if (execution.blocking_reasons.length) lines.push(`    bloqueado: ${execution.blocking_reasons.join(", ")} — o mandato nao autoriza; nao ha o que aprovar`);
     if (execution.detail && execution.state !== "awaiting_approval") lines.push(`    ${execution.detail}`);
+    if (isReplayedSettlement(execution)) lines.push("    ja estava pago: a API respondeu com um pagamento anterior desta mesma tentativa; esta execucao nao moveu dinheiro");
     for (const outcome of execution.outcomes) {
       if (outcome.receipt_id) lines.push(`    recibo: ${relative(process.cwd(), `${setup.bundle.dir}/receipts/${outcome.receipt_id}.json`)}`);
     }
@@ -123,9 +125,13 @@ a batch runs one execution per line: in \`human\` the terminal asks once for the
       items: e.items.map((i) => ({ beneficiary: i.beneficiary, amount_minor: i.amount })),
       approval_id: e.approval_id ?? null,
       receipt_ids: e.outcomes.filter((o) => o.receipt_id).map((o) => o.receipt_id),
+      replayed: isReplayedSettlement(e),
     })),
     // A batch is N executions, so what settled and what did not is a count, not a state.
-    settled_minor: executions.filter((e) => e.state === "settled").reduce((sum, e) => sum + e.total, 0),
+    // A replayed execution is settled and was paid by an earlier presentation, so it is counted apart.
+    settled_minor: executions.filter((e) => e.state === "settled" && !isReplayedSettlement(e)).reduce((sum, e) => sum + e.total, 0),
+    replayed_minor: executions.filter(isReplayedSettlement).reduce((sum, e) => sum + e.total, 0),
+    replayed_execution_ids: executions.filter(isReplayedSettlement).map((e) => e.id),
     failed_execution_ids: executions.filter((e) => ["failed", "denied", "expired"].includes(e.state)).map((e) => e.id),
     receipts: s.bundle.listReceipts().map((f) => relative(process.cwd(), `${s.bundle.dir}/receipts/${f}`)),
     bundle_dir: relative(process.cwd(), s.bundle.dir),

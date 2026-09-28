@@ -4,7 +4,7 @@
  * whatever the core decided); it cannot pay. `codespar_ledger` and
  * `list_bills` are reads.
  */
-import type { ToolHandler } from "@codespar/agent-core";
+import { isReplayedSettlement, type ToolHandler } from "@codespar/agent-core";
 import { formatBRL } from "../bills.js";
 import { BILLS, MONTH } from "../bills.js";
 
@@ -50,7 +50,9 @@ export const codesparPay: ToolHandler = async (raw, ctx) => {
     ...(execution.reason ? { reason: execution.reason, detail: execution.detail } : {}),
     ...(execution.escalation ? { escalated_by: execution.escalation.trigger } : {}),
     receipt_ids: execution.outcomes.filter((o) => o.receipt_id).map((o) => o.receipt_id),
-    paid: execution.state === "settled",
+    // Settled by an earlier presentation of the same attempt: the payment exists, and this call did not make it.
+    replayed: isReplayedSettlement(execution),
+    paid: execution.state === "settled" && !isReplayedSettlement(execution),
   };
 };
 

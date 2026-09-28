@@ -3,7 +3,7 @@
  * example mandate, the generic console words, and no tools. A read-only agent
  * spreads this and adds its handlers; a payer or a collector replaces the rail.
  */
-import { StubRail, loadMandate, railErrorOf, type Execution } from "@codespar/agent-core";
+import { StubRail, isReplayedSettlement, loadMandate, railErrorOf, type Execution } from "@codespar/agent-core";
 import { relative } from "node:path";
 import type { AgentKit } from "./kit.js";
 
@@ -53,6 +53,7 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
     if (execution.escalation) lines.push(`    escalado por: ${execution.escalation.trigger} — ${execution.escalation.detail}`);
     if (execution.blocking_reasons.length) lines.push(`    bloqueado: ${execution.blocking_reasons.join(", ")} — o mandato nao autoriza; nao ha o que aprovar`);
     if (execution.detail && execution.state !== "awaiting_approval") lines.push(`    ${execution.detail}`);
+    if (isReplayedSettlement(execution)) lines.push("    ja estava pago: a API respondeu com um pagamento anterior desta mesma tentativa; esta execucao nao moveu dinheiro");
     for (const outcome of execution.outcomes) {
       if (outcome.receipt_id) lines.push(`    recibo: ${relative(process.cwd(), `${setup.bundle.dir}/receipts/${outcome.receipt_id}.json`)}`);
     }
@@ -77,6 +78,7 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
       items: e.items.map((i) => ({ beneficiary: i.beneficiary, amount_minor: i.amount })),
       approval_id: e.approval_id ?? null,
       receipt_ids: e.outcomes.filter((o) => o.receipt_id).map((o) => o.receipt_id),
+      replayed: isReplayedSettlement(e),
     })),
     receipts: s.bundle.listReceipts().map((f) => relative(process.cwd(), `${s.bundle.dir}/receipts/${f}`)),
     bundle_dir: relative(process.cwd(), s.bundle.dir),
