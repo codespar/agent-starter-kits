@@ -118,10 +118,21 @@ function poll(env: Record<string, string>, extra: string[] = []) {
   return { ...out, payload: JSON.parse(lines[0]!) as PollPayload };
 }
 
+/**
+ * Every call this file makes to the emulator closes its connection. An agent
+ * run here is a `spawnSync`, which blocks this process's event loop for longer
+ * than the emulator's keep-alive (`Keep-Alive: timeout=5`), so fetch never gets
+ * to expire the socket it pooled; the next call writes to a socket the
+ * emulator already closed and dies `fetch failed … ECONNRESET`. A retry would
+ * hide that too, but `/_sim/clock` advances and `/_sim/status` marks: a call
+ * the emulator did receive, retried, would apply twice.
+ */
+const FRESH_CONNECTION = { connection: "close" } as const;
+
 async function advanceConversationClock(hours: number) {
   const response = await fetch(`${EMULATOR}/_sim/clock`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...FRESH_CONNECTION },
     body: JSON.stringify({ advance_hours: hours }),
     signal: AbortSignal.timeout(5000),
   });
@@ -145,7 +156,7 @@ function countEvents(env: Record<string, string>, type: string): number {
 
 const emulatorUp = await (async () => {
   try {
-    return (await fetch(`${EMULATOR}/health`, { signal: AbortSignal.timeout(2000) })).ok;
+    return (await fetch(`${EMULATOR}/health`, { headers: FRESH_CONNECTION, signal: AbortSignal.timeout(2000) })).ok;
   } catch {
     return false;
   }

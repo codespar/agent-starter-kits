@@ -65,9 +65,18 @@ const conversationOf = (p: Payload) => {
 };
 
 const EMULATOR = process.env["WHATSAPP_SIM_URL"] ?? "http://127.0.0.1:4290";
+/**
+ * The probe closes its connection, as every emulator call in these tests does.
+ * An agent run here is a `spawnSync`, which blocks this process's event loop
+ * for longer than the emulator's keep-alive (`Keep-Alive: timeout=5`), so a
+ * pooled socket is never expired by fetch and the next call on it dies
+ * `fetch failed … ECONNRESET`. This file makes one call today; the header is
+ * here so the next one does not inherit a pooled socket.
+ */
+const FRESH_CONNECTION = { connection: "close" } as const;
 const emulatorUp = await (async () => {
   try {
-    return (await fetch(`${EMULATOR}/health`, { signal: AbortSignal.timeout(2000) })).ok;
+    return (await fetch(`${EMULATOR}/health`, { headers: FRESH_CONNECTION, signal: AbortSignal.timeout(2000) })).ok;
   } catch {
     return false;
   }
