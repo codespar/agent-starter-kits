@@ -11,7 +11,7 @@
  * it proposes one execution the way the bills-agent does, for the one-off
  * supplier payment that is not part of a run.
  */
-import type { ToolHandler } from "@codespar/agent-core";
+import { isReplayedSettlement, type ToolHandler } from "@codespar/agent-core";
 import { BATCHES, MONTH, batchTotal, findBatch, formatBRL } from "../payables.js";
 import { lineStatus, runBatch } from "./batch-payout.js";
 
@@ -95,7 +95,9 @@ export const codesparPay: ToolHandler = async (raw, ctx) => {
     ...(execution.reason ? { reason: execution.reason, detail: execution.detail } : {}),
     ...(execution.escalation ? { escalated_by: execution.escalation.trigger } : {}),
     receipt_ids: execution.outcomes.filter((o) => o.receipt_id).map((o) => o.receipt_id),
-    paid: execution.state === "settled",
+    // Settled by an earlier presentation of the same attempt: the payment exists, and this call did not make it.
+    replayed: isReplayedSettlement(execution),
+    paid: execution.state === "settled" && !isReplayedSettlement(execution),
   };
 };
 

@@ -54,7 +54,7 @@
  * generation of its id. OPEN_QUESTIONS §39c says what that does and does not
  * cover.
  */
-import { batchHash, isTerminal, type BatchGesture, type Execution, type ExecutionItem, type ProposedItem, type ToolContext } from "@codespar/agent-core";
+import { batchHash, isReplayedSettlement, isTerminal, type BatchGesture, type Execution, type ExecutionItem, type ProposedItem, type ToolContext } from "@codespar/agent-core";
 import { batchTotal, formatBRL, type Batch, type PayableLine } from "../payables.js";
 
 /** What happened to one line of the batch. `dispatch` is the part an operator reads first. */
@@ -75,8 +75,16 @@ export interface BatchLineReport {
    * quote). Nothing was held or sent, the id is not spent, and presenting it
    * again answers the same, so the line is never re-drafted under it and never
    * moved to another id: a person decides what that other payment is.
+   *
+   * `replayed`: the line is paid, and not by this run. The API answered its
+   * attempt from an earlier presentation (another machine, or this one before
+   * it lost its state) with that payment's transaction and receipt. The
+   * execution is `settled` because the money is; the report does not say
+   * `settled` because that would count the payment once per machine.
    */
-  dispatch: "settled" | "refused" | "awaiting_decision" | "uncertain" | "already_settled" | "in_progress" | "attempt_id_conflict";
+  dispatch: "settled" | "replayed" | "refused" | "awaiting_decision" | "uncertain" | "already_settled" | "in_progress" | "attempt_id_conflict";
+  /** The receipt of the execution this line names, when it has one. For `replayed`, the receipt of the ORIGINAL payment. */
+  receipt_id: string | null;
 }
 
 /**
@@ -101,8 +109,13 @@ export interface BatchReport {
   /** How many lines were presented. `lines` below holds exactly this many, refused or not. */
   line_count: number;
   lines: BatchLineReport[];
+  /** What THIS run paid: lines dispatched here and settled. A `replayed` line is not in it. */
   settled_minor: number;
   settled: string;
+  /** Lines the API answered with an earlier payment, by alias: paid, but not by this run. */
+  replayed: string[];
+  /** What those lines add up to. Never part of `settled_minor`. */
+  replayed_minor: number;
   /** Lines that did not settle, by alias. The receipt of a batch says which failed. */
   failed: string[];
   /** Lines a previous run of this batch already covers. */
@@ -179,11 +192,16 @@ function priorVerdict(prior: Execution | undefined): "already_settled" | "in_pro
   return undefined;
 }
 
+function receiptOf(execution: Execution | undefined): string | null {
+  return execution?.outcomes.find((o) => o.receipt_id)?.receipt_id ?? null;
+}
+
 function heldForAnotherPayment(execution: Execution): boolean {
   return execution.state === "failed" && execution.outcomes.some((o) => o.held === "conflict");
 }
 
 function dispatchOf(execution: Execution): BatchLineReport["dispatch"] {
+  if (isReplayedSettlement(execution)) return "replayed";
   if (execution.state === "settled") return "settled";
   if (heldForAnotherPayment(execution)) return "attempt_id_conflict";
   if (execution.state === "awaiting_approval") return "awaiting_decision";
@@ -222,7 +240,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     return summarise(
       batch,
       presented,
-      batch.lines.map((line, index) => ({ ...describe(line, index), execution_id: null, state: refusal.reason, reason: refusal.detail, dispatch: "refused" as const })),
+      batch.lines.map((line, index) => ({ ...describe(line, index), execution_id: null, state: refusal.reason, reason: refusal.detail, dispatch: "refused" as const, receipt_id: null })),
       refusal,
     );
   }
@@ -252,7 +270,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
       const prior = ctx.engine.get(held);
       const verdict = priorVerdict(prior);
       if (verdict) {
-        lines.push({ ...describe(line, index), execution_id: held, state: prior?.state ?? "unknown", reason: null, dispatch: verdict });
+        lines.push({ ...describe(line, index), execution_id: held, state: prior?.state ?? "unknown", reason: null, dispatch: verdict, receipt_id: receiptOf(prior) });
         continue;
       }
     }
@@ -273,14 +291,14 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
         batch: { ref: batch.ref, batch_hash: presented, index, count: batch.lines.length },
       });
     } catch (err) {
-      lines.push({ ...describe(line, index), execution_id: null, state: "unreadable_line", reason: err instanceof Error ? err.message : String(err), dispatch: "refused" });
+      lines.push({ ...describe(line, index), execution_id: null, state: "unreadable_line", reason: err instanceof Error ? err.message : String(err), dispatch: "refused", receipt_id: null });
       continue;
     }
     if (!draft.ok) {
       // Refused before an execution exists: nothing to claim, and the next
       // run of this batch tries the line again, which is right — the mandate
       // may have been re-signed by then.
-      lines.push({ ...describe(line, index), execution_id: null, state: "refused_before_draft", reason: draft.reason, dispatch: "refused" });
+      lines.push({ ...describe(line, index), execution_id: null, state: "refused_before_draft", reason: draft.reason, dispatch: "refused", receipt_id: null });
       continue;
     }
 
@@ -297,7 +315,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     ctx.engine.claim(key, draft.execution.id);
     try {
       const execution = await ctx.onExecution(draft.execution);
-      lines.push({ ...describe(line, index), execution_id: execution.id, state: execution.state, reason: execution.reason ?? null, dispatch: dispatchOf(execution) });
+      lines.push({ ...describe(line, index), execution_id: execution.id, state: execution.state, reason: execution.reason ?? null, dispatch: dispatchOf(execution), receipt_id: receiptOf(execution) });
     } catch (err) {
       // The channel threw. Nothing about the siblings changed, so the batch
       // carries on — a throw that escaped this loop would cancel every line
@@ -313,6 +331,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
         state: current?.state ?? draft.execution.state,
         reason: err instanceof Error ? err.message : String(err),
         dispatch: "uncertain",
+        receipt_id: receiptOf(current),
       });
     }
   }
@@ -357,6 +376,7 @@ function setRefusal(batch: Batch, presented: string, ctx: ToolContext, setKey: s
 
 function summarise(batch: Batch, presented: string, lines: BatchLineReport[], refused?: BatchSetRefusal, gesture?: BatchGesture): BatchReport {
   const settledMinor = lines.filter((l) => l.dispatch === "settled").reduce((sum, l) => sum + l.amount_minor, 0);
+  const replayed = lines.filter((l) => l.dispatch === "replayed");
   const total = batchTotal(batch);
   return {
     batch: batch.ref,
@@ -366,6 +386,8 @@ function summarise(batch: Batch, presented: string, lines: BatchLineReport[], re
     lines,
     settled_minor: settledMinor,
     settled: formatBRL(settledMinor),
+    replayed: replayed.map((l) => l.alias),
+    replayed_minor: replayed.reduce((sum, l) => sum + l.amount_minor, 0),
     failed: lines.filter((l) => l.dispatch === "refused" || l.dispatch === "uncertain" || l.dispatch === "attempt_id_conflict").map((l) => l.alias),
     skipped: lines.filter((l) => l.dispatch === "already_settled" || l.dispatch === "in_progress").map((l) => l.alias),
     denied: lines.filter((l) => l.state === "denied" && l.reason === "denied_by_approver").map((l) => l.alias),

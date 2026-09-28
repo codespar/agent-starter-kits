@@ -682,7 +682,12 @@ export class ExecutionEngine {
         replace({ index, attempt_id: payment.attempt_id, status: "failed", code: seen.code, error: `${seen.code}: ${seen.message}`, ...(seen.held ? { held: seen.held } : {}) });
         continue;
       }
-      replace({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: seen.transaction_id, ...(seen.receipt_id ? { receipt_id: seen.receipt_id } : {}), ...(seen.replayed ? { replayed: true as const } : {}) });
+      // No `replayed` here, whatever the rail said. A lookup IS a second
+      // presentation of an attempt this execution already sent, so on the API
+      // every settled lookup answers `idempotent_replay`, including the one
+      // whose payment was this execution's own. The mark would say "someone
+      // else paid" about a payment nobody can attribute from here.
+      replace({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: seen.transaction_id, ...(seen.receipt_id ? { receipt_id: seen.receipt_id } : {}) });
       const mismatch = await this.ingestSettlement(execution, index, payment, seen.receipt_id, prior ? CHARGE_PAID : PAYMENT_SUCCEEDED);
       if (mismatch) sealMismatches.push(mismatch);
     }
@@ -1091,6 +1096,17 @@ export function railErrorOf(execution: Pick<Execution, "outcomes" | "uncertain_a
   if (failed?.code !== undefined) return { outcome: "failed", attempt_id: failed.attempt_id, code: failed.code, message: failed.message ?? failed.error ?? null };
   const pending = (execution.uncertain_answers ?? []).find((a) => !execution.outcomes.some((o) => o.attempt_id === a.attempt_id));
   return pending ? { outcome: "uncertain", attempt_id: pending.attempt_id, code: pending.code, message: pending.message } : null;
+}
+
+/**
+ * Settled, and every settled attempt was answered from the rail's record of
+ * an earlier presentation this execution never made: the money moved, and
+ * this execution did not move it. `dispatch` is the only writer of the mark,
+ * so a report can say "paid by this run" of everything else it calls settled.
+ */
+export function isReplayedSettlement(execution: Pick<Execution, "state" | "outcomes">): boolean {
+  const settled = execution.outcomes.filter((o) => o.status === "settled");
+  return execution.state === "settled" && settled.length > 0 && settled.every((o) => o.replayed === true);
 }
 
 /** The approval link a receipt sealed is the one a spend sent: the same hashes, in either spelling of the `sha256:` prefix. */

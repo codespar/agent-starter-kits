@@ -175,7 +175,13 @@ export interface ItemOutcome {
   message?: string;
   /** A failed outcome because the attempt id is held for another payment or another project (`RailOutcome.held`). */
   held?: "conflict" | "unavailable";
-  /** A settled outcome the rail answered from its record of an earlier presentation (`RailOutcome.replayed`). */
+  /**
+   * A settled outcome the rail answered, at dispatch, from its record of an
+   * earlier presentation (`RailOutcome.replayed`): the first time THIS
+   * execution presented the attempt, it was already paid, so this execution
+   * moved nothing for it. Never set by reconcile, whose lookup re-presents an
+   * attempt this execution already sent and cannot tell whose payment it reads.
+   */
   replayed?: true;
   error?: string;
   /** What the payer is shown for an accepted receivable, as the rail handed it back. Presentation only; nothing here decides money. */
