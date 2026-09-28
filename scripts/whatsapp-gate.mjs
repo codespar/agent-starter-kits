@@ -483,25 +483,23 @@ async function runCheckoutWindow(mode) {
 }
 
 /**
- * One call to the emulator, retried ONCE when the connection itself failed.
- * The gate talks to the emulator in bursts separated by whole agent runs, and
- * an idle keep-alive socket the emulator has already closed is reset under the
- * next call (`ECONNRESET`, measured on 0.3.0 once a run is long enough). That
- * is transport, not an answer: a status or a body is never retried.
+ * One call to the emulator, on a connection of its own. The gate talks to the
+ * emulator in bursts separated by whole agent runs, each a `spawnSync` that
+ * blocks this process's event loop past the emulator's keep-alive
+ * (`Keep-Alive: timeout=5`), so fetch never expires the socket it pooled and
+ * the next call on it is reset (`ECONNRESET`, measured on 0.3.0). This used to
+ * retry once; closing the connection removes the stale socket instead, and a
+ * retried `/_sim/clock` the emulator had in fact received would move the
+ * clock twice.
  */
 async function emulatorFetch(url, init) {
-  try {
-    return await fetch(url, init);
-  } catch (err) {
-    if (!(err instanceof TypeError)) throw err;
-    return fetch(url, { ...init, signal: AbortSignal.timeout(5000) });
-  }
+  return fetch(url, { ...init, headers: { ...init?.headers, connection: "close" } });
 }
 
 /** The emulator is a separate process and the gate does not start one: a gate that silently ran against nothing would pass. */
 async function emulatorIsUp() {
   try {
-    const response = await fetch(`${EMULATOR}/health`, { signal: AbortSignal.timeout(3000) });
+    const response = await emulatorFetch(`${EMULATOR}/health`, { signal: AbortSignal.timeout(3000) });
     return response.ok;
   } catch {
     return false;
