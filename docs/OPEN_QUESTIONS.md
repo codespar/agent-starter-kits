@@ -228,6 +228,18 @@ Section 7 step 6 says `commerce.charge.paid` "dispara". The API delivers it thro
 
 The first attempt of the day (15:10:49Z) stopped at the issuance with `502 no_eligible_providers: eligibility_empty` (request `req_RC6k2TgcpavFACFs`): the demo org had no Celcoin connection (`z-api, unblockpay, stripe-acp, nfe-io, mercado-pago, melhor-envio, asaas`), Celcoin is the only issuer of the cobranca com vencimento, and eligibility is `META_TOOL_CATALOG ∩ connected_accounts`. The pay route was already live (`POST /v1/test/charges/chg_does_not_exist/pay` → `404 charge_not_found`, `req_5OwGqMnPGKLmOeV2`); the immediate Pix the org could mint (`pay_bor7b5ya822abgv9`, Asaas mock, `charge_url` only) is not readable back and not payable by that route. ent#1613 closed the wall with a shared-sandbox Celcoin lane and a receiver stand-in. **v5.3:** section 17 wave 2 can say "measured: 10 s on staging" with the precondition (the shared sandbox carries the bolepix issuer).
 
+**Re-measured 2026-09-27 on staging: the cycle "settles", and no QR ever existed.** Same command, staging key loaded only inside the command (it is in no bundle, log or file of this repository), replay provider, 12:48 BRT. Execution `exe_4a4d4ae825973306`, charge `f8f95613-2d75-4a84-90b1-21bcc770d269`, due 2026-09-30:
+
+| At (UTC) | What |
+|---|---|
+| 15:48:39.088 | `POST /v1/charges` (`idempotency_key att_bbac5ae7d769b912fdf60b3b1899d638_0`) |
+| 15:48:43.385 | `accepted`, `PROCESSING`, no Pix, no boleto (4.3 s) |
+| 15:48:49.415 | the issuer's status is `ERROR`: no Pix, no boleto, `payable: false` |
+| 15:49:02.793 | the runner's sandbox payer, after five looks (see finding 3 of §63): `paid (full, 108000 of 108000), settled_against=sandbox_fixture` |
+| 15:49:07.824 | `executing → settled`, "Recebemos, acordo quitado" once |
+
+The scenario answers `ok` with `cycle_seconds: 24.4`, and that number measures nothing a payer did: the charge the debtor was supposed to pay never had a QR, a copy-and-paste or a boleto line. `GET /v1/charges/{id}` now answers `status: CONFIRMED`, `settlement: confirmed`, `status_conflict: false`, while `raw.body.status` (Celcoin) is `ERROR` with `boleto`, `pix` and `receiver` all null. That half is the API's and is open as **ent#1816**. On 2026-09-23 the same path reached `PENDING` and payable in 9 s, so the shared sandbox issuer changed since. With #56, this run ends `failed (charge_issuer_error)`, and a scenario that settles a receivable with no payable instrument seen fails as `no_payable_instrument`. The findings are written up once, in §63, because the checkout-agent's run found the same thing a minute earlier. The WhatsApp run of this agent was not made: it issues through the same route, and the brief was to stop at the first failure.
+
 ## 23. The charge call, as it really is
 
 The spec names `codespar_charge` (7, step 4). What the kit calls is the REST twin `POST /v1/charges`, an adapter over the same strategy (`routes/charges.ts`), because the kit runs no MCP session: `{ amount, currency: "BRL", method: "boleto", description, buyer: { name, document }, due_date, idempotency_key }`. Four facts the spec does not state:
@@ -1199,6 +1211,14 @@ What stopped the sandbox run: the environment this lane built in has no `csk_tes
 
 
 **Update 2026-09-27.** With the production test key available, the NFS-e path is still not exercised. The NFS-e follows a paid order, and the order never reached `settled`: the bolepix create was refused (§63, "no receiving identity at the provider for this consumer"). Issuing an NFS-e directly, without a sale, would test the rail and skip the rule this entry is about (the invoice follows `settled`), so it was not done. What closes this entry is unchanged: one run where the charge settles.
+
+**Update 2026-09-27, staging: the NFS-e was dispatched, and refused for want of a credential.** On staging the order reached `settled` (§63, with the caveat there), so the invoice followed it as designed: `invoice.opened` at 15:46:43.265Z (14 ms after `settled`), `invoice.dispatch` to `codespar-nfse` at 15:46:43.271Z (`idempotency_key nfse_b549cef31138223070429849f5bea592`, services amount 479.90), `invoice.outcome` at 15:46:44.129Z (0.86 s):
+
+> `provider nfe-io returned status=0 error=credential_unavailable body={"kind":"test_venue_unavailable"}`
+
+- **What the kit made of it.** `uncertain` / `unknown`, which is what an answer it cannot classify is to it. The invoice closed `failed` (`invoice_uncertain`), it was not re-issued, and the attendant was told "resultado INCERTO: pode ter sido emitida. Nao reemita; confira no emissor. A venda continua paga." That is §58's posture, and correct under that reading.
+- **Finding.** The staging test venue has no nfe.io credential for this organization. By its own code the refusal is pre-dispatch: no credential means nothing reached nfe.io. The wire does not say so, so "nothing was issued" was knowable and the attendant was told "maybe". That is §58's missing `dispatch` provenance again. **Ask:** a 4xx with a code of its own (`credential_unavailable` is already registered in the API as a 4xx on the proxy lane), or `dispatch: "unsent"`, so the kit can close the invoice `refused` and say so.
+- **Not done.** No credential was added and no other issuer was forced; the run stops at the first failure. This entry closes with a run in which a test venue credential exists.
 ## 62. The checkout-agent on WhatsApp: what the channel decides that the terminal cannot
 
 Checkout decision 6: terminal first, then WhatsApp through the adapter the collections-agent already uses. The adapter did not change. The agent ships two conversations (`pedido-marina`, the runbook; `pedido-beatriz`, checkout §5.4 on the channel) and three templates (`pedido_confirmado`, `pedido_cobranca_vencida`, `pedido_cobranca_cancelada`, with the order's total as `{{1}}`). The CI's WhatsApp gate runs the sale three times from zero on the emulator, plus the ordered-tonight-paid-tomorrow case across a shut window, confirmed by template. The clocks-apart run stays the collections-agent's: it proves a property of the channel, not of an agent. Three things were decided on the way:
@@ -1244,3 +1264,33 @@ Three findings, for whoever owns the production test project and the API:
 3. **The kit behaved as it should under that reading.** It never issued a second charge for an attempt it could not account for, and 20 reads proved the attempt absent. Turning "absent after N reads of an uncertain create" into `failed` is a decision the kit deliberately does not take on its own: a charge can register late. It stays a person's call.
 
 The §8 numbers stay unmeasured. The command above is the measurement once finding 1 is resolved.
+
+
+**Measured 2026-09-27 on STAGING: the order settles in 31 s, but no QR was ever payable, and the NFS-e was refused.** The staging `csk_test_` key and URL were loaded only inside the command, from a file outside the repository; the key is in no bundle, log or file here (every output was checked for the key prefix). The command above, `--mode human`, at 12:46 BRT. Execution `exe_a49b15cf477e88e8`, charge `74f0f9da-39a9-4c90-9467-6476ea508b40`, bundle `runs/run_20260927154612_human_6b577d` (local, not committed):
+
+| At (UTC) | Step | Since the conversation |
+|---|---|---|
+| 15:46:12.196 | conversation: cart priced, R$ 479,90 | 0 |
+| 15:46:12.235 | order confirmed by the attendant, `executing` | 0.04 s |
+| 15:46:12.239 | `POST /v1/charges`, bolepix due today | 0.04 s |
+| 15:46:16.564 | `accepted`, `PROCESSING`, no Pix, no boleto | 4.4 s |
+| 15:46:21.570 | the issuer's status is `ERROR`: never payable, **no QR** | 9.4 s |
+| 15:46:37.559 | the runner's sandbox payer, after five looks: `paid (full, 47990 of 47990), settled_against=sandbox_fixture` | 25.4 s |
+| 15:46:43.251 | `executing → settled`, "Recebemos, pedido confirmado" once | 31.1 s |
+| 15:46:43.271 → 44.129 | NFS-e dispatched → `credential_unavailable` (`test_venue_unavailable`), invoice `failed (invoice_uncertain)` | 32.0 s |
+
+The scenario answers `ok` with `cycle_seconds: 26.7`. **Those numbers are not the §8 measurement.** The step §8 times first, "conversation to payable QR", never happened: the charge went from `PROCESSING` to `ERROR` at the issuer and never carried a Pix or a boleto. The collections-agent's run a minute later (§22) found the same `ERROR` on a charge due in three days, so the due date is not the cause. Stopped there, as briefed: no mandate-mode run, no WhatsApp run, no other consumer, nothing onboarded.
+
+Findings:
+
+1. **Staging's shared Celcoin sandbox no longer registers a BOLEPIX.** Both charges end `ERROR` within about 5 s of `PROCESSING`, with `raw.body.boleto`, `pix` and `receiver` all null. On 2026-09-23 the same route reached `PENDING` and payable (§22), so this changed on the API or sandbox side since. For whoever owns the staging sandbox issuer (ent#1613/#1616).
+2. **The test payer settles a charge whose registration failed, and the read then hides it.** `POST /v1/test/charges/{id}/pay` answered `paid ... settled_against=sandbox_fixture` for a charge in `ERROR`. `GET /v1/charges/{id}` then answers `status: CONFIRMED`, `settlement: confirmed`, `status_conflict: false`, while `raw.body.status` is `ERROR`. No live payer can pay a charge that has no instrument, so under the Test-Mode Fidelity Charter the test route should refuse it; and a local status that contradicts the provider's is what `status_conflict` exists to say. **Open for the API as ent#1816.**
+3. **The kit's runner pays a charge that was never payable, and its scenario gate passes.** The runner's payer plays "once every receivable is payable ... or after a few looks" (`packages/agent-runtime/src/poll.ts`), because the test route also settles a charge still `PROCESSING` and registration can take minutes. That patience does not tell "still registering" (`PROCESSING`) from "registration failed" (`ERROR`). The api-rail scenario does not require that a payable instrument was ever seen. So "settled inside 40 seconds with a real key" was satisfiable with no QR at all, which is how both runs here answered `ok`. **Fixed in #56**, the kit's half, whatever ent#1816 does:
+   - the sandbox payer reads the charge and pays only a payable instrument, refusing `charge_issuer_error` and `no_payable_instrument` without calling the pay route;
+   - the poll's payer no longer plays on patience;
+   - the API rail reads an issuer `ERROR` as a terminal `charge_issuer_error`, so the order fails and opens no NFS-e;
+   - every scenario fails with `no_payable_instrument` when a receivable settled with no payable instrument seen first;
+   - `cycle_seconds` is `null` unless the cycle was real.
+4. **The NFS-e refusal is pre-dispatch, and the wire says "maybe".** See §61.
+
+The §8 numbers stay unmeasured. The command above is the measurement once finding 1 is resolved. With #56 in, a run against the same broken issuer ends `failed (charge_issuer_error)` with no cycle, not `ok`.
