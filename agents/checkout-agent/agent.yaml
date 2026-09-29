@@ -22,7 +22,7 @@ events: [commerce.charge.created, commerce.charge.paid, commerce.charge.expired,
 channels: [terminal, whatsapp]   # WhatsApp through the adapter the collections-agent uses (checkout decision 6); `npm run check` confirms channels/whatsapp/ ships a conversation
 maturity:
   storefront-cart: sandbox
-  bolepix-receivables: sandbox
+  bolepix-receivables: blocked    # ent#1816: the sandbox does not issue a payable bolepix today; the stub rail and the scenarios run the sale
   nfse-invoice: sandbox           # NFS-e through codespar_invoice (nfe.io), after `settled`, by code; the stub issuer runs in CI. NF-e (product) waits for an A1 + IE
   receipt-verification: blocked   # the API seals no record for a paid charge: no chain, no signature to verify
 scenarios: ./scenarios/

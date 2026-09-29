@@ -1,6 +1,6 @@
 # checkout-agent
 
-[![rail: bolepix](https://img.shields.io/badge/rail-bolepix-2E8B57)](agent.yaml) [![maturity: sandbox](https://img.shields.io/badge/maturity-sandbox-orange)](agent.yaml) [![approval: human | mandate](https://img.shields.io/badge/approval-human_%7C_mandate-555)](agent.yaml)
+[![rail: bolepix](https://img.shields.io/badge/rail-bolepix-2E8B57)](agent.yaml) [![maturity: cart sandbox, bolepix blocked](https://img.shields.io/badge/maturity-cart_sandbox%2C_bolepix_blocked-orange)](agent.yaml) [![approval: human | mandate](https://img.shields.io/badge/approval-human_%7C_mandate-555)](agent.yaml)
 
 The merchant's selling agent, in the conversation with the customer. The customer asks ("quero o pacote de dez aulas e uma avaliacao inicial"), the agent builds the cart from the store's catalog, the **code** prices it and presents the total, the attendant confirms the order (or the agent confirms it alone inside a declared price and discount policy), and when the customer asks to pay the code issues one charge whose QR arrives in the conversation with the copy-and-paste under it. When the payment lands the agent says "recebemos, pedido confirmado" and the order closes as `settled`.
 
@@ -49,7 +49,7 @@ The QR goes into the conversation with the copy-and-paste as its own message und
 
 ## What is sandbox, what the agent applies alone, what is out
 
-Maturity, from `agent.yaml`: `storefront-cart: sandbox`, `bolepix-receivables: sandbox`, `receipt-verification: blocked`.
+Maturity, from `agent.yaml`: `storefront-cart: sandbox`, `bolepix-receivables: blocked` (the live sandbox does not issue a payable bolepix today, [ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816)), `nfse-invoice: sandbox`, `receipt-verification: blocked`.
 
 - **The catalog is a fixture of the kit, and its merchant sells services** (lessons, a consultation, a recital ticket). The agent reads no stock from anywhere; `item_unavailable` and `quantity_above_stock` come from the file, not from a warehouse.
 - **The price and discount policy is applied by the agent, not signed by the API.** There is no sales policy signed by the organization in the API; it is a product candidate, like the collection one. The envelope lives in `guardrails.json` and the customer book in `mandate.example.json`, read with the consumer-mandate shape (`consumer_id` is the merchant, the allowlist is the customer book, `per_tx_cap_minor` the ticket, `periodic_cap` the monthly sales ceiling).
