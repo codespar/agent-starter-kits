@@ -1,12 +1,14 @@
 # collections-agent
 
-[![rail: bolepix](https://img.shields.io/badge/rail-bolepix-2E8B57)](agent.yaml) [![maturity: sandbox](https://img.shields.io/badge/maturity-sandbox-orange)](agent.yaml) [![approval: human | mandate](https://img.shields.io/badge/approval-human_%7C_mandate-555)](agent.yaml) [![charge → settled: 10 s](https://img.shields.io/badge/charge_%E2%86%92_settled-10_s-8A2BE2)](#quickstart)
+[![rail: bolepix](https://img.shields.io/badge/rail-bolepix-2E8B57)](agent.yaml) [![maturity: sandbox](https://img.shields.io/badge/maturity-sandbox-orange)](agent.yaml) [![approval: human | mandate](https://img.shields.io/badge/approval-human_%7C_mandate-555)](agent.yaml)
 
 The merchant's collections agent. A customer replies about an open debt; the agent proposes terms inside a negotiation envelope (maximum discount, number of instalments, due-date window, collection hours), and once the customer accepts, the code issues one bolepix per instalment, shows the QR code and the copy-and-paste Pix code in the chat, and closes the loop when the charge is paid or expires. Two channels: the terminal, and WhatsApp against a local Cloud API emulator that needs no Meta account.
 
 ## Quickstart
 
 Node 22.13+ and a sandbox key (`csk_test_...`) from [codespar.dev/auth/signup](https://codespar.dev/auth/signup). No money moves: a sandbox payer plays the customer's bank.
+
+Today the sandbox does not issue a payable bolepix: on staging the charge ends `ERROR` with no Pix and no boleto, and production test mode refuses it at issuance. With a `csk_test_` key this agent stops at issuance, and the 10 s from issuance to `settled` measured on 2026-09-23 does not reproduce. The stub rail and the scenarios run the whole cycle. The test payer still settles a charge in `ERROR`, and the read then answers `CONFIRMED`; that half is [ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816). [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §22 and §63 have the runs.
 
 ```sh
 git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits
@@ -199,7 +201,7 @@ Read from `agent.yaml`, field `maturity`:
 
 | Capability | Maturity | Meaning |
 |---|---|---|
-| `bolepix-receivables` | sandbox | Cobranca com vencimento through the CodeSpar sandbox, paid by the sandbox payer. No real money. |
+| `bolepix-receivables` | sandbox | Cobranca com vencimento through the CodeSpar sandbox, paid by the sandbox payer. No real money. Not issued by the live sandbox today (see [Quickstart](#quickstart)). |
 | `receipt-verification` | blocked | Ed25519 landed on the API's payment receipts, and this agent mints none: the API still seals no record for a paid charge, so what the bundle keeps is the paid charge as the API reports it, marked `kind: "charge"`, with no chain and no signature to check. |
 
 What the agent applies on its own (`guardrails.json`): the envelope (15% maximum discount, up to 3 instalments, due dates within 90 days, R$ 50,00 minimum instalment, collection hours 08:00–20:00 in America/Sao_Paulo), the escalation threshold (R$ 3.000,00 per agreement in `mandate`), and "the core's total wins" when the model states another.

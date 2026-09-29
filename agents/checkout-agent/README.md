@@ -20,6 +20,8 @@ npm start -- --input "oi, sou a Marina. quero o pacote de dez aulas e uma avalia
 
 With keys (`cp .env.example .env`, a `csk_test_` key and an Anthropic key) `npm start` opens the terminal: you type as the customer, and in `approval: human` the attendant's question comes on the same keyboard, labelled `[atendente]`. Without a real `ANTHROPIC_API_KEY` a one-shot replays the recorded scenario whose first turn you typed.
 
+With a `csk_test_` key the sale stops at issuance today: the sandbox does not issue a payable bolepix (on staging the charge ends `ERROR`, production test mode refuses it). The stub rail and the scenarios run the whole sale. The test payer still settles a charge in `ERROR`, and the read then answers `CONFIRMED`; that half is [ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816). [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §63 has the runs.
+
 ## What it shows
 
 | Contract | How |
@@ -52,7 +54,7 @@ Maturity, from `agent.yaml`: `storefront-cart: sandbox`, `bolepix-receivables: s
 - **The catalog is a fixture of the kit, and its merchant sells services** (lessons, a consultation, a recital ticket). The agent reads no stock from anywhere; `item_unavailable` and `quantity_above_stock` come from the file, not from a warehouse.
 - **The price and discount policy is applied by the agent, not signed by the API.** There is no sales policy signed by the organization in the API; it is a product candidate, like the collection one. The envelope lives in `guardrails.json` and the customer book in `mandate.example.json`, read with the consumer-mandate shape (`consumer_id` is the merchant, the allowlist is the customer book, `per_tx_cap_minor` the ticket, `periodic_cap` the monthly sales ceiling).
 - **The approval artifact is signed by HMAC with a local development key** (`.codespar/approval.key`). It proves what was approved — which order, at what price, in which composition, under which version of the policy — to whoever runs the agent, and to nobody else while the signature is HMAC.
-- **The charge is the cobranca com vencimento, paid by Pix or boleto.** The QR does not arrive at the create: the instrument is registered at the clearing house before it is payable. On the shared sandbox that took about 5 s; on the real clearing house it can take longer, and the agent says "gerando o codigo, um instante".
+- **The charge is the cobranca com vencimento, paid by Pix or boleto.** The QR does not arrive at the create: the instrument is registered at the clearing house before it is payable. On the shared sandbox that took about 5 s on 2026-09-23, and today it does not happen at all (above); on the real clearing house it can take longer, and the agent says "gerando o codigo, um instante".
 - **There is no coupon surface in the API.** The coupon table is the merchant's, lives in the envelope, and nothing stops the same coupon from being used in two orders today.
 - **The cart lives in `state.db`** (`.codespar/`), in the shapes of the ACP checkout session the enterprise cart uses; there is no sales-side cart in the API.
 - **A customer's message never confirms an order.** It closes on `commerce.charge.paid` or on a status read, and on nothing else.

@@ -4,7 +4,7 @@
 
 Agents that move money under a mandate. The person signs the limits once (cap per payment, cap per month, named payees, expiry), the agent proposes payments, and deterministic code decides what actually runs. Every payment ends in an approval record and a receipt.
 
-Four agents ship today, all in TypeScript, all running against the CodeSpar sandbox:
+Four agents ship today, all in TypeScript, all written against the CodeSpar sandbox. The two that pay run there end to end; the two that issue a bolepix stop at issuance there today (see [What runs today](#what-runs-today)):
 
 - **[`bills-agent`](agents/bills-agent)** pays a household's monthly bills (school, cleaner, utilities) over Pix.
 - **[`collections-agent`](agents/collections-agent)** is the merchant side: it agrees payment terms with a customer, issues a bolepix per instalment and closes the loop when the charge is paid. It is also the one with a second channel: WhatsApp, run against a [local Cloud API emulator](agents/collections-agent#the-whatsapp-channel) that needs no account.
@@ -67,11 +67,11 @@ Same code, same states, same receipts. Start with `human`, switch when you trust
 | | Status |
 |---|---|
 | Pix payments out (`bills-agent`) | Sandbox |
-| Bolepix charges with a sandbox payer (`collections-agent`) | Sandbox |
+| Bolepix charges with a sandbox payer (`collections-agent`) | The cycle runs on the stub rail and in every scenario. Against the live sandbox no payable bolepix is issued today: on staging the charge ends `ERROR` with no Pix and no boleto, and production test mode refuses it at issuance. The test payer can still settle such a charge, and the read then answers `CONFIRMED` ([ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816)). [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §22 and §63 have the runs |
 | WhatsApp as a channel (`collections-agent`, `checkout-agent`) | Against [`dyvit-wa-sim`](https://github.com/fabianocruz/whatsapp-simulator), a local Cloud API emulator: no Meta account, no credential. The CI closes the cycle three times from zero on it |
 | WhatsApp through Meta's Cloud API | The same backend, one base URL away. Credentials absent by default; never run against Meta from this repo |
 | Batch payouts, one execution per line (`supplier-payments-agent`) | Sandbox |
-| A cart priced by code, sold under a price and discount policy, charged by bolepix (`checkout-agent`) | Sandbox |
+| A cart priced by code, sold under a price and discount policy, charged by bolepix (`checkout-agent`) | The cart, the pricing, the policy and the order run everywhere; the charge is the collections-agent's, so against the live sandbox it stops at issuance today, the same way (§63; the test-payer half is [ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816)) |
 | Mandate revocation checked against the API before every payment (`bills-agent`) | Live in the sandbox |
 | Receipts sealed with HMAC | Proves the payment to whoever runs the agent |
 | Receipts also sealed with Ed25519 | Proves the payment to anybody: `npm run verify -- <receipt-file>`. Receipts sealed before the API added it carry none and never will |
