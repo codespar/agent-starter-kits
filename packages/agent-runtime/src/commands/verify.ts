@@ -24,6 +24,10 @@
  * truth about what a masked copy can prove. The approval artifact of a copy
  * is the one its `approval_id` names in the run's own `approval.json`.
  *
+ * Of the read, the output carries only `sealed_payment` (`sandbox`,
+ * `money_moved`) off a body that bound. The tenant's read still carries
+ * `mandate.sig`, a spend credential, and it is never printed.
+ *
  * It is the one command here that does NOT need an agent — `cli.ts`
  * dispatches it before it looks for an `agent.yaml` — because the file it
  * reads has usually been copied off the machine that produced it.
@@ -326,6 +330,10 @@ function render(report: ReceiptVerification): string {
     const a = report.approval_check;
     lines.push(`  approval     ${a.status}: sealed ${a.sealed.items_hash}${a.sealed.batch_hash ? ` batch ${a.sealed.batch_hash}` : ""}`);
     if (a.artifact) lines.push(`               artifact ${a.artifact.approval_id} ${a.artifact.items_hash}${a.artifact.batch_hash ? ` batch ${a.artifact.batch_hash}` : ""}`);
+  }
+  if (report.sealed_payment) {
+    const shown = (v: boolean | null) => (v === null ? "not sealed" : String(v));
+    lines.push(`  payment      sandbox ${shown(report.sealed_payment.sandbox)}, money_moved ${shown(report.sealed_payment.money_moved)}`);
   }
   lines.push(`  reason       ${report.reason}`);
   return lines.join("\n") + "\n";
