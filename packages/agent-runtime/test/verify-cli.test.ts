@@ -9,7 +9,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync, sign as signDetached } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -292,6 +292,20 @@ describe("codespar-agent verify --from-api", () => {
     expect(out.stdout).toContain("approval     matched");
     expect(asked).toEqual([`GET /.well-known/codespar-receipt-keys.json anon`, `GET /v1/consumers/receipts/${RECEIPT_ID} auth`]);
     expect(readFileSync(f.paths.copy, "utf8")).not.toContain(PAYEE);
+  });
+
+  it("never prints or writes the mandate's signature a tenant's read carries, and shows what the chain sealed about the money", async () => {
+    const f = v4Fixture();
+    const mandateSig = "s".repeat(64);
+    served = { read: { ...f.read, mandate: { ...f.read.mandate, sig: mandateSig } }, keys: f.keys };
+    const human = await runAsync([f.paths.copy, "--from-api"], f.dir);
+    const json = await runAsync([f.paths.copy, "--from-api", "--json"], f.dir);
+    expect([human.code, json.code]).toEqual([0, 0]);
+    expect(human.stdout).toContain("payment      sandbox true, money_moved false");
+    expect(JSON.parse(json.stdout).sealed_payment).toEqual({ sandbox: true, money_moved: false });
+    for (const out of [human, json]) expect(out.stdout + out.stderr).not.toContain(mandateSig);
+    const files = readdirSync(f.dir, { recursive: true, encoding: "utf8" }).map((name) => join(f.dir, name)).filter((path) => statSync(path).isFile());
+    for (const path of files) expect(readFileSync(path, "utf8")).not.toContain(mandateSig);
   });
 
   it("exits 9 when the run's artifact is not the list the receipt sealed", async () => {

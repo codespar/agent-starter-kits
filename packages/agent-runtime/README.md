@@ -33,11 +33,26 @@ nothing else.
   `--conversation`, `--scripted`), `consent`, `approve`, `deny`, `resume`,
   `rerun`, `reconcile`, `inspect` (`--json`, `--html <file>`), `poll`
   (`--channel`, `--conversation`, `--backend`, `--wait`, `--simulate-payer`,
-  `--payer`, `--now`, `--json`), `webhook`, `check`, `eval`.
+  `--payer`, `--now`, `--json`), `webhook`, `check`, `eval`, `verify`
+  (`--from-api`, `--json`, `--keys`/`--url`, `--approval`), which needs no
+  agent directory.
+- What a report says about a settlement the API replayed: the terminal line
+  "ja estava pago", `replayed` on the executions of a paying agent's one-shot
+  `--json`, and "replayed, not paid by this run" in `inspect`. The first two
+  read agent-core's `isReplayedSettlement`; `inspect` reads the same mark from
+  the bundle's rail answers (`docs/OPEN_QUESTIONS.md` §39c).
+- What `verify` prints: the verdict, the chain it recomputed, the approval it
+  matched and, off a body that bound, `sandbox` and `money_moved` as the chain
+  sealed them. Nothing else of the API's read, which still carries
+  `mandate.sig` (§47).
 - Setup: the manifest, the guardrails, the tools file, the system prompt, the
   local state, the signer, the proof bundle, the provider (Anthropic with a
   real key, replay without one), and the pinned clock (`--now`,
-  `CODESPAR_AGENT_NOW`).
+  `CODESPAR_AGENT_NOW`), which also pins the `today` the list tools return.
+- The terminal's own strings (the approval question, the batch gesture, the
+  transitions it prints) are Portuguese only. The model answers in the person's
+  language because the loop in agent-core states it on every step; these
+  strings do not follow it yet (§64).
 - The section 9 adversarial runner and the section 12 scenario runner.
 - The `csk_test_` guard and the `.env.example` placeholder rule.
 

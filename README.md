@@ -4,7 +4,7 @@
 
 Agents that move money under a mandate. The person signs the limits once (cap per payment, cap per month, named payees, expiry), the agent proposes payments, and deterministic code decides what actually runs. Every payment ends in an approval record and a receipt.
 
-Four agents ship today, all in TypeScript, all running against the CodeSpar sandbox:
+Four agents ship today, all in TypeScript, all written against the CodeSpar sandbox. The two that pay run there end to end; the two that issue a bolepix stop at issuance there today (see [What runs today](#what-runs-today)):
 
 - **[`bills-agent`](agents/bills-agent)** pays a household's monthly bills (school, cleaner, utilities) over Pix.
 - **[`collections-agent`](agents/collections-agent)** is the merchant side: it agrees payment terms with a customer, issues a bolepix per instalment and closes the loop when the charge is paid. It is also the one with a second channel: WhatsApp, run against a [local Cloud API emulator](agents/collections-agent#the-whatsapp-channel) that needs no account.
@@ -42,8 +42,10 @@ Check the receipt against the API (key read from `.env`, never printed):
 
 ```sh
 set -a; . agents/bills-agent/.env; set +a
-npx -y @codespar/cli@0.18.0 consumers get-receipts rcpt_...   # expect sandbox: true, money_moved: false
+npm run verify -- agents/bills-agent/runs/<run-id>/receipts/rcpt_....json --from-api   # expect VERIFIED, then payment: sandbox true, money_moved false
 ```
+
+`verify` reads the receipt from the API in memory, checks it and prints the verdict, the chain, the approval and the two payment fields the chain seals. It prints and writes nothing else of the read. Do not print the raw read (`consumers get-receipts`, or `GET /v1/consumers/receipts/{id}` by hand). For a key with the `*` or `mandates:spend` scope, which the signup key has, it still carries `mandate.sig`, the mandate's own HMAC, and that authorizes spends (codespar-enterprise ent#1707).
 
 Prefer a fresh directory over a clone? `npx -y @codespar/cli@0.18.0 init my-agent --template bills-agent` (or `collections-agent`) scaffolds the same agent.
 
@@ -67,11 +69,11 @@ Same code, same states, same receipts. Start with `human`, switch when you trust
 | | Status |
 |---|---|
 | Pix payments out (`bills-agent`) | Sandbox |
-| Bolepix charges with a sandbox payer (`collections-agent`) | Sandbox |
+| Bolepix charges with a sandbox payer (`collections-agent`) | The cycle runs on the stub rail and in every scenario. Against the live sandbox no payable bolepix is issued today. On staging the charge ends `ERROR` with no Pix and no boleto, and production test mode refuses it at issuance. The test payer can still settle such a charge, and the read then answers `CONFIRMED` ([ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816)). [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §22 and §63 have the runs |
 | WhatsApp as a channel (`collections-agent`, `checkout-agent`) | Against [`dyvit-wa-sim`](https://github.com/fabianocruz/whatsapp-simulator), a local Cloud API emulator: no Meta account, no credential. The CI closes the cycle three times from zero on it |
 | WhatsApp through Meta's Cloud API | The same backend, one base URL away. Credentials absent by default; never run against Meta from this repo |
 | Batch payouts, one execution per line (`supplier-payments-agent`) | Sandbox |
-| A cart priced by code, sold under a price and discount policy, charged by bolepix (`checkout-agent`) | Sandbox |
+| A cart priced by code, sold under a price and discount policy, charged by bolepix (`checkout-agent`) | The cart, the pricing, the policy and the order run everywhere; the charge is the collections-agent's, so against the live sandbox it stops at issuance today, the same way (§63; the test-payer half is [ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816)) |
 | Mandate revocation checked against the API before every payment (`bills-agent`) | Live in the sandbox |
 | Receipts sealed with HMAC | Proves the payment to whoever runs the agent |
 | Receipts also sealed with Ed25519 | Proves the payment to anybody: `npm run verify -- <receipt-file>`. Receipts sealed before the API added it carry none and never will |
@@ -97,6 +99,8 @@ npm run verify -- receipt.json --keys codespar-receipt-keys.json # a saved copy 
 npm run verify -- receipt.json --json                            # the verdict as JSON on stdout, the sentence on stderr
 npm run verify -- receipt.json --url https://api.staging.codespar.dev/.well-known/codespar-receipt-keys.json
 ```
+
+`receipt-read.json` is the API's read as a tenant hands it to somebody else, and it goes without `mandate.sig`. A v4 chain seals only its hash, so the verifier never needs the signature, and whoever holds it can spend under the mandate (§47).
 
 The signature covers `codespar-receipt:v1:<receipt_id>:<chain>` and nothing else, so it survives the bundle's masking: a receipt copied off the machine that produced it still verifies, with no key, no API key and no CodeSpar call that could be refused. The body is another matter. The chain is a digest of the receipt's links (mandate, quote with the payee, approval, payment), and the key document publishes how to recompute it (`chain_recipe`). From the API's receipt read, `verify` recomputes it, holds it against the signed chain, and for a v4 receipt holds the sealed approval hashes against the approval artifact: that is "this payment was made against the list H". The bundle's copy masks the payee the chain sealed, so it proves the signature only, unless `--from-api` reads the unmasked receipt from the API at verify time. The answers are kept apart on purpose — `verified` (signature, body and, when an artifact is given, approval), `signature_only` (the body could not be bound: a masked copy, a v1–v3 chain, no recipe; not a failure), `chain_mismatch`, `approval_mismatch`, `tampered`, `unsigned` (sealed before the capability existed, which is not a failure), `unknown_key`, `unreachable` (unknown, never "invalid") and `malformed` — and each has its own exit code. The verifier is [`packages/agent-core/src/receipt-verification.ts`](packages/agent-core/src/receipt-verification.ts) and [`receipt-chain.ts`](packages/agent-core/src/receipt-chain.ts): `node:crypto` and nothing else, RFC 8785 included, no SDK, no key material.
 
