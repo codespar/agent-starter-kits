@@ -99,7 +99,9 @@ describe.skipIf(!emulatorUp)("§46 on the collections-agent, against the emulato
       if (!template) await new Promise((r) => setTimeout(r, 50));
     }
     expect(template).toBeDefined();
-    await sim("/_sim/status", { status: "failed", message_id: template, reason: "not on whatsapp" });
+    // The emulator answers after its webhook did: a 200 here means the poll's receiver heard the failure inside its grace.
+    const marked = await sim("/_sim/status", { status: "failed", message_id: template, reason: "not on whatsapp" });
+    expect(marked["webhook"]).toMatchObject({ status: 200 });
 
     expect(await exit).toBe(1);
     const polled = (lastJson(stdout)["polled"] as Array<{ state: string; delivery: { told: boolean; reason?: string } }>)[0]!;

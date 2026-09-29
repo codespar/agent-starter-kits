@@ -19,6 +19,16 @@ import type { Channel, ChannelBackend, ChannelLogLine, Conversation, DeliverySta
 import { maskContact } from "../contact.js";
 import { SessionWindow, type SessionState } from "./session.js";
 
+/**
+ * How far along a message a status puts it. Status webhooks are not ordered:
+ * the emulator dispatches a send's own `sent` and `delivered` while a status
+ * posted meanwhile goes out between them, and Meta does not promise order
+ * either. A `delivered` that lands after a `failed` must not un-fail the
+ * message (#63), so `failed` ranks above everything, and a late `sent` does
+ * not rewind a `read`.
+ */
+const PROGRESS: Record<DeliveryState, number> = { queued: 0, sent: 1, delivered: 2, read: 3, failed: 4 };
+
 export interface WhatsAppChannelOptions {
   backend: ChannelBackend;
   conversation: Conversation;
@@ -67,7 +77,7 @@ export class WhatsAppChannel implements Channel {
   private readonly lines: ChannelLogLine[] = [];
   private lastInbound: InboundMessage | undefined;
   private readonly replies: Map<string, QuickReply>;
-  /** The latest state the provider reported per message id, this process. */
+  /** The furthest state the provider reported per message id (`PROGRESS`), this process. */
   private readonly delivery = new Map<string, DeliveryState>();
   /**
    * Failures reported for a message not yet in the log. A provider can post
@@ -194,7 +204,8 @@ export class WhatsAppChannel implements Channel {
    */
   private observeStatus(status: StatusUpdate): void {
     const sent = [...(this.options.priorLines ?? []), ...this.lines].find((l) => l.direction === "out" && l.message_id === status.message_id);
-    this.delivery.set(status.message_id, status.status);
+    const known = this.delivery.get(status.message_id);
+    if (known === undefined || PROGRESS[status.status] > PROGRESS[known]) this.delivery.set(status.message_id, status.status);
     const line: ChannelLogLine = {
       at: this.options.now().toISOString(),
       direction: "status",
@@ -222,7 +233,7 @@ export class WhatsAppChannel implements Channel {
     this.options.onDeliveryFailed?.(line);
   }
 
-  /** The latest status the provider reported for a message this process saw a status for. */
+  /** The furthest status the provider reported for a message this process saw a status for; a `failed` stays `failed`. */
   deliveryOf(messageId: string): DeliveryState | undefined {
     return this.delivery.get(messageId);
   }
