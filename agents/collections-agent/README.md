@@ -8,7 +8,7 @@ The merchant's collections agent. A customer replies about an open debt; the age
 
 Node 22.13+ and a sandbox key (`csk_test_...`) from [codespar.dev/auth/signup](https://codespar.dev/auth/signup). No money moves: a sandbox payer plays the customer's bank.
 
-Today the sandbox does not issue a payable bolepix: on staging the charge ends `ERROR` with no Pix and no boleto, and production test mode refuses it at issuance. With a `csk_test_` key this agent stops at issuance, and the 10 s from issuance to `settled` measured on 2026-09-23 does not reproduce. The stub rail and the scenarios run the whole cycle. The test payer still settles a charge in `ERROR`, and the read then answers `CONFIRMED`; that half is [ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816). [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §22 and §63 have the runs.
+Today the sandbox does not issue a payable bolepix. On staging the charge ends `ERROR` with no Pix and no boleto, and production test mode refuses it at issuance. With a `csk_test_` key this agent stops at issuance, and the 10 s from issuance to `settled` measured on 2026-09-23 does not reproduce. The stub rail and the scenarios run the whole cycle. The test payer still settles a charge in `ERROR`, and the read then answers `CONFIRMED`; that half is [ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816). [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §22 and §63 have the runs.
 
 ```sh
 git clone https://github.com/codespar/agent-starter-kits && cd agent-starter-kits

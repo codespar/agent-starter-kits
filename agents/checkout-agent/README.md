@@ -20,7 +20,7 @@ npm start -- --input "oi, sou a Marina. quero o pacote de dez aulas e uma avalia
 
 With keys (`cp .env.example .env`, a `csk_test_` key and an Anthropic key) `npm start` opens the terminal: you type as the customer, and in `approval: human` the attendant's question comes on the same keyboard, labelled `[atendente]`. Without a real `ANTHROPIC_API_KEY` a one-shot replays the recorded scenario whose first turn you typed.
 
-With a `csk_test_` key the sale stops at issuance today: the sandbox does not issue a payable bolepix (on staging the charge ends `ERROR`, production test mode refuses it). The stub rail and the scenarios run the whole sale. The test payer still settles a charge in `ERROR`, and the read then answers `CONFIRMED`; that half is [ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816). [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §63 has the runs.
+With a `csk_test_` key the sale stops at issuance today, because the sandbox does not issue a payable bolepix (on staging the charge ends `ERROR`, production test mode refuses it). The stub rail and the scenarios run the whole sale. The test payer still settles a charge in `ERROR`, and the read then answers `CONFIRMED`; that half is [ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816). [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §63 has the runs.
 
 ## What it shows
 

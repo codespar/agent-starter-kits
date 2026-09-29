@@ -45,7 +45,7 @@ set -a; . agents/bills-agent/.env; set +a
 npm run verify -- agents/bills-agent/runs/<run-id>/receipts/rcpt_....json --from-api   # expect VERIFIED, then payment: sandbox true, money_moved false
 ```
 
-`verify` reads the receipt from the API in memory, checks it and prints the verdict, the chain, the approval and the two payment fields the chain seals. It prints and writes nothing else of the read. Do not print the raw read (`consumers get-receipts`, or `GET /v1/consumers/receipts/{id}` by hand): for a key with the `*` or `mandates:spend` scope, which the signup key has, it still carries `mandate.sig`, the mandate's own HMAC, and that authorizes spends (codespar-enterprise ent#1707).
+`verify` reads the receipt from the API in memory, checks it and prints the verdict, the chain, the approval and the two payment fields the chain seals. It prints and writes nothing else of the read. Do not print the raw read (`consumers get-receipts`, or `GET /v1/consumers/receipts/{id}` by hand). For a key with the `*` or `mandates:spend` scope, which the signup key has, it still carries `mandate.sig`, the mandate's own HMAC, and that authorizes spends (codespar-enterprise ent#1707).
 
 Prefer a fresh directory over a clone? `npx -y @codespar/cli@0.18.0 init my-agent --template bills-agent` (or `collections-agent`) scaffolds the same agent.
 
@@ -69,7 +69,7 @@ Same code, same states, same receipts. Start with `human`, switch when you trust
 | | Status |
 |---|---|
 | Pix payments out (`bills-agent`) | Sandbox |
-| Bolepix charges with a sandbox payer (`collections-agent`) | The cycle runs on the stub rail and in every scenario. Against the live sandbox no payable bolepix is issued today: on staging the charge ends `ERROR` with no Pix and no boleto, and production test mode refuses it at issuance. The test payer can still settle such a charge, and the read then answers `CONFIRMED` ([ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816)). [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §22 and §63 have the runs |
+| Bolepix charges with a sandbox payer (`collections-agent`) | The cycle runs on the stub rail and in every scenario. Against the live sandbox no payable bolepix is issued today. On staging the charge ends `ERROR` with no Pix and no boleto, and production test mode refuses it at issuance. The test payer can still settle such a charge, and the read then answers `CONFIRMED` ([ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816)). [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §22 and §63 have the runs |
 | WhatsApp as a channel (`collections-agent`, `checkout-agent`) | Against [`dyvit-wa-sim`](https://github.com/fabianocruz/whatsapp-simulator), a local Cloud API emulator: no Meta account, no credential. The CI closes the cycle three times from zero on it |
 | WhatsApp through Meta's Cloud API | The same backend, one base URL away. Credentials absent by default; never run against Meta from this repo |
 | Batch payouts, one execution per line (`supplier-payments-agent`) | Sandbox |
@@ -100,7 +100,7 @@ npm run verify -- receipt.json --json                            # the verdict a
 npm run verify -- receipt.json --url https://api.staging.codespar.dev/.well-known/codespar-receipt-keys.json
 ```
 
-`receipt-read.json` is the API's read as a tenant hands it to somebody else, and it goes without `mandate.sig`: a v4 chain seals only its hash, so the verifier never needs the signature, and whoever holds it can spend under the mandate (§47).
+`receipt-read.json` is the API's read as a tenant hands it to somebody else, and it goes without `mandate.sig`. A v4 chain seals only its hash, so the verifier never needs the signature, and whoever holds it can spend under the mandate (§47).
 
 The signature covers `codespar-receipt:v1:<receipt_id>:<chain>` and nothing else, so it survives the bundle's masking: a receipt copied off the machine that produced it still verifies, with no key, no API key and no CodeSpar call that could be refused. The body is another matter. The chain is a digest of the receipt's links (mandate, quote with the payee, approval, payment), and the key document publishes how to recompute it (`chain_recipe`). From the API's receipt read, `verify` recomputes it, holds it against the signed chain, and for a v4 receipt holds the sealed approval hashes against the approval artifact: that is "this payment was made against the list H". The bundle's copy masks the payee the chain sealed, so it proves the signature only, unless `--from-api` reads the unmasked receipt from the API at verify time. The answers are kept apart on purpose — `verified` (signature, body and, when an artifact is given, approval), `signature_only` (the body could not be bound: a masked copy, a v1–v3 chain, no recipe; not a failure), `chain_mismatch`, `approval_mismatch`, `tampered`, `unsigned` (sealed before the capability existed, which is not a failure), `unknown_key`, `unreachable` (unknown, never "invalid") and `malformed` — and each has its own exit code. The verifier is [`packages/agent-core/src/receipt-verification.ts`](packages/agent-core/src/receipt-verification.ts) and [`receipt-chain.ts`](packages/agent-core/src/receipt-chain.ts): `node:crypto` and nothing else, RFC 8785 included, no SDK, no key material.
 
