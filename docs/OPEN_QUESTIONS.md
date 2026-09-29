@@ -1418,17 +1418,28 @@ The "read" column is the run script's heuristic: function words counted in the r
 - No collections or checkout run. Their bolepix is refused at issuance in production test mode (§63), so there is nothing past the conversation to measure.
 - One model (the kit's default) and one date. Nothing here says how another model behaves, or how the tense rules read on other dates.
 
-**Strings a person reads that no model writes, still Portuguese only.** The prompts can make the model follow the person's language. These strings come from code and ignore it:
+**Strings a person reads that no model writes — CLOSED 2026-09-29 (#64).** They came from code and ignored the person's language. They are now in the run's locale, `pt-BR` or `en`.
 
-- **The terminal.** Every agent's `labels`: the intro line, the approval question ("Aprovar este pagamento? [s/N]", "[operador] Aprovar a emissao desta cobranca?", "[atendente] Confirmar este pedido?"), the uncertain-dispatch line, and `describeExecution` ("execucao", "total (calculado pelo core)", "escalado por", "bloqueado: … o mandato nao autoriza", "recibo:"). The runtime's `default-kit.ts` has the same set.
-- **The batch gesture** in `terminal.ts`. The question, "nao entendi; responda todas…", "lote … linha(s)", "lista aprovada inteira / negada inteira / aprovada exceto…", "tentativa presa a outro pagamento", and "o unico desfecho possivel e negar".
-- **The consent** (`embedded-consent.ts`): the mandate summary and the question put to the titular.
-- **WhatsApp.** The template bodies in `channels/whatsapp/templates.json`, the payment-instrument lines in `channels/whatsapp/present.ts` ("Ou pelo boleto, linha digitavel:"), the collection-hours refusal in `channels/rules.ts`, and the `poll --channel whatsapp` messages.
-- **Refusal details written by the kits' code.** The collections envelope ("vencimento … fora da janela"), checkout pricing, and statuses such as `quitado` / `em aberto`. The model reads these and translates them; a person reads them only in the terminal or the bundle.
+- **The rule.** `--locale` on the command, else `locale:` in `agent.yaml` (optional; every shipped agent declares `pt-BR`), else `pt-BR`. The run records it in `run.json`. It is fixed for the run and for the conversation. It does not follow the per-turn reply language above, so a proposal and its approval are asked in the same language.
+- **Localized.**
+  - The terminal: every kit's `strings` (the intro, the prompt, the approval question, the uncertain-dispatch line) and `describeExecution`.
+  - The runner's shared lines in agent-core's `CORE_STRINGS`: the batch gesture, the "only deny" hint, the waits, the banner, the scenario runner's lines, and the WhatsApp operator console.
+  - The consent summary and its question.
+  - WhatsApp: every template in `pt_BR` and `en_US`, the payable-instrument lines, the collection-hours refusal detail, and the `poll --channel whatsapp` lines.
+  - Refusal details and statuses the kits' code writes: the collections envelope, `list_agreements` statuses (`quitado` / `em aberto`), checkout pricing issues, the order gate and the order-status messages.
+  - Money and dates in those lines ("R$ 1.850,00" / "R$1,850.00", "30/09/2026" / "2026-09-30").
+- **Checked.** A key missing from one locale fails `npm run check` (`strings_incomplete`), and so does a WhatsApp template without a copy in each locale's language (`channels_templates_locale`). Tests enumerate every key of every table in both locales.
+- **Display only.** The parsers did not change. `[s/N]` takes `s`, `sim`, `y`, `yes`; the gesture takes `todas` / `all`, `todas exceto` / `all except`, `nenhuma` / `none`, in either locale. Tests assert that the approval question and the batch gesture decide identically in both locales for the same answers. Reason codes, states and `--json` fields are unchanged.
+- **A later command keeps the conversation's locale.** `poll`, `webhook` and `approve` tell the counterparty in the locale the proposing run recorded. `poll --channel whatsapp` sends that locale's template copy and refuses a `--locale` that disagrees (exit 2).
+- **Accents.** The Portuguese now has them ("execução", "não", "único", "digitável", "cobrança", "política"). Ten test assertions that quoted the unaccented text were updated to the accented one.
 
-The PARSERS are already bilingual: `[s/N]` takes `s`, `sim`, `y`, `yes`, and the gesture takes `todas` / `all`, `todas exceto 3,7` / `all except 3,7`, and `nenhuma` / `none`. So localizing the list above changes only what is shown and never what is accepted. It was left out of this PR on purpose, because the gesture sits on the approval path. **Proposal:**
+**Not localized, on purpose or not yet.**
 
-- A per-agent `locale: pt-BR | en` in `agent.yaml`, default `pt-BR`, overridable per run (`--locale`). The labels become a two-entry table per kit.
-- The WhatsApp templates are keyed by locale, because Meta approves a template per language.
-- A conversation keeps the locale it started with, so the terminal and the model do not drift apart mid-sale.
-- Accent the strings while at it ("execução", "cobrança", "não").
+- **Model-facing text.** The system prompts (the reply-language rule is independent of the locale), the checkout `list_catalog` policy blurb, and tool-result data such as amounts and payee names.
+- **What goes to the API.** The consent's `display_name` / `intent_note`, the charge descriptions (`Acordo #1042 - parcela 1/1`), and the NFS-e's `additionalInformation`.
+- **Lines that were already English and still are**, in both locales: `resume`, `reconcile`, `inspect`, the terminal `poll`'s own lines, the NFS-e lines, the thrown errors, the core's refusal details, the other channel-rule details, and the delivery details in `poll --json`. The `--help` usage text is unchanged too: English, with one Portuguese line in the collections-agent's.
+- **Identities.** Approver ids and record kinds (`labels`) are the same in every locale. An approver that changed with the language would be a different approver.
+- **A prompt sentence corrected.** `agents/collections-agent/SYSTEM_PROMPT.md` said that `status` in `list_agreements` is Portuguese prose; it now says prose in the run's locale, which is what `--locale en` returns. A factual correction, not a behaviour change.
+- **The emulator.** `@dyvit/whatsapp-simulator-cli@0.3.0` does not read `template.language` at all, so it accepts `en_US` and would accept anything. The English templates are exercised through our own registry and channel refusals, not through the emulator. Whether Meta approves either copy is still the developer's to register, as before.
+- **Auto-detecting the locale from the first message is not done, and if it is ever added it is opt-in and off by default** (owner's decision, 2026-09-29). The reason is that Brazilian users mix Portuguese and English as a matter of course. A locale detected from the first message would get them wrong, and it would then stay wrong for the whole conversation, approval included. The locale stays configuration: `--locale`, or `locale:` in `agent.yaml`.
+- **Accents, swept across every kit** (owner's decision, same day). A missing accent in a new string usually comes from copying an old one. So the sweep covered every user-visible Portuguese string in `agents/`, `packages/` and `skills/`, not only the ones #64 localized: templates, refusal details, consent text, the prompts' Portuguese examples, catalog and payee display names, and recorded replies. What a person types was left as typed, because a replay looks a recording up by its input. `node scripts/pt-accents.mjs` (part of `npm run check`) fails on a curated list of unaccented words. It has an explicit allowlist for machine values, such as payee aliases, the catalog category, the refused `preco` field, the parser's `nao`, and the pt button intents #62 recorded (a replay and the tests compare them).

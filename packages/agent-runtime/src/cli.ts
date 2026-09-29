@@ -6,7 +6,9 @@
 import { stderr } from "node:process";
 import { loadAgent, type Agent } from "./agent.js";
 import { NotATestKeyError } from "@codespar/agent-core";
-import { envFileOf, readDotEnv } from "./setup.js";
+import { envFileOf, localeFlag, readDotEnv } from "./setup.js";
+import { loadManifest, resolveLocale } from "@codespar/agent-core";
+import { join } from "node:path";
 import { check } from "./commands/check.js";
 import { decide } from "./commands/decide.js";
 import { runEval } from "./commands/eval.js";
@@ -66,7 +68,14 @@ async function run(agent: Agent, command: string, argv: string[]): Promise<numbe
         stderr.write(`${agent.slug}: this agent has no consent step (its policy is its own file, not a signed mandate)\n`);
         return 2;
       }
-      return agent.kit.consent({ agentDir: agent.dir, argv, say: (l) => void stderr.write(l + "\n") });
+      let locale;
+      try {
+        locale = resolveLocale(localeFlag(argv), loadManifest(join(agent.dir, "agent.yaml")).manifest);
+      } catch (err) {
+        stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+        return 2;
+      }
+      return agent.kit.consent({ agentDir: agent.dir, argv, locale, say: (l) => void stderr.write(l + "\n") });
     }
     case "approve":
       return decide(agent, "approve", argv);

@@ -37,7 +37,7 @@ nothing else.
   (`--from-api`, `--json`, `--keys`/`--url`, `--approval`), which needs no
   agent directory.
 - What a report says about a settlement the API replayed: the terminal line
-  "ja estava pago", `replayed` on the executions of a paying agent's one-shot
+  "já estava pago", `replayed` on the executions of a paying agent's one-shot
   `--json`, and "replayed, not paid by this run" in `inspect`. The first two
   read agent-core's `isReplayedSettlement`; `inspect` reads the same mark from
   the bundle's rail answers (`docs/OPEN_QUESTIONS.md` §39c).
@@ -49,10 +49,17 @@ nothing else.
   local state, the signer, the proof bundle, the provider (Anthropic with a
   real key, replay without one), and the pinned clock (`--now`,
   `CODESPAR_AGENT_NOW`), which also pins the `today` the list tools return.
-- The terminal's own strings (the approval question, the batch gesture, the
-  transitions it prints) are Portuguese only. The model answers in the person's
-  language because the loop in agent-core states it on every step; these
-  strings do not follow it yet (§64).
+- The locale of what the code prints (#64). `setup` resolves it once per run:
+  `--locale`, else `locale:` in `agent.yaml`, else `pt-BR`, and records it in
+  the bundle's `run.json`. The terminal's own lines come from agent-core's
+  `CORE_STRINGS` and the kit's from `kit.strings`, both in that locale; the
+  parsers do not change with it (`parseApproval`, `parseBatchGesture` read both
+  languages whatever is shown). A command that tells an outcome later (`poll`,
+  `webhook`, `approve`) tells the counterparty in the locale of the run that
+  proposed it, and `poll --channel whatsapp` sends the template copy in the
+  conversation's recorded language and refuses a `--locale` that disagrees.
+  The model's reply language is a different thing, read per turn from what
+  the person types.
 - The section 9 adversarial runner and the section 12 scenario runner.
 - The `csk_test_` guard and the `.env.example` placeholder rule.
 
@@ -72,10 +79,15 @@ export const agent = defineAgent(import.meta.url, {
 ```
 
 `AgentKit` (in `src/kit.ts`) is the whole seam: the rail adapter
-(`buildRail`), the tool handlers, the `policyExtension`, the console labels,
-what a one-shot prints as JSON, and — for an agent whose money comes IN — the
+(`buildRail`), the tool handlers, the `policyExtension`, the console words
+(`strings`, one entry per locale, and `labels`, which holds what must not vary
+by locale: who approves and the record kinds), what a one-shot prints as JSON, and — for an agent whose money comes IN — the
 sandbox payer and the one message per outcome. An agent that declares none of
 it gets `defaultKit`: the stub rail, the example mandate, no tools.
+
+`npm run check` fails when a key of `kit.strings` or of `CORE_STRINGS` is
+missing from one locale (`strings_incomplete`), so an English run never prints
+`undefined` where a Portuguese one prints a word.
 
 `defineAgent(import.meta.url, kit)` finds the nearest `agent.yaml` above the
 module, which is what makes every path (`scenarios/`, `evals/`, `.codespar/`,

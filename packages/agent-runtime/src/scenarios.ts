@@ -10,7 +10,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { z } from "zod";
-import type { ApprovalMode, Execution, StubChargeRailOptions, StubRailOptions } from "@codespar/agent-core";
+import type { ApprovalMode, Execution, Locale, StubChargeRailOptions, StubRailOptions } from "@codespar/agent-core";
 import type { Agent } from "./agent.js";
 import type { RailKind } from "./kit.js";
 import { setup, type Setup } from "./setup.js";
@@ -148,6 +148,8 @@ export interface RunScenarioOptions {
   waitSeconds?: number | undefined;
   /** Test only: stub rail options merged over the scenario's, to script an issuer the packs do not (an error, an unpayable settlement). */
   stubRail?: StubRailOptions | StubChargeRailOptions;
+  /** The locale of the lines the run prints. The pack's assertions are on states, never on wording, so it passes in either. */
+  locale?: Locale | undefined;
 }
 
 export async function runScenario(agent: Agent, scenario: Scenario, options: RunScenarioOptions): Promise<ScenarioRun> {
@@ -170,6 +172,7 @@ export async function runScenario(agent: Agent, scenario: Scenario, options: Run
     runsDir: options.runsDir ?? join(agent.dir, "runs"),
     stateDir,
     ...(rail === "stub" ? { now: tick } : {}),
+    ...(options.locale ? { locale: options.locale } : {}),
     ...(scenario.stub_refuse_payees.length > 0 || options.stubRail ? { stubRail: { ...(scenario.stub_refuse_payees.length > 0 ? { refusePayees: scenario.stub_refuse_payees } : {}), ...(options.stubRail ?? {}) } } : {}),
     say,
   });

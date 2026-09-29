@@ -22,6 +22,7 @@ promises stability: a field is removed or changes meaning only under a new
 | `mandate_schema` | path | `./mandate.example.json`. |
 | `events` | string[] | Each `^commerce\.[a-z_.]+$` AND a member of `PUBLISHED_EVENTS` (`packages/agent-core/src/events.ts`); otherwise `events_unknown`. `[]` is valid. |
 | `channels` | `[terminal \| whatsapp]` | Non-empty, and `terminal` is required: `npm start` opens it and it needs no account. Checked against what the agent SHIPS, both ways — declare `whatsapp` and you must ship at least one conversation under `channels/whatsapp/` (`channels_not_shipped`), and shipping one without declaring it fails too (`channels_undeclared`). A conversation names the contact it is bound to, the subject it may be about and the person's turns; the schema is `ConversationScriptSchema` in `packages/agent-core/src/channels.ts`. `templates.json` is the reserved name in that directory and is NOT a conversation — it is the registry of the templates the agent sends outside the 24-hour session window (`TemplateRegistrySchema`), which is what `poll --channel whatsapp` needs to close a cycle days later. A new agent declares `[terminal]` unless it has a conversation to ship. |
+| `locale` | `pt-BR \| en`, optional | The language of the lines the CODE prints: the approval question, the batch gesture, the execution lines, the consent summary, the WhatsApp templates. Absent means `pt-BR`. `--locale` overrides it per run. It changes nothing that is decided (the answers are read in both languages) and nothing the model says (the reply language follows what the person types). Every key of the kit's `strings` must exist in both locales (`strings_incomplete`), and a WhatsApp agent declares each template in `pt_BR` and `en_US` (`channels_templates_locale`). |
 | `maturity` | map string → `live \| sandbox \| blocked` | Any capability names. `pix-out` present ⇔ `tools.json` has a `payment` meta-tool; `bolepix-receivables` present ⇔ a `charge` meta-tool. `receipt-verification` beyond `blocked` ⇒ a `payment` meta-tool, since only a payment seals a receipt. `{}` is valid. |
 | `scenarios` | path | `./scenarios/`. Must exist. |
 | `evals` | path | `./evals/`. Must exist and hold `eval.yaml`. |
@@ -137,3 +138,8 @@ From `packages/agent-core/src/check.ts`, in order:
 - `doc_missing` (`README.md`, `runbook.md`), `doc_overclaims` ("verificável por terceiro", "verifiable by a third party", "third-party verifiable" in README, runbook or prompt, with no `Ed25519` anywhere in the same file).
 - `env_example_missing`, `env_example_extra`, `env_example_incomplete`.
 - `maturity_overclaims`: `receipt-verification` at `live` or `sandbox` while `tools.json` has no `payment` meta-tool.
+- `channels_templates_locale`: a WhatsApp template missing its copy in the language of a locale (`pt_BR`, `en_US`), declared in a language no locale sends, or whose copies differ in variables, buttons or fallback.
+
+And from the runner's own check, which has the kit loaded (`packages/agent-runtime/src/commands/check.ts`):
+
+- `strings_incomplete`: a key of `kit.strings` (or of agent-core's `CORE_STRINGS`) that one locale lacks, leaves empty, or declares with a different shape.

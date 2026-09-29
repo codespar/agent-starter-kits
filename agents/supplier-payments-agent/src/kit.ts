@@ -24,12 +24,12 @@ import {
   MandateSchema,
   isReplayedSettlement,
   type Execution,
+  type LocaleTable,
   type Mandate,
   railErrorOf,
 } from "@codespar/agent-core";
 import { existsSync, readFileSync } from "node:fs";
-import { NoMandateError, defineAgent, type AgentKit } from "@codespar/agent-runtime";
-import { formatBRL } from "./payables.js";
+import { NoMandateError, defineAgent, describePayment, type AgentKit, type KitStrings } from "@codespar/agent-runtime";
 import { codesparLedger, codesparPay, listPayables } from "./modules/pix-out.js";
 
 const mandatePath = (agentDir: string) => join(agentDir, ".codespar", "mandate.json");
@@ -39,6 +39,27 @@ function loadLocalMandate(path: string): Mandate | undefined {
   return MandateSchema.parse(JSON.parse(readFileSync(path, "utf8")));
 }
 
+const strings: LocaleTable<KitStrings> = {
+  "pt-BR": {
+    mandateWord: "mandato",
+    receiptWord: "recibo",
+    intro: 'Diga o que pagar ("roda a folha de outubro", "paga os fornecedores"). Ctrl+D ou "sair" encerra.',
+    prompt: "> ",
+    approveQuestion: "  Aprovar este pagamento? [s/N] ",
+    uncertainDispatch: "  desfecho desconhecido no trilho; rode `npm run resume` para reconciliar (nunca repita o pagamento)",
+    notAuthorized: "o mandato não autoriza",
+  },
+  en: {
+    mandateWord: "mandate",
+    receiptWord: "receipt",
+    intro: 'Say what to pay ("run the October payroll", "pay the suppliers"). Ctrl+D or "exit" ends.',
+    prompt: "> ",
+    approveQuestion: "  Approve this payment? [y/N] ",
+    uncertainDispatch: "  outcome unknown on the rail; run `npm run resume` to reconcile (never repeat the payment)",
+    notAuthorized: "the mandate does not authorize it",
+  },
+};
+
 const kit: AgentKit = {
   settlement: "immediate",
   scenarioRail: "stub",
@@ -46,16 +67,11 @@ const kit: AgentKit = {
   labels: {
     defaultUser: "usr_operator",
     evalUser: "usr_demo_financeiro",
-    mandateWord: "mandato",
-    receiptWord: "recibo",
-    intro: 'Diga o que pagar ("roda a folha de outubro", "paga os fornecedores"). Ctrl+D ou "sair" encerra.',
-    prompt: "> ",
-    approveQuestion: "  Aprovar este pagamento? [s/N] ",
-    uncertainDispatch: "  desfecho desconhecido no trilho; rode `npm run resume` para reconciliar (nunca repita o pagamento)",
     missingReceiptKind: "receipt_missing_locally",
     missingReceiptDetail: (receiptId, runId) => `receipt ${receiptId} is not in runs/${runId}/receipts`,
     stillExecuting: (e) => `${e.id}: still executing — ${e.detail}; nothing was re-sent`,
   },
+  strings,
 
   usage: () => `supplier-payments-agent
   npm start                                         interactive terminal
@@ -63,7 +79,8 @@ const kit: AgentKit = {
   npm start -- --scenario <name>                    run a scenario pack (${"see scenarios/"})
 options: --mode human|mandate  --provider anthropic|replay  --transcript <file>  --rail stub|api  --user <id>  --json
          --now <ISO 8601>  pin the run to that instant (escalation hours, timestamps); env CODESPAR_AGENT_NOW is the same thing
-a batch runs one execution per line: in \`human\` the terminal asks once for the list (todas / todas exceto 3,7 / nenhuma), and every artifact carries the batch_hash of the list it was one of`,
+         --locale pt-BR|en  the language of what the code prints (the model answers in the language you type either way)
+a batch runs one execution per line: in \`human\` the terminal asks once for the list (todas / todas exceto 3,7 / nenhuma, or all / all except 3,7 / none, in either locale), and every artifact carries the batch_hash of the list it was one of`,
 
   buildRail: (ctx) => {
     if (ctx.kind === "api") {
@@ -91,20 +108,7 @@ a batch runs one execution per line: in \`human\` the terminal asks once for the
 
   handlers: () => ({ codespar_pay: codesparPay, codespar_ledger: codesparLedger, list_payables: listPayables }),
 
-  describeExecution: (execution, setup) => {
-    const lines: string[] = [];
-    lines.push(`  execucao ${execution.id}: ${execution.state}${execution.reason ? ` (${execution.reason})` : ""}`);
-    for (const item of execution.items) lines.push(`    - ${item.beneficiary}: ${formatBRL(item.amount)}${item.description ? ` — ${item.description}` : ""}`);
-    lines.push(`    total (calculado pelo core): ${formatBRL(execution.total)}`);
-    if (execution.escalation) lines.push(`    escalado por: ${execution.escalation.trigger} — ${execution.escalation.detail}`);
-    if (execution.blocking_reasons.length) lines.push(`    bloqueado: ${execution.blocking_reasons.join(", ")} — o mandato nao autoriza; nao ha o que aprovar`);
-    if (execution.detail && execution.state !== "awaiting_approval") lines.push(`    ${execution.detail}`);
-    if (isReplayedSettlement(execution)) lines.push("    ja estava pago: a API respondeu com um pagamento anterior desta mesma tentativa; esta execucao nao moveu dinheiro");
-    for (const outcome of execution.outcomes) {
-      if (outcome.receipt_id) lines.push(`    recibo: ${relative(process.cwd(), `${setup.bundle.dir}/receipts/${outcome.receipt_id}.json`)}`);
-    }
-    return lines;
-  },
+  describeExecution: describePayment,
 
   oneShotPayload: ({ setup: s, reply, toolCalls, executions }) => ({
     run_id: s.runId,

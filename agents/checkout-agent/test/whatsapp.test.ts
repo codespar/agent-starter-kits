@@ -11,7 +11,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseConversationScript, parseTemplateRegistry, templateArity, type Execution } from "@codespar/agent-core";
+import { WHATSAPP_LANGUAGE, parseConversationScript, parseTemplateRegistry, templateArity, type Execution } from "@codespar/agent-core";
 import { handleExecution, setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 
@@ -167,14 +167,17 @@ describe("the conversation decides who is charged, with no emulator in sight", (
   it("every template the kit can send is declared, with the arity it is sent with", () => {
     const registry = parseTemplateRegistry(readFileSync(join(AGENT_DIR, "channels/whatsapp/templates.json"), "utf8"));
     const order = { total: 47990 } as Execution;
-    for (const e of [{ ...order, state: "settled" }, { ...order, state: "failed", reason: "charge_expired" }, { ...order, state: "failed", reason: "charge_cancelled" }] as Execution[]) {
-      const t = agent.kit.outcomeTemplate!(e)!;
-      const declared = registry.templates.find((x) => x.name === t.template);
-      expect(declared).toBeDefined();
-      expect(templateArity(declared!.body)).toBe(t.variables.length);
-      expect(t.variables).toEqual(["R$ 479,90"]);
+    // In each locale: the same template names, declared in that locale's language, the total formatted for its reader.
+    for (const [locale, total] of [["pt-BR", "R$ 479,90"], ["en", "R$479.90"]] as const) {
+      for (const e of [{ ...order, state: "settled" }, { ...order, state: "failed", reason: "charge_expired" }, { ...order, state: "failed", reason: "charge_cancelled" }] as Execution[]) {
+        const t = agent.kit.outcomeTemplate!(e, locale)!;
+        const declared = registry.templates.find((x) => x.name === t.template && x.language === WHATSAPP_LANGUAGE[locale]);
+        expect(declared).toBeDefined();
+        expect(templateArity(declared!.body)).toBe(t.variables.length);
+        expect(t.variables).toEqual([total]);
+      }
+      // An order refused or never approved is answered in the turn; no template pretends otherwise.
+      expect(agent.kit.outcomeTemplate!({ ...order, state: "denied", reason: "outside_envelope" } as Execution, locale)).toBeUndefined();
     }
-    // An order refused or never approved is answered in the turn; no template pretends otherwise.
-    expect(agent.kit.outcomeTemplate!({ ...order, state: "denied", reason: "outside_envelope" } as Execution)).toBeUndefined();
   });
 });

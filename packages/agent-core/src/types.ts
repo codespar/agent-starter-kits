@@ -188,7 +188,7 @@ export interface ItemOutcome {
   instrument?: ChargeInstrument;
 }
 
-/** The payable legs of a receivable. Null until the issuer registers the instrument (a cobranca com vencimento answers PROCESSING first). */
+/** The payable legs of a receivable. Null until the issuer registers the instrument (a cobrança com vencimento answers PROCESSING first). */
 export interface ChargeInstrument {
   payable: boolean;
   pix_copy_paste: string | null;

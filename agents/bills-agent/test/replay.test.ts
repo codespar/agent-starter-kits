@@ -68,7 +68,7 @@ describe("codespar_pay: a settlement this call did not make is not reported as p
 
       const oneShot = agent.kit.oneShotPayload({ setup: s, reply: "", toolCalls: [], executions: s.engine.list(), startedAt: 0 }) as { executions: Array<{ state: string; replayed: boolean }> };
       expect(oneShot.executions).toEqual([expect.objectContaining({ state: "settled", replayed: true })]);
-      expect(agent.kit.describeExecution(s.engine.list()[0]!, s).join("\n")).toContain("esta execucao nao moveu dinheiro");
+      expect(agent.kit.describeExecution(s.engine.list()[0]!, s).join("\n")).toContain("esta execução não moveu dinheiro");
     } finally {
       s.close();
     }

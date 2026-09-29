@@ -22,7 +22,7 @@ with each entry when you build `agents/<name>`.
 | `.env.example` | `CODESPAR_API_KEY` and `ANTHROPIC_API_KEY`. Only. | COPY verbatim; only the comment lines may change. |
 | `package.json` | Workspace package; every script is `codespar-agent <command>`. | ADAPT: `name`, `description`, the scripts your kind needs. |
 | `tsconfig.json` | Extends `../../tsconfig.base.json`. | COPY verbatim. |
-| `src/kit.ts` | The one module: the rail, the handlers, the policy extension, the labels. | WRITE. `agents/hello-agent/src/kit.ts` is about thirty lines, most of them one adversarial case. |
+| `src/kit.ts` | The one module: the rail, the handlers, the policy extension, the console strings (per locale) and labels. | WRITE. `agents/hello-agent/src/kit.ts` is about thirty lines, most of them one adversarial case. |
 | `src/<fixture>.ts`, `src/modules/<module>.ts` | Your deterministic fixture and your tool handlers. | WRITE. A small agent keeps both in one file. |
 
 A **module** is one named capability of the agent, and it is the unit section
