@@ -1,6 +1,6 @@
 # collections-agent
 
-[![rail: bolepix](https://img.shields.io/badge/rail-bolepix-2E8B57)](agent.yaml) [![maturity: sandbox](https://img.shields.io/badge/maturity-sandbox-orange)](agent.yaml) [![approval: human | mandate](https://img.shields.io/badge/approval-human_%7C_mandate-555)](agent.yaml)
+[![rail: bolepix](https://img.shields.io/badge/rail-bolepix-2E8B57)](agent.yaml) [![maturity: blocked](https://img.shields.io/badge/maturity-blocked-lightgrey)](agent.yaml) [![approval: human | mandate](https://img.shields.io/badge/approval-human_%7C_mandate-555)](agent.yaml)
 
 The merchant's collections agent. A customer replies about an open debt; the agent proposes terms inside a negotiation envelope (maximum discount, number of instalments, due-date window, collection hours), and once the customer accepts, the code issues one bolepix per instalment, shows the QR code and the copy-and-paste Pix code in the chat, and closes the loop when the charge is paid or expires. Two channels: the terminal, and WhatsApp against a local Cloud API emulator that needs no Meta account.
 
@@ -201,7 +201,7 @@ Read from `agent.yaml`, field `maturity`:
 
 | Capability | Maturity | Meaning |
 |---|---|---|
-| `bolepix-receivables` | sandbox | Cobranca com vencimento through the CodeSpar sandbox, paid by the sandbox payer. No real money. Not issued by the live sandbox today (see [Quickstart](#quickstart)). |
+| `bolepix-receivables` | blocked | Cobranca com vencimento, paid by the sandbox payer, no real money. Blocked because the live sandbox does not issue a payable one today ([ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816), see [Quickstart](#quickstart)); the stub rail and the scenarios run the whole cycle. |
 | `receipt-verification` | blocked | Ed25519 landed on the API's payment receipts, and this agent mints none: the API still seals no record for a paid charge, so what the bundle keeps is the paid charge as the API reports it, marked `kind: "charge"`, with no chain and no signature to check. |
 
 What the agent applies on its own (`guardrails.json`): the envelope (15% maximum discount, up to 3 instalments, due dates within 90 days, R$ 50,00 minimum instalment, collection hours 08:00–20:00 in America/Sao_Paulo), the escalation threshold (R$ 3.000,00 per agreement in `mandate`), and "the core's total wins" when the model states another.

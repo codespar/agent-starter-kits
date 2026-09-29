@@ -1324,6 +1324,8 @@ Findings:
 
 The §8 numbers stay unmeasured. The command above is the measurement once finding 1 is resolved. With #56 in, a run against the same broken issuer ends `failed (charge_issuer_error)` with no cycle, not `ok`.
 
+**Decided 2026-09-29 (Fabiano):** `bolepix-receivables` is `blocked`, not `sandbox`, in both `agents/collections-agent/agent.yaml` and `agents/checkout-agent/agent.yaml`, until the sandbox issues a payable bolepix again (ent#1816). Nothing reads the value to skip or gate a run. `npm run check` only requires that the capability is declared when `tools.json` has a charge meta-tool, so the scenarios, the eval suites and the WhatsApp gate run as before on the stub rail.
+
 ## 64. The first runs with a real model (2026-09-28), and what they changed
 
 Every measured run before this one used the replay provider. On 2026-09-28 the owner ran the kits twice against a real model, from a local script that is not part of the repository (`runs/kits-real-model-run.sh`, gitignored).

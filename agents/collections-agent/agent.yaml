@@ -21,7 +21,7 @@ mandate_schema: ./mandate.example.json
 events: [commerce.charge.created, commerce.charge.paid, commerce.charge.expired, commerce.charge.cancelled]
 channels: [terminal, whatsapp]   # the second channel is the one this agent is FOR; `npm run check` confirms channels/whatsapp/ ships a conversation
 maturity:
-  bolepix-receivables: sandbox
+  bolepix-receivables: blocked    # ent#1816: the sandbox does not issue a payable bolepix today; the stub rail and the scenarios run the cycle
   receipt-verification: blocked   # Ed25519 landed, but the API still seals no record for a paid charge: no chain, no signature to verify
 scenarios: ./scenarios/
 evals: ./evals/
