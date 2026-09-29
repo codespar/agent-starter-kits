@@ -159,8 +159,11 @@ describe.skipIf(!emulatorUp)("the cycle closes over the WhatsApp channel", () =>
     const outbound = conversationOf(payload).filter((l) => l.direction === "out");
     expect(outbound.some((l) => l.kind === "media")).toBe(true);
     // The kit's one-per-outcome message, sent once however many looks carried the event.
-    // The model's own reply also says the charge expired, which is the terminal's behaviour too.
-    expect(outbound.filter((l) => String(l.text ?? "").startsWith("A cobrança venceu sem pagamento"))).toHaveLength(1);
+    // The model's own reply also says the charge expired, which is the terminal's behaviour too, and since #64 both
+    // spell "cobrança"; the kit's message is the one that carries the outcome it tells (`about`).
+    const told = outbound.filter((l) => (l as { about?: unknown }).about !== undefined);
+    expect(told.filter((l) => String(l.text ?? "").startsWith("A cobrança venceu sem pagamento"))).toHaveLength(1);
+    expect(told).toHaveLength(1);
   });
 
   it("refuses to say anything at all outside the collection hours, and issues nothing", () => {

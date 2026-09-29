@@ -46,7 +46,7 @@ describe("a receivable closed charge_reference_ambiguous: reconcile, never reiss
       const told: string[] = [];
       announceOutcome(closed, s, (l) => told.push(l));
       expect(told).toHaveLength(1);
-      expect(told[0]).toContain("ja foi emitida");
+      expect(told[0]).toContain("já foi emitida");
       expect(told[0]).not.toContain("Nada foi cobrado");
     } finally {
       s.close();
