@@ -184,7 +184,8 @@ const PATTERN = new RegExp(`(?<![\\p{L}\\p{N}_\\-/@.])(${Object.keys(WORDS).join
 /**
  * What a person TYPED is theirs, accents or not, and a replay looks a
  * recording up by it: the `input` of a scenario or adversarial turn, the
- * `text` of a scripted conversation turn, and the argument of `--input`.
+ * `text` of a scripted conversation turn, the argument of `--input`, and a
+ * template button's `intent` (the turn a tap stands for).
  * Returns the character ranges of the line that are left alone.
  */
 function typedSpans(file, text) {
@@ -195,6 +196,8 @@ function typedSpans(file, text) {
   quoted(/--input\s+("(?:[^"\\]|\\.)*"|'[^']*')/g);
   if (/\.jsonl?$/.test(file)) {
     quoted(/"input"\s*:\s*"(?:[^"\\]|\\.)*"/g);
+    // A quick reply's `intent` is the turn the model is handed for a tap, recorded in #62 as a person would type it; a replay looks a recording up by it, and tests compare it. Machine value, not copy.
+    if (/\/channels\/whatsapp\/templates\.json$/.test(file)) quoted(/"intent"\s*:\s*"(?:[^"\\]|\\.)*"/g);
     if (/\/channels\/whatsapp\/(?!templates\.json)[^/]+\.json$/.test(file)) quoted(/"text"\s*:\s*"(?:[^"\\]|\\.)*"/g);
   }
   return spans;

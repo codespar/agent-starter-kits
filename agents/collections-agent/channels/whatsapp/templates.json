@@ -22,12 +22,12 @@
         {
           "id": "emitir_nova",
           "title": "Emitir nova",
-          "intent": "quero que você emita uma nova cobrança para o meu acordo"
+          "intent": "quero que voce emita uma nova cobranca para o meu acordo"
         },
         {
           "id": "agora_nao",
           "title": "Agora não",
-          "intent": "agora não quero uma nova cobrança para o meu acordo"
+          "intent": "agora nao quero uma nova cobranca para o meu acordo"
         }
       ]
     },
@@ -71,7 +71,7 @@
         {
           "id": "falar_agora",
           "title": "Falar agora",
-          "intent": "quero saber qual é a atualização do meu atendimento"
+          "intent": "quero saber qual e a atualizacao do meu atendimento"
         }
       ]
     },

@@ -48,6 +48,8 @@ describe("unaccented Portuguese in what a person reads", () => {
     const dir = tree({
       // Joined to an identifier: a reply id, a SKU, a timezone, a template name.
       "agents/x/channels/whatsapp/templates.json": '{ "id": "agora_nao", "sku": "avaliacao-inicial", "tz": "America/Sao_Paulo", "name": "acordo_cobranca_vencida" }\n',
+      // A button's intent is the turn a tap stands for, recorded as a person types it (#62), and compared.
+      "agents/y/channels/whatsapp/templates.json": '{ "buttons": [{ "id": "agora_nao", "intent": "agora nao quero uma nova cobranca" }] }\n',
       // Typed by the person: a scenario input, a conversation turn, an --input argument.
       "agents/x/scenarios/a.json": '{ "turns": [{ "input": "nao sei, voce decide" }] }\n',
       "agents/x/channels/whatsapp/c.json": '{ "turns": [{ "text": "ja paguei" }] }\n',
