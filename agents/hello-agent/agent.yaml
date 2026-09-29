@@ -13,6 +13,7 @@ guardrails: ./guardrails.json
 mandate_schema: ./mandate.example.json
 events: []          # it subscribes to nothing: nothing it does produces one
 channels: [terminal]
+locale: pt-BR             # pt-BR | en: the lines the code prints (approval, labels, templates); `--locale` overrides per run. The model replies in the language the person types either way
 maturity: {}        # no pix-out, no receivables: it proposes nothing
 scenarios: ./scenarios/
 evals: ./evals/

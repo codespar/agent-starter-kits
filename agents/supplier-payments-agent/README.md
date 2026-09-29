@@ -15,7 +15,7 @@ npm run start:supplier
 > roda a folha de outubro
 ```
 
-Three lines, one question ("3 linha(s), total R$ …, batch_hash sha256:…" — answer `todas`, `todas exceto 2` or `nenhuma`), three approval artifacts, three receipts under `runs/<run-id>/receipts/`. Run it again and every line answers `already_settled`.
+Three lines, one question ("3 linha(s), total R$ …, batch_hash sha256:…" — answer `todas`, `todas exceto 2` or `nenhuma`, or the same in English, `all`, `all except 2`, `none`), three approval artifacts, three receipts under `runs/<run-id>/receipts/`. Run it again and every line answers `already_settled`.
 
 - `ANTHROPIC_API_KEY` can stay empty: the agent then replays a recorded transcript. The old placeholder `sk-ant-your_key_here` counts as empty.
 - One-shot form: `npm start -- --input "roda a folha de outubro" --approve --json`.
@@ -71,6 +71,7 @@ Not in this kit: WhatsApp, `embedded-consent` (see above), scheduling a batch fo
 | `npm start` | Interactive terminal on the stub rail (or the sandbox, with a `csk_test_` key and a signed mandate). |
 | `npm start -- --input "roda a folha de outubro" [--approve] [--json] [--now <ISO>]` | One turn, no prompt. `--approve` decides every line of the batch the same way. `--json`: machine data on stdout, people on stderr. `--now 2026-09-23T14:00:00-03:00` pins the clock the guardrails read (`escalate_above.outside_hours`) instead of the wall clock; `CODESPAR_AGENT_NOW` is the same pin for every command. An execution that failed, or whose outcome the rail left unknown, carries `rail_error` in `--json`: the API's code and message, verbatim. |
 | `npm start -- --scenario <name> [--mode human\|mandate]` | A scenario pack from `scenarios/`. |
+| `npm start -- --locale en` (any form above) | The lines the code prints in English, the batch gesture included: `Approve the list? [all / all except 3,7 / none]`, `3 line(s), total R$5,400.00`. The default is `locale:` in `agent.yaml`, `pt-BR`. The gesture reads `todas` / `all`, `todas exceto` / `all except` and `nenhuma` / `none` in either locale, so the same answer vetoes the same lines. |
 | `npm run check` | The manifest gate: fails if the prompt, tools or guardrails contradict `agent.yaml`, if `AGENTS.md` and `CLAUDE.md` differ, or if `mcp`, `cli` or `schema` are missing. |
 | `npm run eval` | The adversarial suite (`evals/adversarial/`) and every scenario in every mode, on the replay provider. |
 | `npm run approve <execution-id>` / `npm run deny <execution-id>` | Decides one line left in `awaiting_approval`. A batch left undecided is decided line by line, which is the same granularity the terminal asks at. |

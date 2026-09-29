@@ -126,8 +126,8 @@ export async function startWhatsApp(options: StartWhatsAppOptions): Promise<numb
     });
     stdout.write(JSON.stringify({ ...payload, channel: channelSummary }) + "\n");
   } else {
-    say(`conversa em ${channelSummary.log} — ${channelSummary.messages_in} recebida(s), ${channelSummary.messages_out} enviada(s)${refused.length ? `, ${refused.length} recusada(s)` : ""}`);
-    if (cost) say(`custo simulado desta conversa nas regras da Meta: ${cost.total.toFixed(4)} ${cost.currency} (conta do emulador, nao nossa)`);
+    say(s.coreStrings.waConversationSummary(channelSummary.log, channelSummary.messages_in, channelSummary.messages_out, refused.length));
+    if (cost) say(s.coreStrings.waSimulatedCost(cost.total.toFixed(4), cost.currency));
   }
 
   return result.executions.some((e) => e.state === "executing") ? 3 : 0;

@@ -70,7 +70,7 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
   let turns = 0;
 
   const presentInstrument = (execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument): Promise<void> => {
-    for (const body of instrumentBodies(execution, instalment, chargeId, instrument, s.mandate.currency)) outbox.push(body);
+    for (const body of instrumentBodies(execution, instalment, chargeId, instrument, s.mandate.currency, s.locale)) outbox.push(body);
     // Awaited by the poll: the person has the code in hand before the next look, not after the cycle closed.
     return outbox.drain();
   };
@@ -95,7 +95,7 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
   const runtime = s.makeRuntime();
   const loop = s.makeLoop(runtime, (execution) => handleExecution(execution, terminalOptions));
 
-  say(`${s.manifest.manifest.name} ${s.manifest.manifest.version} — canal: whatsapp (${channel.backend}) — approval: ${s.mode} — trilho: ${s.railKind} — ${s.kit.labels.mandateWord} ${s.mandate.id}`);
+  say(s.coreStrings.waBanner(s.manifest.manifest.name, s.manifest.manifest.version, channel.backend, s.mode, s.railKind, s.strings.mandateWord, s.mandate.id));
 
   try {
     for (;;) {

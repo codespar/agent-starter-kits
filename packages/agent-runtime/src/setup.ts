@@ -19,7 +19,13 @@ import {
   loadToolsFile,
   newRunId,
   resolveFixedClock,
+  resolveLocale,
+  isLocale,
+  parseLocale,
+  CORE_STRINGS,
   type AgentRuntime,
+  type CoreStrings,
+  type Locale,
   type ApprovalMode,
   type ConversationScript,
   type Execution,
@@ -37,7 +43,7 @@ import {
 import { AnthropicRuntime } from "@codespar/agent-core/providers/anthropic";
 import type { ApiClient } from "@codespar/sdk";
 import { envName, type Agent } from "./agent.js";
-import type { AgentKit, RailKind, SandboxPayer, Settlement } from "./kit.js";
+import type { AgentKit, KitStrings, RailKind, SandboxPayer, Settlement } from "./kit.js";
 
 /** The `.env.example` placeholder counts as no key: a copied example must replay, not call Anthropic with a fake key. */
 export const ANTHROPIC_KEY_PLACEHOLDER = "sk-ant-your_key_here";
@@ -86,6 +92,8 @@ export interface SetupOptions {
   mandate?: Mandate | undefined;
   env?: NodeJS.ProcessEnv;
   say?: ((line: string) => void) | undefined;
+  /** `--locale`. Absent: the manifest's `locale`, else pt-BR. */
+  locale?: Locale | undefined;
 }
 
 export interface Setup {
@@ -112,6 +120,18 @@ export interface Setup {
   system: string;
   handlers: Record<string, ToolHandler>;
   tools: ReturnType<typeof loadToolsFile>;
+  /**
+   * The language of what the code prints in this run. Fixed at setup, and
+   * recorded in the bundle's `run.json`. The one command that changes it is
+   * `poll --channel whatsapp`, which sets it to the locale the conversation
+   * was recorded in before it says anything, so a conversation that started
+   * in one language is not told its outcome in the other.
+   */
+  locale: Locale;
+  /** The kit's words in `locale`. */
+  readonly strings: KitStrings;
+  /** The words every agent shares, in `locale`. */
+  readonly coreStrings: CoreStrings;
   /**
    * The conversation this run is bound to, when a channel binds one (WhatsApp):
    * its contact and its subject. Set by the channel's start, read by a kit
@@ -159,6 +179,7 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
   const tools = loadToolsFile(manifest.resolvePath(manifest.manifest.tools));
   const system = readFileSync(join(agent.dir, "SYSTEM_PROMPT.md"), "utf8");
   const mode: ApprovalMode = options.mode ?? manifest.manifest.default_approval;
+  const locale = resolveLocale(options.locale, manifest.manifest);
   if (!manifest.manifest.approval.includes(mode)) throw new Error(`agent.yaml does not support approval: ${mode}`);
 
   // <PREFIX>_STATE_DIR / <PREFIX>_RUNS_DIR exist for the restart test, which drives a child process over a scratch state.
@@ -189,9 +210,10 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
   const bundle = new ProofBundle(runs, runId);
   bundle.mandateSnapshot(mandate);
   // Section 11: mode, rail and mandate id. The VERSION rides with the id, so a reader knows which signing of the mandate authorised the run without opening the snapshot.
-  bundle.meta({ run_id: runId, agent: `${manifest.manifest.name}@${manifest.manifest.version}`, mode, rail: railKind, mandate_id: mandate.id, mandate_version: mandate.version, started_at: (now ?? (() => new Date()))().toISOString() });
+  bundle.meta({ run_id: runId, agent: `${manifest.manifest.name}@${manifest.manifest.version}`, mode, rail: railKind, mandate_id: mandate.id, mandate_version: mandate.version, locale, started_at: (now ?? (() => new Date()))().toISOString() });
 
-  const policyExtension = agent.kit.policyExtension?.({ agentDir: agent.dir, manifest, guardrails, store });
+  // Read at call time, because `poll --channel whatsapp` may move the run to the conversation's recorded locale after setup.
+  const policyExtension = agent.kit.policyExtension?.({ agentDir: agent.dir, manifest, guardrails, store, locale: () => s.locale });
   const engine = new ExecutionEngine({
     store,
     rail,
@@ -238,12 +260,45 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
     system,
     handlers: {},
     tools,
+    locale,
+    get strings() {
+      return agent.kit.strings[this.locale];
+    },
+    get coreStrings() {
+      return CORE_STRINGS[this.locale];
+    },
     makeRuntime,
     makeLoop: (runtime, onExecution, onBatch) => new AgentLoop({ runtime, tools, handlers: s.handlers, system, bundle, engine, onExecution, ...(onBatch ? { onBatch } : {}), ...(now ? { clock: now } : {}) }),
     close: () => store.close(),
   };
   s.handlers = agent.kit.handlers(s);
   return s;
+}
+
+/** `--locale <pt-BR|en>` out of a command's argv, validated. `undefined` when absent. */
+export function localeFlag(argv: readonly string[]): Locale | undefined {
+  const at = argv.indexOf("--locale");
+  if (at < 0) return undefined;
+  const value = argv[at + 1];
+  if (value === undefined) throw new Error("--locale needs a value");
+  return parseLocale(value);
+}
+
+/** The locale the run `runId` recorded in its bundle, if the bundle is here and records one. */
+export function recordedLocale(agent: Agent, runId: string, env: NodeJS.ProcessEnv = process.env): Locale | undefined {
+  const locale = ProofBundle.open(runsDir(agent, env), runId)?.readMeta()?.["locale"];
+  return isLocale(locale) ? locale : undefined;
+}
+
+/**
+ * The same setup, speaking the locale the run that created `execution`
+ * recorded. For a command that tells an outcome days after the run that
+ * proposed it (`poll`, `webhook`): the counterparty is told in the language
+ * they were spoken to in, whatever this command's own locale is.
+ */
+export function inLocaleOf(s: Setup, execution: Execution): Setup {
+  const locale = recordedLocale(s.agent, execution.run_id);
+  return locale === undefined || locale === s.locale ? s : (Object.create(s, { locale: { value: locale } }) as Setup);
 }
 
 export class NoMandateError extends Error {

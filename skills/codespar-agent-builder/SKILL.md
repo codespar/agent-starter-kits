@@ -263,7 +263,8 @@ examples. What you may set, and nothing else is yours:
 | `buildRail` | The rail, the mandate, and for a collector the sandbox payer | payer, collector |
 | `handlers` | One `ToolHandler` per entry of `tools.json` | everyone |
 | `policyExtension` | A deterministic policy the core runs at every gate | an agent with an envelope |
-| `labels` | The words the console prints: the prompt, the approval question, `recibo` vs `registro` | everyone |
+| `strings` | The words the console prints, one entry per locale (`pt-BR`, `en`): the prompt, the approval question, `recibo` vs `registro`. Every key in both entries, or `npm run check` fails | everyone |
+| `labels` | What must NOT vary by locale: who approves (`defaultUser`, `evalUser`) and the record kinds `reconcile` and `resume` report | everyone |
 | `usage` | The text `--help` prints | everyone |
 | `describeExecution`, `oneShotPayload` | The console lines and the `--json` body | everyone |
 | `settlement` | `immediate` (money out) or `await-payer` (money in, `poll`/`webhook`) | collector |

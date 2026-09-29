@@ -72,6 +72,7 @@ Maturity, from `agent.yaml`: `storefront-cart: sandbox`, `bolepix-receivables: b
 npm start                                   # interactive terminal: you are the customer, the attendant answers [s/N]
 npm start -- --input "..." [--approve] [--simulate-payer] [--json] [--now <ISO>]
 npm start -- --scenario <name> [--mode human|mandate] [--rail stub|api]
+npm start -- --locale en ...                # what the code prints in English, WhatsApp templates included; the answers are read the same
 npm run approve -- <execution-id>           # the attendant confirms an order left awaiting; it is issued when the customer asks
 npm run deny -- <execution-id>
 npm run resume                              # after a crash: reconcile, never re-issue; a pending NFS-e is sent, one left mid-call is reported uncertain
@@ -81,6 +82,8 @@ npm run eval                                # the adversarial suite and every sc
 npm run check                               # the manifest agrees with its files
 npm run inspect -- <run-id>                 # the bundle as a timeline
 ```
+
+The locale is `locale:` in `agent.yaml` (`pt-BR`) unless `--locale` says otherwise, and it is fixed for the conversation: the order proposed in English is confirmed in English, and `poll --channel whatsapp` sends the `en_US` copy of the template to a conversation that started in English. It changes what is shown, never what `[s/N]` / `[y/N]` decides, and it is not the model's reply language, which follows what the customer types.
 
 `--json` puts one JSON object on stdout (`cart_id`, `cart_hash`, `total_minor`, the state, `charge_id`, `pix_copy_paste`, and `rail_error` with the API's own code and message when an issue failed or was left unknown) and everything a person reads on stderr.
 

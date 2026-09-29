@@ -88,7 +88,7 @@ describe("1. a status webhook is read, and a failed outcome is an outcome not to
     const status = ch.log().find((l) => l.direction === "status")!;
     expect(status).toMatchObject({ kind: "status", message_id: sent.id, state: "failed", about: { execution_id: "exe_1", state: "settled" }, errors: [{ code: 131026, details: "not on whatsapp" }] });
     expect(failed).toEqual([status]);
-    expect(said.join("\n")).toContain("a pessoa NAO foi avisada");
+    expect(said.join("\n")).toContain("a pessoa NÃO foi avisada");
   });
 
   it("a read is recorded and nothing more: not consent, not an acknowledgement, not a reply", async () => {

@@ -2,15 +2,17 @@
  * The terminal channel: what `codespar-agent start` opens. No account, no
  * server. It shows what the core decided, asks the person when an execution
  * is awaiting approval, and prints where the sealed outcome landed. The
- * words are the agent's (`kit.labels`, `kit.describeExecution`); the order
- * of the gates is the runner's and is the same for every agent.
+ * words are the agent's (`kit.strings`, `kit.describeExecution`) and the
+ * shared ones (`CORE_STRINGS`), in the run's locale; the order of the gates
+ * is the runner's and is the same for every agent, and so is what an answer
+ * decides: the parsers below read both languages whatever the locale.
  */
 import { createInterface } from "node:readline/promises";
 import { stdin, stderr, stdout } from "node:process";
 import { relative } from "node:path";
-import { railErrorOf, type AgentRuntime, type BatchGesture, type BatchPresentation, type ChargeInstrument, type Execution } from "@codespar/agent-core";
+import { formatBRL, railErrorOf, type AgentRuntime, type BatchGesture, type BatchPresentation, type ChargeInstrument, type Execution } from "@codespar/agent-core";
 import { pollUntilClosed, type PollResult } from "./poll.js";
-import type { Setup } from "./setup.js";
+import { inLocaleOf, type Setup } from "./setup.js";
 
 export interface TerminalOptions {
   setup: Setup;
@@ -69,7 +71,7 @@ export async function followUp(execution: Execution, setup: Setup, say: (line: s
 
 function receiptLines(execution: Execution, setup: Setup, say: (line: string) => void): void {
   for (const outcome of execution.outcomes) {
-    if (outcome.receipt_id) say(`  ${setup.kit.labels.receiptWord}: ${relative(process.cwd(), `${setup.bundle.dir}/receipts/${outcome.receipt_id}.json`)}`);
+    if (outcome.receipt_id) say(`  ${setup.strings.receiptWord}: ${relative(process.cwd(), `${setup.bundle.dir}/receipts/${outcome.receipt_id}.json`)}`);
   }
 }
 
@@ -78,7 +80,8 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
   const { setup, approver } = options;
   const say = options.say ?? ((l: string) => stderr.write(l + "\n"));
   const tell = options.tell ?? ((l: string) => stdout.write(l + "\n"));
-  const labels = setup.kit.labels;
+  const words = setup.strings;
+  const text = setup.coreStrings;
   const engine = setup.engine;
 
   for (const line of describeExecution(execution, setup)) say(line);
@@ -91,15 +94,14 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
     } else {
       let decision = options.decision;
       if (!decision) {
-        if (current.blocking_reasons.length > 0) say("  (o unico desfecho possivel e negar; aperte Enter)");
+        if (current.blocking_reasons.length > 0) say(text.onlyDeny);
         const ask = options.ask ?? defaultAsk;
-        const answer = (await ask(labels.approveQuestion)).trim().toLowerCase();
-        decision = answer === "s" || answer === "sim" || answer === "y" || answer === "yes" ? "approve" : "deny";
+        decision = parseApproval(await ask(words.approveQuestion));
       }
       if (decision === "approve") current = engine.approve(current.id, approver);
       else if (decision === "deny") current = engine.deny(current.id, approver);
       else {
-        say("  deixado em awaiting_approval (rode de novo com --approve ou --deny)");
+        say(text.leftAwaiting);
         return current;
       }
     }
@@ -112,21 +114,23 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
     say(transitionLine(current));
     if (setup.settlement === "immediate") {
       receiptLines(current, setup, say);
-      if (current.state === "executing") say(labels.uncertainDispatch);
+      if (current.state === "executing") say(words.uncertainDispatch);
     }
   }
 
   if (setup.settlement === "await-payer") {
+    // The counterparty is spoken to in the locale of the run that proposed this execution (`npm run approve` is a later command); the operator's lines stay in this one's.
+    const counterparty = inLocaleOf(setup, current);
     if (current.state === "executing" && current.reason === "awaiting_settlement") {
-      const result = await waitForPayer(current.id, options);
+      const result = await waitForPayer(current.id, { ...options, setup: counterparty });
       current = result.execution;
-      say(`${transitionLine(current)} apos ${result.rounds} consulta(s), ${result.seconds}s${result.timed_out ? " (tempo esgotado; `npm run poll` continua de onde parou)" : ""}`);
+      say(`${transitionLine(current)}${text.afterLooks(result.rounds, result.seconds, result.timed_out)}`);
       receiptLines(current, setup, say);
     } else if (current.state === "executing") {
-      say(labels.uncertainDispatch);
+      say(words.uncertainDispatch);
     }
     const told = current;
-    announceOutcome(told, setup, (line) => tell(line, told));
+    announceOutcome(told, counterparty, (line) => tell(line, told));
     await followUp(current, setup, say);
   }
   return current;
@@ -148,6 +152,16 @@ function decideByGesture(execution: Execution, gesture: BatchGestureRecord, setu
   }
   if (gesture.vetoed.has(index)) return engine.deny(execution.id, approver, `vetoed in the batch gesture (line ${index + 1} of ${count})`);
   return engine.approve(execution.id, approver);
+}
+
+/**
+ * What the person answered to the per-line question. Yes is s, sim, y or yes,
+ * in any locale; anything else is no, which is the default the `[s/N]` and
+ * `[y/N]` prompts show.
+ */
+export function parseApproval(answer: string): "approve" | "deny" {
+  const text = answer.trim().toLowerCase();
+  return text === "s" || text === "sim" || text === "y" || text === "yes" ? "approve" : "deny";
 }
 
 /**
@@ -181,28 +195,30 @@ export async function presentBatch(batch: BatchPresentation, options: TerminalOp
   const { setup, approver } = options;
   const say = options.say ?? ((l: string) => stderr.write(l + "\n"));
   const ask = options.ask ?? defaultAsk;
-  say(`  lote ${batch.ref} — ${batch.label}: ${batch.count} linha(s), total ${batch.total}, batch_hash ${batch.batch_hash.slice(0, 19)}…`);
+  const text = setup.coreStrings;
+  // The amounts are formatted here from their minor units, in the run's locale; the presentation's own strings are the model's.
+  say(text.batchHeader(batch.ref, batch.label, batch.count, formatBRL(batch.total_minor, setup.locale), batch.batch_hash.slice(0, 19)));
   for (const line of batch.lines) {
     const note =
       line.status === "already_settled"
-        ? " (ja paga; nao roda de novo)"
+        ? text.batchAlreadySettled
         : line.status === "in_progress"
-          ? " (em andamento; nao roda de novo)"
+          ? text.batchInProgress
           : line.status === "attempt_id_conflict"
-            ? " (tentativa presa a outro pagamento; nao roda de novo)"
+            ? text.batchAttemptConflict
             : "";
-    say(`    ${line.index + 1}. ${line.beneficiary}: ${line.amount}${note}`);
+    say(`    ${line.index + 1}. ${line.beneficiary}: ${formatBRL(line.amount_minor, setup.locale)}${note}`);
   }
   let parsed: { vetoed: number[] } | undefined;
   while (!parsed) {
-    parsed = parseBatchGesture(await ask("  Aprovar a lista? [todas / todas exceto 3,7 / nenhuma] "), batch.count);
-    if (!parsed) say(`  nao entendi; responda todas, todas exceto <numeros de 1 a ${batch.count}> ou nenhuma`);
+    parsed = parseBatchGesture(await ask(text.batchQuestion), batch.count);
+    if (!parsed) say(text.batchUnreadable(batch.count));
   }
   const vetoed = new Set(parsed.vetoed);
   const gesture: BatchGesture = { batch_hash: batch.batch_hash, approved: batch.lines.map((l) => l.index).filter((i) => !vetoed.has(i)), vetoed: parsed.vetoed };
   options.gestures.set(batch.ref, { batch_hash: batch.batch_hash, count: batch.count, vetoed });
   setup.engine.note("batch.gesture", null, { batch_ref: batch.ref, batch_hash: batch.batch_hash, count: batch.count, total_minor: batch.total_minor, approved: gesture.approved, vetoed: gesture.vetoed, approver: { type: "human", id: approver.id, channel: approver.channel } });
-  say(`  -> lista ${gesture.vetoed.length === 0 ? "aprovada inteira" : gesture.approved.length === 0 ? "negada inteira" : `aprovada exceto ${gesture.vetoed.map((i) => i + 1).join(", ")}`}`);
+  say(gesture.vetoed.length === 0 ? text.batchApprovedAll : gesture.approved.length === 0 ? text.batchDeniedAll : text.batchApprovedExcept(gesture.vetoed.map((i) => i + 1).join(", ")));
   return gesture;
 }
 
@@ -215,9 +231,9 @@ export async function waitForPayer(executionId: string, options: TerminalOptions
     intervalMs: setup.pollIntervalMs,
     timeoutMs: waitSeconds * 1000,
     payer: options.simulatePayer ? setup.payer : undefined,
-    onInstrument: (e, n, id, instrument) => (options.presentInstrument ?? setup.kit.presentInstrument)?.(e, n, id, instrument, tell),
+    onInstrument: (e, n, id, instrument) => (options.presentInstrument ?? setup.kit.presentInstrument)?.(e, n, id, instrument, tell, setup.locale),
     onWait: (_e, round) => {
-      const line = setup.kit.labels.waitingForPayer?.(round);
+      const line = setup.strings.waitingForPayer?.(round);
       if (setup.railKind === "api" && line !== undefined && round % 5 === 0) say(line);
     },
   });
@@ -238,18 +254,18 @@ export function closeTerminal(): void {
 export async function interactive(options: TerminalOptions & { runtime: AgentRuntime }): Promise<void> {
   const { setup } = options;
   const say = options.say ?? ((l: string) => stderr.write(l + "\n"));
-  const labels = setup.kit.labels;
+  const words = setup.strings;
   // Interactive only: a person at the keyboard can decide a list in one go. The one-shot and the scenario runner pass one decision to every line and never reach this.
   const gestures: BatchGestures = new Map();
   const withGestures = { ...options, gestures };
   const loop = setup.makeLoop(options.runtime, (execution) => handleExecution(execution, withGestures), (batch) => presentBatch(batch, withGestures));
-  say(`${setup.manifest.manifest.name} ${setup.manifest.manifest.version} — approval: ${setup.mode} — trilho: ${setup.railKind} — ${labels.mandateWord} ${setup.mandate.id}`);
-  say(`run ${setup.runId} — bundle em ${relative(process.cwd(), setup.bundle.dir)}`);
-  say(labels.intro);
+  say(setup.coreStrings.banner(setup.manifest.manifest.name, setup.manifest.manifest.version, setup.mode, setup.railKind, words.mandateWord, setup.mandate.id));
+  say(setup.coreStrings.bundleAt(setup.runId, relative(process.cwd(), setup.bundle.dir)));
+  say(words.intro);
   for (;;) {
     let text: string;
     try {
-      text = await defaultAsk(labels.prompt);
+      text = await defaultAsk(words.prompt);
     } catch {
       break;
     }

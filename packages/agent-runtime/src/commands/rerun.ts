@@ -8,7 +8,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stderr, stdout } from "node:process";
-import { ProofBundle, type ApprovalMode, type Execution } from "@codespar/agent-core";
+import { ProofBundle, isLocale, type ApprovalMode, type Execution } from "@codespar/agent-core";
 import type { Agent } from "../agent.js";
 import { runsDir, setup } from "../setup.js";
 import { handleExecution } from "../terminal.js";
@@ -44,6 +44,8 @@ export async function rerun(agent: Agent, argv: string[]): Promise<number> {
     stateDir: mkdtempSync(join(tmpdir(), `${agent.slug}-rerun-`)),
     stubRail: plan.stubRail,
     say,
+    // The recording's locale, so the rerun's refusal details read as the original's did.
+    ...(isLocale(meta["locale"]) ? { locale: meta["locale"] } : {}),
   });
   try {
     let decisionIndex = 0;

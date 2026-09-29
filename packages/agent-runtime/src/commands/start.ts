@@ -9,7 +9,7 @@
  */
 import { stderr, stdout } from "node:process";
 import { relative, resolve } from "node:path";
-import { NotATestKeyError, declaredReplies, loadManifest, testKeyProblem, resolveFixedClock, type ApprovalMode, type ChannelName } from "@codespar/agent-core";
+import { CORE_STRINGS, NotATestKeyError, WHATSAPP_LANGUAGE, declaredReplies, loadManifest, parseLocale, resolveLocale, testKeyProblem, resolveFixedClock, type ApprovalMode, type ChannelName, type Locale } from "@codespar/agent-core";
 import { join } from "node:path";
 import type { Agent } from "../agent.js";
 import type { RailKind } from "../kit.js";
@@ -40,6 +40,8 @@ interface Args {
   conversation?: string;
   /** Replay the conversation's turns instead of reading them from the keyboard. */
   scripted: boolean;
+  /** The language of what the code prints; absent means agent.yaml's `locale`, else pt-BR. */
+  locale?: Locale;
   help: boolean;
 }
 
@@ -92,6 +94,7 @@ export function parseArgs(argv: string[], awaitsPayer: boolean): Args {
       args.backend = v;
     } else if (a === "--conversation") args.conversation = next();
     else if (a === "--scripted") args.scripted = true;
+    else if (a === "--locale") args.locale = parseLocale(next());
     else if (a === "--help" || a === "-h") args.help = true;
     else throw new Error(`unknown argument ${a}`);
   }
@@ -113,6 +116,8 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     return 0;
   }
   const say = (line: string) => stderr.write(line + "\n");
+  // Fixed for the run, and for a conversation: the proposal and its approval are asked in the same language.
+  const locale = resolveLocale(args.locale, loadManifest(join(agent.dir, "agent.yaml")).manifest);
 
   // A pinned instant makes the guardrails deterministic: the CI runs the fixture inside the declared hours whatever the hour is.
   let now: (() => Date) | undefined;
@@ -131,7 +136,7 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     return 1;
   }
 
-  if (args.scenario) return runScenarioCommand(agent, args, railKind, say);
+  if (args.scenario) return runScenarioCommand(agent, args, railKind, locale, say);
 
   // A channel is a conversation, so the flags a one-shot and a scenario pack use have no meaning on one.
   if (args.channel === "whatsapp" && (args.input !== undefined || args.scenario !== undefined)) {
@@ -148,7 +153,7 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
   }
 
   if (agent.kit.ensureMandate) {
-    const ok = await agent.kit.ensureMandate({ agentDir: agent.dir, argv, say, railKind, oneShot: args.input !== undefined, ask: defaultAsk });
+    const ok = await agent.kit.ensureMandate({ agentDir: agent.dir, argv, locale, say, railKind, oneShot: args.input !== undefined, ask: defaultAsk });
     if (!ok) return 1;
   }
 
@@ -160,9 +165,9 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     say(err instanceof Error ? err.message : String(err));
     return 2;
   }
-  // A first turn that is a TAP is looked up by the intent the tap stands for, which is what the model is handed.
+  // A first turn that is a TAP is looked up by the intent the tap stands for in the run's language, which is what the model is handed.
   const firstTurn = args.scripted ? conversationScript?.turns[0] : undefined;
-  const firstInput = args.input ?? firstTurn?.text ?? (firstTurn?.reply ? declaredReplies(loadTemplates(agent)).get(firstTurn.reply.id)?.intent : undefined);
+  const firstInput = args.input ?? firstTurn?.text ?? (firstTurn?.reply ? declaredReplies(loadTemplates(agent), WHATSAPP_LANGUAGE[locale]).get(firstTurn.reply.id)?.intent : undefined);
 
   // No model: replay the recorded scenario whose first turn is what the person said first.
   let transcript = args.transcript;
@@ -176,7 +181,7 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     }
   }
 
-  const s = setup(agent, { mode: args.mode, rail: railKind, provider, transcript, now, say });
+  const s = setup(agent, { mode: args.mode, rail: railKind, provider, transcript, now, say, locale });
   if (args.payer) s.payer?.behave(args.payer);
   const approver = { id: args.user ?? s.kit.labels.defaultUser, channel: "terminal" };
   const startedAt = Date.now();
@@ -219,7 +224,8 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
   }
 }
 
-async function runScenarioCommand(agent: Agent, args: Args, railKind: RailKind, say: (l: string) => void): Promise<number> {
+async function runScenarioCommand(agent: Agent, args: Args, railKind: RailKind, locale: Locale, say: (l: string) => void): Promise<number> {
+  const text = CORE_STRINGS[locale];
   const scenario = loadScenario(agent, args.scenario!);
   const picksRail = agent.kit.scenarioRail === "requested";
   const rail: RailKind = picksRail ? railKind : "stub";
@@ -238,10 +244,11 @@ async function runScenarioCommand(agent: Agent, args: Args, railKind: RailKind, 
       say: args.json ? () => undefined : say,
       ...(picksRail ? { tell: args.json ? () => undefined : (l: string) => void stdout.write(l + "\n") } : {}),
       waitSeconds: args.wait,
+      locale,
     });
     const check = checkScenario(scenario, run);
-    for (const reply of run.replies) say(`agente: ${reply}`);
-    say(check.ok ? `== ok — ${agent.settlement === "await-payer" ? (run.cycle_seconds === null ? "sem ciclo medido — " : `${run.cycle_seconds}s — `) : ""}bundle em ${relative(process.cwd(), run.bundle_dir)}` : `== FAIL: ${check.failures.join("; ")}`);
+    for (const reply of run.replies) say(text.scenarioReply(reply));
+    say(check.ok ? text.scenarioOk(agent.settlement === "await-payer" ? run.cycle_seconds : undefined, relative(process.cwd(), run.bundle_dir)) : `== FAIL: ${check.failures.join("; ")}`);
     results.push({ mode, ok: check.ok, failures: check.failures, run });
   }
   if (args.json) stdout.write(JSON.stringify({ scenario: scenario.name, ...(picksRail ? { rail } : {}), results }) + "\n");
