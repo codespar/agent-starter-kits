@@ -1,7 +1,7 @@
 /**
  * Module `batch-payout`. Section 2 of the spec, in one sentence: "um lote e
- * um laco de execucoes sob um mandato, com um `attempt_id` por chamada: uma
- * recusa nao derruba as outras, e repetir nao paga duas vezes."
+ * um laço de execuções sob um mandato, com um `attempt_id` por chamada: uma
+ * recusa não derruba as outras, e repetir não paga duas vezes."
  *
  * So a batch here is N executions, one per line, rather than one execution of
  * N items. Both shapes work — the core dispatches every attempt and names

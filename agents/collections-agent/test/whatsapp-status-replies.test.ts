@@ -151,9 +151,9 @@ describe.skipIf(!emulatorUp)("§46 on the collections-agent, against the emulato
     expect(payload.executions.map((e) => e.state)).toEqual(["settled"]);
     expect(payload.channel.taps).toEqual([{ id: "emitir_nova", turn: true }]);
     const tap = channelLog(payload.channel.log).find((l) => l["kind"] === "reply")!;
-    expect(tap).toMatchObject({ direction: "in", reply: { id: "emitir_nova", title: "Emitir nova" }, text: "quero que voce emita uma nova cobranca para o meu acordo" });
+    expect(tap).toMatchObject({ direction: "in", reply: { id: "emitir_nova", title: "Emitir nova" }, text: "quero que você emita uma nova cobrança para o meu acordo" });
     // What the MODEL was handed: the declared intent, verbatim, as the person's turn.
     const transcript = readFileSync(join(env["COLLECTIONS_RUNS_DIR"]!, payload.run_id, "transcript.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { kind: string; text?: string });
-    expect(transcript.filter((t) => t.kind === "user").map((t) => t.text)).toEqual(["quero que voce emita uma nova cobranca para o meu acordo"]);
+    expect(transcript.filter((t) => t.kind === "user").map((t) => t.text)).toEqual(["quero que você emita uma nova cobrança para o meu acordo"]);
   });
 });

@@ -3,7 +3,7 @@
  * `codespar_charge` hands the proposal to the engine and gets an execution in
  * `drafted` (then whatever the core decided); it cannot issue anything.
  * `list_agreements` is a read. The real call (`POST /v1/charges`, one
- * cobranca com vencimento per instalment, `idempotency_key` per attempt) is
+ * cobrança com vencimento per instalment, `idempotency_key` per attempt) is
  * built by the rail from the execution the core approved.
  */
 import type { Locale, ToolHandler } from "@codespar/agent-core";

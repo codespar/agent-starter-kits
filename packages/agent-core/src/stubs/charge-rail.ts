@@ -6,7 +6,7 @@
  * "the charge was issued" finds it again on `resume`.
  *
  * The fixture payer lives in the lookups: the first look after issuance
- * finds the instrument registered (a cobranca com vencimento answers
+ * finds the instrument registered (a cobrança com vencimento answers
  * PROCESSING at create and PENDING once the clearing house has it), the
  * second look finds what the payer did: paid (default), let it expire, or
  * nothing yet. With a real key the scenario runner calls the sandbox pay

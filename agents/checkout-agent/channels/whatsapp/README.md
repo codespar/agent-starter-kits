@@ -16,7 +16,7 @@ Two things the conversation decides, and the terminal cannot:
 - **Who is charged.** `subject` is the customer the conversation is bound to (the alias in the store's customer book). An order in this conversation is charged to that customer and to nobody else: `codespar_charge action=create` naming another customer — even one the store knows — is refused before any order exists.
 - **Who is named.** The channel refuses an outbound message that names another conversation's subject, and one that carries a CPF or a CNPJ.
 
-There is no hours rule on this channel. The collections-agent has one because the law sets collection hours; a store's service hours are a rule of the envelope, refused at every gate in both modes, and the agent may still answer "fora do horario" in the conversation.
+There is no hours rule on this channel. The collections-agent has one because the law sets collection hours; a store's service hours are a rule of the envelope, refused at every gate in both modes, and the agent may still answer "fora do horário" in the conversation.
 
 ```sh
 npm run whatsapp:emulator                                                                   # terminal 1, at the repo root

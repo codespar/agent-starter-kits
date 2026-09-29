@@ -1,6 +1,6 @@
 /**
  * The CodeSpar receivable rail: the merchant COLLECTS. `pay()` issues a
- * cobranca com vencimento through `POST /v1/charges` (the REST form of the
+ * cobrança com vencimento through `POST /v1/charges` (the REST form of the
  * `codespar_charge` meta-tool, action=create): `method: "boleto"` plus a
  * `due_date` is what makes it ONE receivable the payer settles either by
  * boleto or by Pix; `idempotency_key` is REQUIRED on that create and is our

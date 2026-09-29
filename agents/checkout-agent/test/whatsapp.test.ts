@@ -126,7 +126,7 @@ describe.skipIf(!emulatorUp)("§46: a tap is a turn on the checkout-agent too", 
     const p = JSON.parse(out.stdout.split("\n").filter(Boolean).pop()!) as { channel: { taps: unknown[]; log: string } };
     expect(p.channel.taps).toEqual([{ id: "falar_agora", turn: true }]);
     const tap = conversationOf(p as unknown as Payload).find((l) => l.kind === "reply") as ChannelLine & { reply?: { id: string } };
-    expect(tap.text).toBe("quero saber qual e a atualizacao do meu atendimento");
+    expect(tap.text).toBe("quero saber qual é a atualização do meu atendimento");
   });
 });
 

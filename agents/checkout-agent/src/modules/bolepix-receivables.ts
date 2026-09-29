@@ -2,7 +2,7 @@
  * Module `bolepix-receivables`, the sales version: the `codespar_charge`
  * handler. A copy of the collections-agent's module in its bones (agents do
  * not import each other's modules, OPEN_QUESTIONS §39f) and different in what
- * it charges: an ORDER, one cobranca com vencimento whose amount is the
+ * it charges: an ORDER, one cobrança com vencimento whose amount is the
  * cart's total as the code priced it, due today (checkout decision 1).
  *
  * Three actions, because ordering and issuing are two moments of a sale:

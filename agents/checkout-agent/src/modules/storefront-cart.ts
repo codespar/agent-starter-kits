@@ -172,9 +172,9 @@ export function makeCartHandlers(deps: CartDeps): Record<string, ToolHandler> {
     })),
     policy: {
       service_hours: deps.envelope.service_hours,
-      payment: "bolepix (cobranca com vencimento): paga por Pix ou por boleto, vence hoje",
-      discounts: "so dentro da politica da loja, aplicada pelo codigo; o que estiver fora e recusado. Cupom: so os da tabela da loja, informados pelo cliente.",
-      prices: "sempre os do catalogo; nenhuma ferramenta aceita preco",
+      payment: "bolepix (cobrança com vencimento): paga por Pix ou por boleto, vence hoje",
+      discounts: "só dentro da política da loja, aplicada pelo código; o que estiver fora é recusado. Cupom: só os da tabela da loja, informados pelo cliente.",
+      prices: "sempre os do catálogo; nenhuma ferramenta aceita preço",
     },
   });
 
