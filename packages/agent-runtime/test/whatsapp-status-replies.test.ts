@@ -121,6 +121,32 @@ describe("1. a status webhook is read, and a failed outcome is an outcome not to
     expect(failed.map((l) => l.about)).toEqual([{ execution_id: "exe_2", state: "settled" }]);
   });
 
+  it("a delivered that lands AFTER the failed does not un-fail the message, and a late sent does not rewind a read (#63)", async () => {
+    // The emulator's own order when a failure is posted while the send is still dispatching its sent/delivered webhooks.
+    class Interleaved extends Scripted {
+      override async deliver(to: string, body: OutboundBody): Promise<SentMessage> {
+        const sent = await super.deliver(to, body);
+        this.report({ message_id: sent.id, status: "sent", timestamp: 1, errors: [] });
+        this.report({ message_id: sent.id, status: "failed", timestamp: 2, errors: [{ code: 131026 }] });
+        this.report({ message_id: sent.id, status: "delivered", timestamp: 2, errors: [] });
+        return sent;
+      }
+    }
+    const backend = new Interleaved();
+    const failed: ChannelLogLine[] = [];
+    const ch = new WhatsAppChannel({ backend, conversation: { contact: CONTACT }, now: () => NOW, templates: TEMPLATES, onDeliveryFailed: (l) => failed.push(l) });
+    await ch.open();
+    const sent = await ch.send({ kind: "template", template: "acordo_quitado", language: "pt_BR", variables: ["acordo-1042"], about: { execution_id: "exe_3", state: "settled" } });
+    expect(ch.deliveryOf(sent.id)).toBe("failed");
+    expect(failed.map((l) => l.about)).toEqual([{ execution_id: "exe_3", state: "settled" }]);
+    // Every status is still in the conversation's log, in the order it arrived.
+    expect(ch.log().filter((l) => l.direction === "status").map((l) => l.state)).toEqual(["sent", "failed", "delivered"]);
+
+    backend.report({ message_id: "wamid.other", status: "read", timestamp: 3, errors: [] });
+    backend.report({ message_id: "wamid.other", status: "sent", timestamp: 1, errors: [] });
+    expect(ch.deliveryOf("wamid.other")).toBe("read");
+  });
+
   it("a status about a message an EARLIER run sent is tied back to the outcome that run recorded", async () => {
     const prior: ChannelLogLine = { at: NOW.toISOString(), direction: "out", contact: "+55*****4321", kind: "template", message_id: "wamid.old", state: "sent", about: { execution_id: "exe_old", state: "settled" } };
     const backend = new Scripted();
