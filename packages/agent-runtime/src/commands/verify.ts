@@ -18,8 +18,9 @@
  * party, payee unmasked; checked with no credential at all — or a copy from a
  * run's `runs/<run-id>/receipts/`, which masks the payee and carries none of
  * the links. A copy reaches check 2 only with `--from-api`: the tenant's
- * `CODESPAR_API_KEY` (the environment, or the `.env` of the agent the copy
- * sits in) reads the receipt from the API, in memory, and nothing unmasked is
+ * `CODESPAR_API_KEY`, against the deployment `CODESPAR_API_URL` names (each
+ * from the environment, or else from the `.env` of the agent the copy sits
+ * in), reads the receipt from the API, in memory, and nothing unmasked is
  * written anywhere. Without it a copy answers `signature_only`, which is the
  * truth about what a masked copy can prove. The approval artifact of a copy
  * is the one its `approval_id` names in the run's own `approval.json`.
@@ -114,7 +115,7 @@ export async function verify(argv: string[]): Promise<number> {
       say(`the key set is public and needs no credential; its default is ${DEFAULT_RECEIPT_KEYS_URL}`);
       say("--keys reads a saved copy of that document instead, so the check runs with no network at all");
       say("the receipt file is the API's read (GET /v1/consumers/receipts/{id}), whose body is recomputed against the signed chain, or a run's copy, which proves the signature only");
-      say("--from-api reads a run's copy from the API with CODESPAR_API_KEY (in memory, nothing written), so its body and its approval are checked too; the key set then defaults to that deployment's");
+      say("--from-api reads a run's copy from the API with CODESPAR_API_KEY (in memory, nothing written), so its body and its approval are checked too; the key set then defaults to that deployment's. CODESPAR_API_KEY and CODESPAR_API_URL come from the environment, or else from the .env of the agent the copy sits in");
       say("--approval holds a v4 receipt's sealed approval link against an approval artifact (a run's copy uses its own approval.json)");
       return 0;
     } else if (a.startsWith("-")) {
@@ -144,6 +145,13 @@ export async function verify(argv: string[]): Promise<number> {
   const receipt = readJson(args.receiptFile, say);
   if (receipt === undefined) return 2;
 
+  // Before the deployment is chosen, not only before the key is read: a
+  // staging key in that `.env` sits next to the staging URL, and a read sent
+  // to production with it is a 401 (#66). Only `--from-api` touches it; the
+  // other paths are the verifier who holds nothing.
+  const agentDir = args.fromApi ? findAgentDir(dirname(resolve(args.receiptFile))) : undefined;
+  if (agentDir) readDotEnv(agentDir);
+
   // The read and the key set must come from ONE deployment: the recipe that
   // binds the body is the key document's, and a staging read checked under
   // production's document is the §47 trap again.
@@ -166,14 +174,14 @@ export async function verify(argv: string[]): Promise<number> {
     if (keysDocument === undefined) return 2;
   }
 
-  const report = await check(receipt, args, apiBase, approval, keysDocument);
+  const report = await check(receipt, args, apiBase, agentDir, approval, keysDocument);
   if (args.json) stdout.write(JSON.stringify(report) + "\n");
   else stdout.write(render(report));
   say(report.message);
   return VERDICT_EXIT_CODES[report.verdict];
 }
 
-async function check(receipt: unknown, args: Args, apiBase: string, approval: ApprovalClaim | undefined, keysDocument: unknown): Promise<ReceiptVerification> {
+async function check(receipt: unknown, args: Args, apiBase: string, agentDir: string | undefined, approval: ApprovalClaim | undefined, keysDocument: unknown): Promise<ReceiptVerification> {
   // Answered before the network is touched, as before: an unsigned or
   // malformed file needs no key set, and fetching one to check a signature
   // that is not there would turn an offline answer into an outage.
@@ -207,7 +215,7 @@ async function check(receipt: unknown, args: Args, apiBase: string, approval: Ap
     return signatureOnly(signature, "read_required", "this is a run's copy, which masks the payee and carries none of the chain's links. Recompute from the API's read: run this again with --from-api (the tenant's key, read-only, nothing written), or verify the read itself");
   }
 
-  const read = await readFromApi(signed.fields.receipt_id, args.receiptFile!, apiBase);
+  const read = await readFromApi(signed.fields.receipt_id, apiBase, agentDir);
   if (!read.ok) return signatureOnly(signature, "read_unavailable", `the API's read of it could not be fetched (${read.detail}), so nothing is proved and nothing is disproved about the body`);
   const differs = copyDisagreesWithRead(receipt as Record<string, unknown>, read.body);
   if (differs.includes("chain")) {
@@ -234,12 +242,11 @@ function unreachable(receiptId: string, label: string, message: string): Receipt
 /**
  * The receipt as the API reads it, for a copy, with the tenant's key. The key
  * is the environment's, or the `.env` of the agent the copy sits in — the
- * same place `npm start` reads it from — and only a `csk_test_` key is
- * accepted, like everywhere else in this repository.
+ * same place `npm start` reads it from, loaded by `verify` before it chose
+ * `apiBase` — and only a `csk_test_` key is accepted, like everywhere else in
+ * this repository.
  */
-async function readFromApi(receiptId: string, receiptFile: string, apiBase: string): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; detail: string }> {
-  const agentDir = findAgentDir(dirname(resolve(receiptFile)));
-  if (agentDir) readDotEnv(agentDir);
+async function readFromApi(receiptId: string, apiBase: string, agentDir: string | undefined): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; detail: string }> {
   try {
     const api = createCodeSparClient({ apiKey: process.env["CODESPAR_API_KEY"], baseUrl: apiBase, projectId: process.env["CODESPAR_PROJECT_ID"], timeoutMs: 15_000 });
     const body: unknown = await api.get("/v1/consumers/receipts/{id}", { path: { id: receiptId } });

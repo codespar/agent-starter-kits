@@ -39,10 +39,9 @@ Notes:
 - Run the consent before `npm start -- --input ...`. The one-shot form refuses to run without a signed mandate; the interactive `npm start` offers the consent on its own.
 - Using a staging key? Uncomment `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` first.
 
-Check the receipt against the API (key read from `.env`, never printed):
+Check the receipt against the API (the key and a staging `CODESPAR_API_URL` are read from the agent's `.env`, never printed; an exported variable wins over the file):
 
 ```sh
-set -a; . agents/bills-agent/.env; set +a
 npm run verify -- agents/bills-agent/runs/<run-id>/receipts/rcpt_....json --from-api   # expect VERIFIED, then payment: sandbox true, money_moved false
 ```
 

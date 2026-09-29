@@ -27,10 +27,9 @@ The run ends with `recibo: runs/<run-id>/receipts/rcpt_....json`. Last timed run
 - `npm start` and `npm run consent` at the root drive this agent. Inside `agents/bills-agent` the same scripts work once the root is installed.
 - Scaffold instead of cloning: `npx -y @codespar/cli@0.18.0 init my-agent --template bills-agent`, then the same `.env`, install and consent inside `my-agent/`.
 
-Check the receipt against the API, from the repository root (the key and a staging `CODESPAR_API_URL` come from `.env`, never printed):
+Check the receipt against the API, from the repository root (the key and a staging `CODESPAR_API_URL` come from this agent's `.env`, never printed; an exported variable wins over the file):
 
 ```sh
-set -a; . agents/bills-agent/.env; set +a
 npm run verify -- agents/bills-agent/runs/<run-id>/receipts/rcpt_....json --from-api   # expect VERIFIED, then payment: sandbox true, money_moved false
 ```
 
