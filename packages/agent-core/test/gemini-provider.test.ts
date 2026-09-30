@@ -111,3 +111,22 @@ describe("GeminiRuntime", () => {
     expect(JSON.stringify(bodies[1])).toContain("sig-xyz");
   });
 });
+
+describe("withRetry", () => {
+  it("retries 429 and 503, then returns", async () => {
+    const { withRetry } = await import("../src/providers/gemini.js");
+    let n = 0;
+    const out = await withRetry(async () => { n++; if (n < 3) throw Object.assign(new Error("busy"), { status: n === 1 ? 429 : 503 }); return "ok"; }, [1, 1, 1], async () => {});
+    expect(out).toBe("ok");
+    expect(n).toBe(3);
+  });
+  it("does not retry a 400 and gives up after the last delay", async () => {
+    const { withRetry } = await import("../src/providers/gemini.js");
+    let n = 0;
+    await expect(withRetry(async () => { n++; throw Object.assign(new Error("bad"), { status: 400 }); }, [1, 1], async () => {})).rejects.toThrow("bad");
+    expect(n).toBe(1);
+    let m = 0;
+    await expect(withRetry(async () => { m++; throw Object.assign(new Error("busy"), { status: 429 }); }, [1, 1], async () => {})).rejects.toThrow("busy");
+    expect(m).toBe(3);
+  });
+});

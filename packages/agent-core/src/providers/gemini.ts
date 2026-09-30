@@ -36,14 +36,15 @@ export class GeminiRuntime implements AgentRuntime {
   }
 
   async step(input: Turn, tools: ToolSpec[]): Promise<ToolCall[] | Reply> {
-    const response = await this.client.models.generateContent({
+    const request = {
       model: this.model,
       contents: toGeminiContents(input.messages, this.modelTurns),
       config: {
         systemInstruction: input.system,
         tools: [{ functionDeclarations: tools.map(toGeminiDeclaration) }],
       },
-    });
+    };
+    const response = await withRetry(() => this.client.models.generateContent(request));
     const content = response.candidates?.[0]?.content;
     const calls: ToolCall[] = [];
     const text: string[] = [];
@@ -112,4 +113,24 @@ export function toGeminiContents(messages: ConversationMessage[], modelTurns: Re
     }
   }
   return out;
+}
+
+/**
+ * Rate limits and overload (429, 500, 503) are the model's availability, not a
+ * decision: wait and ask again, a bounded number of times, then let the error
+ * surface. Nothing about money is retried here; this only repeats a model call.
+ */
+export const RETRY_DELAYS_MS = [2_000, 6_000, 15_000, 30_000];
+const RETRYABLE = new Set([429, 500, 503]);
+
+export async function withRetry<T>(call: () => Promise<T>, delays: number[] = RETRY_DELAYS_MS, sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call();
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      if (status === undefined || !RETRYABLE.has(status) || attempt >= delays.length) throw err;
+      await sleep(delays[attempt] ?? 0);
+    }
+  }
 }
