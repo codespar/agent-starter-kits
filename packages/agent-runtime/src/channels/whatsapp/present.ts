@@ -79,7 +79,9 @@ export function instrumentBodies(execution: Execution, instalment: number, charg
 function orderCard(amount: number, description: string | undefined, instalment: string | undefined, chargeId: string, instrument: ChargeInstrument, currency: string, locale: Locale): OutboundBody {
   const pt = locale !== "en";
   const due = instrument.due_date ? formatDay(instrument.due_date, locale) : undefined;
-  const item = (instalment ? `${instalment} · ` : "") + (description?.trim() || (pt ? "Acordo" : "Agreement"));
+  // "parcela 1/1" is not an instalment: a single payment reads as the agreement itself.
+  const named = description?.replace(/\s*[-–—·,]?\s*(?:parcela|instalment)\s*1\/1\b/i, "").trim();
+  const item = (instalment ? `${instalment} · ` : "") + (named || (pt ? "Acordo" : "Agreement"));
   const lines = [
     pt ? "Segue a cobrança do seu acordo." : "Here is the charge for your agreement.",
     due ? (pt ? `Vencimento: *${due}*` : `Due: *${due}*`) : "",

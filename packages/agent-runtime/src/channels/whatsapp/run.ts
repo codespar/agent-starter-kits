@@ -65,6 +65,7 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
   const { setup: s, channel, approver, say } = options;
   const outbox = new Outbox(channel);
   let toldOutcome = false;
+  let toldThisTurn = false;
   const replies: string[] = [];
   const toolCalls: Array<{ name: string; refused: boolean }> = [];
   let turns = 0;
@@ -80,7 +81,7 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
     approver,
     say,
     tell: (line: string, about?: Execution) => {
-      if (about) toldOutcome = true;
+      if (about) toldOutcome = toldThisTurn = true;
       outbox.push({ kind: "text", text: line, ...(about ? { about: { execution_id: about.id, state: about.state } } : {}) });
     },
     presentInstrument,
@@ -104,11 +105,13 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
       const message = await channel.next();
       if (!message) break;
       turns += 1;
+      toldThisTurn = false;
       const result = await loop.turn(message.text);
       toolCalls.push(...result.tool_calls);
       // Whatever the execution put in the conversation goes first: the QR before the sentence that explains it.
       await outbox.drain();
-      if (result.reply.trim()) await channel.say(result.reply);
+      // Rich mode: when the code already told the outcome this turn, the model's paraphrase of it stays in the record and off the chat.
+      if (result.reply.trim() && !(richWhatsApp() && toldThisTurn)) await channel.say(result.reply);
       replies.push(result.reply);
     }
     await outbox.drain();
