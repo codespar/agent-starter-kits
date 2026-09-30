@@ -59,6 +59,7 @@ const pt = {
   waBanner: (name: string, version: string, backend: string, mode: string, rail: string, mandateWord: string, mandateId: string) =>
     `${name} ${version} — canal: whatsapp (${backend}) — approval: ${mode} — trilho: ${rail} — ${mandateWord} ${mandateId}`,
   waTapIgnored: (rule: string, detail: string) => `  [whatsapp] toque ignorado (${rule}): ${detail}`,
+  waChoseOption: (title: string) => `escolho a opção "${title}"`,
   waRefused: (rule: string, detail: string) => `  [whatsapp] recusado (${rule}): ${detail}`,
   waRefusedByBackend: (rule: string, detail: string) => `  [whatsapp] recusado pelo backend (${rule}): ${detail}`,
   waDeliveryFailed: (messageId: string, codes: string, told: string | undefined) =>
@@ -131,6 +132,7 @@ const en: CoreStrings = {
 
   waBanner: (name, version, backend, mode, rail, mandateWord, mandateId) => `${name} ${version} — channel: whatsapp (${backend}) — approval: ${mode} — rail: ${rail} — ${mandateWord} ${mandateId}`,
   waTapIgnored: (rule, detail) => `  [whatsapp] tap ignored (${rule}): ${detail}`,
+  waChoseOption: (title) => `I choose the option "${title}"`,
   waRefused: (rule, detail) => `  [whatsapp] refused (${rule}): ${detail}`,
   waRefusedByBackend: (rule, detail) => `  [whatsapp] refused by the backend (${rule}): ${detail}`,
   waDeliveryFailed: (messageId, codes, told) => `  [operator] DELIVERY FAILED for message ${messageId} (${codes})${told ? ` — it told ${told}: the person was NOT told` : ""}`,

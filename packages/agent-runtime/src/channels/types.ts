@@ -96,6 +96,12 @@ export type OutboundBody =
    * Pix copy-and-paste and the boleto line inside the sheet it opens. The
    * payable strings travel as structured fields, never as prose.
    */
+  /**
+   * A message with WhatsApp reply buttons (Cloud API interactive `button`, at
+   * most three, titles of at most 20 characters). The options are the model's
+   * words; what a tap means is fixed by the channel when it sends them.
+   */
+  | { kind: "buttons"; text: string; options: Array<{ id: string; title: string }> }
   | {
       kind: "order";
       reference: string;

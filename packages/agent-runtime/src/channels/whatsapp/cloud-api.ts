@@ -298,6 +298,19 @@ export function buildSendRequest(config: CloudApiConfig, to: string, body: Outbo
       };
     case "media":
       return { unsupported: "media_upload_unimplemented" };
+    case "buttons":
+      return {
+        ...base,
+        body: JSON.stringify({
+          ...recipient,
+          type: "interactive",
+          interactive: {
+            type: "button",
+            body: { text: toWhatsAppText(body.text) },
+            action: { buttons: body.options.map((o) => ({ type: "reply", reply: { id: o.id, title: o.title } })) },
+          },
+        }),
+      };
     case "order": {
       const money = { value: body.amountMinor, offset: 100 };
       const settings = [

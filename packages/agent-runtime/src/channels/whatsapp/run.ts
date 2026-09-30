@@ -19,7 +19,7 @@ import type { ChargeInstrument, Execution } from "@codespar/agent-core";
 import { handleExecution, type TerminalOptions } from "../../terminal.js";
 import type { Setup } from "../../setup.js";
 import type { OutboundBody } from "../types.js";
-import { instrumentBodies, richWhatsApp, WHATSAPP_STYLE } from "./present.js";
+import { instrumentBodies, offerFromReply, richWhatsApp, WHATSAPP_STYLE } from "./present.js";
 import { statusGraceMs } from "./open.js";
 import type { WhatsAppChannel } from "./index.js";
 
@@ -111,7 +111,10 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
       // Whatever the execution put in the conversation goes first: the QR before the sentence that explains it.
       await outbox.drain();
       // Rich mode: when the code already told the outcome this turn, the model's paraphrase of it stays in the record and off the chat.
-      if (result.reply.trim() && !(richWhatsApp() && toldThisTurn)) await channel.say(result.reply);
+      if (result.reply.trim() && !(richWhatsApp() && toldThisTurn)) {
+        if (richWhatsApp()) await channel.send(offerFromReply(result.reply));
+        else await channel.say(result.reply);
+      }
       replies.push(result.reply);
     }
     await outbox.drain();

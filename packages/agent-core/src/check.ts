@@ -136,7 +136,8 @@ export function checkAgent(agentDir: string): CheckReport {
     else {
       // A scripted tap must be one a declared template offers: the channel drops any other, so the script would test nothing.
       for (const turn of parsed.data.turns) {
-        if (turn.reply && !replies.has(turn.reply.id)) error("channels_script_invalid", `channels/whatsapp/${file} taps ${turn.reply.id}, which no template in ${TEMPLATE_REGISTRY_FILE} offers`);
+        // opcao_1..3 are the reply buttons the agent itself offers in the rich WhatsApp mode; the channel checks the tap against the message that offered them.
+        if (turn.reply && !replies.has(turn.reply.id) && !/^opcao_[1-3]$/.test(turn.reply.id)) error("channels_script_invalid", `channels/whatsapp/${file} taps ${turn.reply.id}, which no template in ${TEMPLATE_REGISTRY_FILE} offers`);
       }
     }
   }

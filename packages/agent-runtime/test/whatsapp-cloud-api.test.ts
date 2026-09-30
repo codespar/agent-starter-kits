@@ -311,3 +311,35 @@ describe("rich WhatsApp: ids never reach the person, and the charge is WhatsApp'
     expect(sent.interactive.body.text).not.toMatch(/chg_/);
   });
 });
+
+describe("rich WhatsApp: the model's choices become reply buttons, within WhatsApp's limits", () => {
+  it("turns a trailing [[opções: …]] line into buttons with stable ids", async () => {
+    const { offerFromReply } = await import("../src/channels/whatsapp/present.js");
+    expect(offerFromReply("Consigo *R$ 1.020,00* à vista hoje.\n[[opções: À vista R$ 1.020 | Parcelar em 3x]]")).toEqual({
+      kind: "buttons",
+      text: "Consigo *R$ 1.020,00* à vista hoje.",
+      options: [
+        { id: "opcao_1", title: "À vista R$ 1.020" },
+        { id: "opcao_2", title: "Parcelar em 3x" },
+      ],
+    });
+  });
+
+  it("writes the choices out as text when WhatsApp could not show them as buttons", async () => {
+    const { offerFromReply } = await import("../src/channels/whatsapp/present.js");
+    const long = offerFromReply("Qual prefere?\n[[opções: Pagamento à vista com desconto | 3x]]");
+    expect(long).toEqual({ kind: "text", text: "Qual prefere?\n• Pagamento à vista com desconto\n• 3x" });
+    expect(offerFromReply("Sem opções aqui.")).toEqual({ kind: "text", text: "Sem opções aqui." });
+  });
+
+  it("sends them as an interactive button message", async () => {
+    const { buildSendRequest } = await import("../src/channels/whatsapp/cloud-api.js");
+    const req = buildSendRequest({ baseUrl: "http://x", apiVersion: "v22.0", phoneNumberId: "1", accessToken: "t" } as never, "+5511987654321", {
+      kind: "buttons",
+      text: "Qual prefere?",
+      options: [{ id: "opcao_1", title: "À vista" }],
+    });
+    const sent = JSON.parse((req as { body: string }).body);
+    expect(sent.interactive).toEqual({ type: "button", body: { text: "Qual prefere?" }, action: { buttons: [{ type: "reply", reply: { id: "opcao_1", title: "À vista" } }] } });
+  });
+});

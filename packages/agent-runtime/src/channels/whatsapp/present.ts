@@ -29,6 +29,7 @@ This conversation is on WhatsApp, and the person reads it on a phone. These rule
 
 - Write like someone from the store on WhatsApp: short messages of two to four lines, plain sentences, no headings, no tables. Bold uses single asterisks (*R$ 1.020,00*), never double.
 - Never write an id of any kind (charge, execution, mandate, run), a tool name, a reason code or your own name. Ids stay in the record, not in the chat.
+- When you offer the person a choice (pay in full or in instalments, yes or no), put the choices on the LAST line as \`[[opções: first | second]]\`, two or three of them, each at most 20 characters, the pay-in-full choice first. They become WhatsApp reply buttons; do not also list them in the text.
 - The payment card (with the Pix code and the boleto) and the payment confirmation are sent by the system. Do not describe the codes, and when the tool result says \`paid: true\` do not repeat the confirmation: close in one short friendly line.`;
 
 export interface PresentOptions {
@@ -125,4 +126,20 @@ function emv(payload: string): Map<string, string> {
     i += 4 + len;
   }
   return out;
+}
+
+/**
+ * The model's reply split into text and reply buttons, when it ends with
+ * `[[opções: a | b]]`. WhatsApp takes at most three buttons of at most 20
+ * characters; an offer outside that is sent as text, with the choices written
+ * out, instead of being cut.
+ */
+export function offerFromReply(reply: string): OutboundBody {
+  const match = /\n?[ \t]*\[\[\s*(?:op[çc][õo]es|options|bot[õo]es)\s*:\s*([^\]]+)\]\][ \t]*$/i.exec(reply.trimEnd());
+  if (!match) return { kind: "text", text: reply };
+  const text = reply.trimEnd().slice(0, match.index).trimEnd();
+  const titles = match[1]!.split("|").map((t) => t.trim()).filter(Boolean);
+  if (titles.length === 0) return { kind: "text", text };
+  if (titles.length > 3 || titles.some((t) => t.length > 20) || !text) return { kind: "text", text: [text, ...titles.map((t) => `• ${t}`)].filter(Boolean).join("\n") };
+  return { kind: "buttons", text, options: titles.map((title, i) => ({ id: `opcao_${i + 1}`, title })) };
 }
