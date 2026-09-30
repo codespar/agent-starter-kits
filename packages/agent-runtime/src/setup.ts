@@ -281,7 +281,7 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
       return CORE_STRINGS[this.locale];
     },
     makeRuntime,
-    makeLoop: (runtime, onExecution, onBatch) => new AgentLoop({ runtime, tools, handlers: s.handlers, system, bundle, engine, onExecution, ...(onBatch ? { onBatch } : {}), ...(now ? { clock: now } : {}) }),
+    makeLoop: (runtime, onExecution, onBatch) => new AgentLoop({ runtime, tools, handlers: s.handlers, system: s.system, bundle, engine, onExecution, ...(onBatch ? { onBatch } : {}), ...(now ? { clock: now } : {}) }),
     close: () => store.close(),
   };
   s.handlers = agent.kit.handlers(s);

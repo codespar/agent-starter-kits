@@ -74,6 +74,8 @@ export function proseOf(body: OutboundBody): string[] {
       return body.variables;
     case "instrument":
       return [];
+    case "order":
+      return [body.body, body.item, ...(body.footer ? [body.footer] : [])];
   }
 }
 

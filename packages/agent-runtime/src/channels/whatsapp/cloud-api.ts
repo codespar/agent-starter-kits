@@ -224,6 +224,34 @@ function isDeliveryState(value: unknown): value is DeliveryState {
   return value === "sent" || value === "delivered" || value === "read" || value === "failed";
 }
 
+/**
+ * Models write Markdown; WhatsApp does not render it. `**bold**` arrives as literal
+ * asterisks around a bold word, so the double markers become WhatsApp's single ones.
+ * Only the agent's free text goes through this: payment codes are sent verbatim.
+ */
+export function toWhatsAppText(text: string): string {
+  return text.replace(/\*\*(\S(?:[^*\n]*\S)?)\*\*/g, "*$1*").replace(/__(\S(?:[^_\n]*\S)?)__/g, "_$1_");
+}
+
+/**
+ * The person never reads our plumbing. Charge, execution, mandate and run ids
+ * are for the operator and the record; in a chat they are noise, and a model
+ * that copies one into its reply has to be stopped by code, not by a prompt.
+ * A parenthesis or a "— cobrança <id>" tail that only carried an id goes whole.
+ */
+const INTERNAL_ID = /\b(?:chg|exec|cm|run|pol|mandate|wamid|att|rcpt)_[A-Za-z0-9_.-]{4,}/;
+export function redactInternalIds(text: string): string {
+  if (!INTERNAL_ID.test(text)) return text;
+  const g = new RegExp(INTERNAL_ID.source, "g");
+  return text
+    .replace(new RegExp(`\\s*\\((?:[^()]*?)${INTERNAL_ID.source}[^()]*\\)`, "g"), "")
+    .replace(new RegExp(`\\s*[—–-]\\s*(?:cobrança|charge|id)\\s*:?\\s*${INTERNAL_ID.source}`, "gi"), "")
+    .replace(g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([.,!?])/g, "$1")
+    .trim();
+}
+
 export interface SendRequest {
   url: string;
   method: "POST";
@@ -252,7 +280,7 @@ export function buildSendRequest(config: CloudApiConfig, to: string, body: Outbo
   const recipient = { messaging_product: "whatsapp", recipient_type: "individual", to: toGraphNumber(to) };
   switch (body.kind) {
     case "text":
-      return { ...base, body: JSON.stringify({ ...recipient, type: "text", text: { preview_url: false, body: body.text } }) };
+      return { ...base, body: JSON.stringify({ ...recipient, type: "text", text: { preview_url: false, body: toWhatsAppText(body.text) } }) };
     case "instrument":
       return { ...base, body: JSON.stringify({ ...recipient, type: "text", text: { preview_url: false, body: body.value } }) };
     case "template":
@@ -270,6 +298,37 @@ export function buildSendRequest(config: CloudApiConfig, to: string, body: Outbo
       };
     case "media":
       return { unsupported: "media_upload_unimplemented" };
+    case "order": {
+      const money = { value: body.amountMinor, offset: 100 };
+      const settings = [
+        ...(body.pix ? [{ type: "pix_dynamic_code", pix_dynamic_code: { code: body.pix.code, merchant_name: body.pix.merchantName, key: body.pix.key, key_type: body.pix.keyType } }] : []),
+        ...(body.boleto ? [{ type: "boleto", boleto: { digitable_line: body.boleto } }] : []),
+      ];
+      return {
+        ...base,
+        body: JSON.stringify({
+          ...recipient,
+          type: "interactive",
+          interactive: {
+            type: "order_details",
+            body: { text: toWhatsAppText(body.body) },
+            ...(body.footer ? { footer: { text: body.footer } } : {}),
+            action: {
+              name: "review_and_pay",
+              parameters: {
+                reference_id: body.reference,
+                type: "digital-goods",
+                payment_type: "br",
+                payment_settings: settings,
+                currency: body.currency,
+                total_amount: money,
+                order: { status: "pending", items: [{ retailer_id: body.reference, name: body.item, amount: money, quantity: 1 }], subtotal: money },
+              },
+            },
+          },
+        }),
+      };
+    }
   }
 }
 

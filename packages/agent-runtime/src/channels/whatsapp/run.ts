@@ -19,7 +19,7 @@ import type { ChargeInstrument, Execution } from "@codespar/agent-core";
 import { handleExecution, type TerminalOptions } from "../../terminal.js";
 import type { Setup } from "../../setup.js";
 import type { OutboundBody } from "../types.js";
-import { instrumentBodies } from "./present.js";
+import { instrumentBodies, richWhatsApp, WHATSAPP_STYLE } from "./present.js";
 import { statusGraceMs } from "./open.js";
 import type { WhatsAppChannel } from "./index.js";
 
@@ -70,7 +70,7 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
   let turns = 0;
 
   const presentInstrument = (execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument): Promise<void> => {
-    for (const body of instrumentBodies(execution, instalment, chargeId, instrument, s.mandate.currency, s.locale)) outbox.push(body);
+    for (const body of instrumentBodies(execution, instalment, chargeId, instrument, s.mandate.currency, s.locale, { orderDetails: richWhatsApp() })) outbox.push(body);
     // Awaited by the poll: the person has the code in hand before the next look, not after the cycle closed.
     return outbox.drain();
   };
@@ -92,6 +92,8 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
 
   // The channel is opened by the caller, which is where an emulator that is not
   // running has to be reported: by here the run has already started.
+  // The rich mode also tells the model how a WhatsApp message reads; the rules above still bind it.
+  if (richWhatsApp() && !s.system.includes(WHATSAPP_STYLE)) s.system = `${s.system}\n\n${WHATSAPP_STYLE}`;
   const runtime = s.makeRuntime();
   const loop = s.makeLoop(runtime, (execution) => handleExecution(execution, terminalOptions));
 

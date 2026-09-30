@@ -17,6 +17,8 @@ import { CORE_STRINGS, WHATSAPP_LANGUAGE, declaredReplies, type CoreStrings, typ
 import { checkOutbound, type HoursRule, type RuleContext } from "../rules.js";
 import type { Channel, ChannelBackend, ChannelLogLine, Conversation, DeliveryState, InboundMessage, OutboundBody, SentMessage, StatusUpdate } from "../types.js";
 import { maskContact } from "../contact.js";
+import { redactInternalIds, toWhatsAppText } from "./cloud-api.js";
+import { richWhatsApp } from "./present.js";
 import { SessionWindow, type SessionState } from "./session.js";
 
 /**
@@ -258,6 +260,8 @@ export class WhatsAppChannel implements Channel {
       locale: this.options.locale,
     };
 
+    // What the person reads carries no ids of ours; the log keeps the same text the person got.
+    if (body.kind === "text") body = { ...body, text: toWhatsAppText(richWhatsApp() ? redactInternalIds(body.text) : body.text) };
     // The house rules first: a message the law refuses is not a message the provider should ever see.
     const refusal = checkOutbound(to, body, ctx) ?? this.providerRefusal(body);
     if (refusal) {
@@ -362,6 +366,8 @@ function textOf(body: OutboundBody): string | undefined {
       return body.caption;
     case "template":
       return `[template ${body.template}] ${body.variables.join(" | ")}${body.buttons?.length ? ` [${body.buttons.map((b) => b.title).join("] [")}]` : ""}`;
+    case "order":
+      return `[order_details ${body.item} · ${(body.amountMinor / 100).toFixed(2)} ${body.currency}${body.pix ? " · pix" : ""}${body.boleto ? " · boleto" : ""}] ${body.body}`;
   }
 }
 
