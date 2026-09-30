@@ -58,7 +58,7 @@ function runScenario(agent, scenario) {
   const result = spawnSync(process.execPath, [BIN, "start", "--agent", agent.dir, "--scenario", scenario.name, "--json"], {
     cwd: ROOT,
     // No key of either kind: the replay provider and the stub rail are the whole world here.
-    env: { ...process.env, ANTHROPIC_API_KEY: "", CODESPAR_API_KEY: "" },
+    env: { ...process.env, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", CODESPAR_API_KEY: "" },
     encoding: "utf8",
     timeout: 180_000,
   });

@@ -22,4 +22,13 @@ describe("resolveProvider", () => {
     expect(resolveProvider({ ANTHROPIC_API_KEY: REAL_LOOKING_KEY }, "replay")).toBe("replay");
     expect(resolveProvider({}, "anthropic")).toBe("anthropic");
   });
+
+  it("picks Gemini on a Gemini key when there is no Anthropic key, and keeps Anthropic first when both are set", () => {
+    expect(resolveProvider({ GEMINI_API_KEY: "gemini-test-key" }, undefined)).toBe("gemini");
+    expect(resolveProvider({ ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "gemini-test-key" }, undefined)).toBe("gemini");
+    expect(resolveProvider({ ANTHROPIC_API_KEY: REAL_LOOKING_KEY, GEMINI_API_KEY: "gemini-test-key" }, undefined)).toBe("anthropic");
+    expect(resolveProvider({ GEMINI_API_KEY: "   " }, undefined)).toBe("replay");
+    expect(resolveProvider({ GEMINI_API_KEY: "gemini-test-key" }, "replay")).toBe("replay");
+    expect(resolveProvider({}, "gemini")).toBe("gemini");
+  });
 });
