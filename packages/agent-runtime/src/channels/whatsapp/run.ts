@@ -73,7 +73,9 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
   const presentInstrument = (execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument): Promise<void> => {
     for (const body of instrumentBodies(execution, instalment, chargeId, instrument, s.mandate.currency, s.locale, { orderDetails: richWhatsApp() })) outbox.push(body);
     // Awaited by the poll: the person has the code in hand before the next look, not after the cycle closed.
-    return outbox.drain();
+    // CODESPAR_WA_PAYER_DELAY_S (rich mode only): the person's time to open the card and pay, before the simulated payer does.
+    const pause = richWhatsApp() ? Number(process.env["CODESPAR_WA_PAYER_DELAY_S"] ?? 0) : 0;
+    return outbox.drain().then(() => (pause > 0 ? new Promise<void>((resolve) => setTimeout(resolve, pause * 1000)) : undefined));
   };
 
   const terminalOptions: TerminalOptions = {
