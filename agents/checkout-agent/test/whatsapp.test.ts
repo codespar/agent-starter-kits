@@ -39,7 +39,7 @@ function start(args: string[], extra: Record<string, string> = {}) {
     cwd: AGENT_DIR,
     env: {
       ...process.env,
-      ANTHROPIC_API_KEY: "",
+      ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "",
       CODESPAR_API_KEY: "",
       WHATSAPP_PHONE_NUMBER_ID: "",
       WHATSAPP_ACCESS_TOKEN: "",

@@ -9,6 +9,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./providers/anthropic": "./src/providers/anthropic.ts",
+    "./providers/gemini": "./src/providers/gemini.ts",
     "./providers/replay": "./src/providers/replay.ts"
   },
   "scripts": {
@@ -18,6 +19,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "0.128.0",
     "@codespar/sdk": "0.16.10",
+    "@google/genai": "2.24.0",
     "yaml": "2.9.1",
     "zod": "3.25.76"
   }

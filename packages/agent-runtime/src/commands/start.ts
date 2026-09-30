@@ -66,7 +66,7 @@ export function parseArgs(argv: string[], awaitsPayer: boolean): Args {
     else if (a === "--deny") args.decision = "deny";
     else if (a === "--provider") {
       const v = next();
-      if (v !== "anthropic" && v !== "replay") throw new Error("--provider must be anthropic or replay");
+      if (v !== "anthropic" && v !== "gemini" && v !== "replay") throw new Error("--provider must be anthropic, gemini or replay");
       args.provider = v;
     } else if (a === "--transcript") args.transcript = next();
     else if (a === "--rail") {
@@ -176,7 +176,7 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     const match = listScenarios(agent).map((n) => loadScenario(agent, n)).find((s) => s.turns[0].input === firstInput);
     if (match) transcript = resolve(scenariosDir(agent), match.transcript);
     else {
-      say(`no ANTHROPIC_API_KEY and no recorded transcript for that input. Set the key, pass --transcript, or use one of: ${listScenarios(agent).map((n) => `"${loadScenario(agent, n).turns[0].input}"`).join(", ")}`);
+      say(`no ANTHROPIC_API_KEY or GEMINI_API_KEY and no recorded transcript for that input. Set the key, pass --transcript, or use one of: ${listScenarios(agent).map((n) => `"${loadScenario(agent, n).turns[0].input}"`).join(", ")}`);
       return 1;
     }
   }

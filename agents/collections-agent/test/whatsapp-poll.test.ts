@@ -88,7 +88,7 @@ function agent(args: string[], env: Record<string, string>) {
     cwd: AGENT_DIR,
     env: {
       ...process.env,
-      ANTHROPIC_API_KEY: "",
+      ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "",
       CODESPAR_API_KEY: "",
       // A developer's own Meta credentials must not change what this suite does.
       WHATSAPP_PHONE_NUMBER_ID: "",

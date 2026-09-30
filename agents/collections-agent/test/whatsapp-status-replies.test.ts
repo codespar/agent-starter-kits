@@ -49,7 +49,7 @@ function scratch(label: string) {
   return { COLLECTIONS_STATE_DIR: stateDir, COLLECTIONS_RUNS_DIR: join(stateDir, "runs"), WHATSAPP_SIM_PHONE_NUMBER_ID: `9${String(Math.floor(Math.random() * 1e11)).padStart(11, "0")}` };
 }
 
-const baseEnv = (env: Record<string, string>) => ({ ...process.env, ANTHROPIC_API_KEY: "", CODESPAR_API_KEY: "", WHATSAPP_PHONE_NUMBER_ID: "", WHATSAPP_ACCESS_TOKEN: "", WHATSAPP_VERIFY_TOKEN: "", WHATSAPP_APP_SECRET: "", ...env });
+const baseEnv = (env: Record<string, string>) => ({ ...process.env, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", CODESPAR_API_KEY: "", WHATSAPP_PHONE_NUMBER_ID: "", WHATSAPP_ACCESS_TOKEN: "", WHATSAPP_VERIFY_TOKEN: "", WHATSAPP_APP_SECRET: "", ...env });
 
 function run(args: string[], env: Record<string, string>) {
   const r = spawnSync(NODE, [BIN, ...args], { cwd: AGENT_DIR, env: baseEnv(env), encoding: "utf8", timeout: 90_000 });
@@ -122,7 +122,7 @@ describe.skipIf(!emulatorUp)("§46 on the collections-agent, against the emulato
     // The same agent with no copy for any outcome: what a kit that never wrote one looks like to the poll.
     const bare = { ...collections, kit: { ...collections.kit, outcomeTemplate: () => undefined } };
     const saved = { ...process.env };
-    Object.assign(process.env, { ...env, COLLECTIONS_STATE_DIR: env["COLLECTIONS_STATE_DIR"], ANTHROPIC_API_KEY: "", CODESPAR_API_KEY: "" });
+    Object.assign(process.env, { ...env, COLLECTIONS_STATE_DIR: env["COLLECTIONS_STATE_DIR"], ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", CODESPAR_API_KEY: "" });
     const written: string[] = [];
     const write = process.stdout.write.bind(process.stdout);
     process.stdout.write = ((chunk: string) => (written.push(String(chunk)), true)) as typeof process.stdout.write;

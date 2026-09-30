@@ -40,7 +40,7 @@ const kit: AgentKit = {
   npm start                                         interactive terminal
   npm start -- --input "pague a escola de outubro"  one turn (add --approve/--deny to decide, --json for machine output)
   npm start -- --scenario <name>                    run a scenario pack (${"see scenarios/"})
-options: --mode human|mandate  --provider anthropic|replay  --transcript <file>  --rail stub|api  --user <id>  --json
+options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript <file>  --rail stub|api  --user <id>  --json
          --now <ISO 8601>  pin the run to that instant (escalation hours, timestamps); env CODESPAR_AGENT_NOW is the same thing
          --locale pt-BR|en  the language of what the code prints (the model answers in the language you type either way)`,
 
