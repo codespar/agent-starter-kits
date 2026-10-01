@@ -104,7 +104,7 @@ const kit: AgentKit = {
   npm start -- --channel whatsapp --conversation <name>            the conversation channel (needs npm run whatsapp:emulator at the repo root)
   npm start -- --channel whatsapp --conversation <name> --scripted the same, with the customer's turns replayed from channels/whatsapp/
   npm run poll -- --channel whatsapp --conversation <name>         back to a conversation whose payment landed after the run ended
-options: --mode human|mandate  --provider anthropic|replay  --transcript <file>  --rail stub|api  --user <id>
+options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript <file>  --rail stub|api  --user <id>
          --wait <seconds>  --simulate-payer  --payer pays|expires|never (stub only)  --json
          --now <ISO 8601>  pin the run to that instant (service hours, the due date, timestamps); env CODESPAR_AGENT_NOW is the same thing
          --locale pt-BR|en  the language of what the code prints, WhatsApp templates included (the model answers in the language the customer types either way)`,

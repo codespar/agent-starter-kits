@@ -50,7 +50,7 @@ function run(args: string[], cwd: string) {
   const result = spawnSync(process.execPath, [BIN, "verify", ...args], {
     cwd,
     // No CodeSpar key, no model key: a verifier holds nothing.
-    env: { ...process.env, CODESPAR_API_KEY: "", ANTHROPIC_API_KEY: "" },
+    env: { ...process.env, CODESPAR_API_KEY: "", ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "" },
     encoding: "utf8",
     timeout: 60_000,
   });
@@ -273,7 +273,7 @@ describe("codespar-agent verify --from-api", () => {
       const child = spawn(process.execPath, [BIN, "verify", ...args], {
         cwd,
         // Not the placeholder, which the guard refuses (#50); the underscore keeps it below the secret scan's key shape.
-        env: env ?? { ...process.env, CODESPAR_API_KEY: "csk_test_unit_0000", CODESPAR_API_URL: baseUrl, ANTHROPIC_API_KEY: "" },
+        env: env ?? { ...process.env, CODESPAR_API_KEY: "csk_test_unit_0000", CODESPAR_API_URL: baseUrl, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "" },
       });
       let stdout = "";
       let stderr = "";
@@ -346,7 +346,7 @@ describe("codespar-agent verify --from-api", () => {
   }
 
   function bareEnv(over: Record<string, string> = {}): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...process.env, ANTHROPIC_API_KEY: "", ...over };
+    const env: NodeJS.ProcessEnv = { ...process.env, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", ...over };
     for (const name of ["CODESPAR_API_KEY", "CODESPAR_API_URL", "CODESPAR_PROJECT_ID"]) if (!(name in over)) delete env[name];
     return env;
   }

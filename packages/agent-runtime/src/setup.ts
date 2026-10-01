@@ -41,6 +41,7 @@ import {
   CODESPAR_KEY_PLACEHOLDER,
 } from "@codespar/agent-core";
 import { AnthropicRuntime } from "@codespar/agent-core/providers/anthropic";
+import { GeminiRuntime } from "@codespar/agent-core/providers/gemini";
 import type { ApiClient } from "@codespar/sdk";
 import { envName, type Agent } from "./agent.js";
 import type { AgentKit, KitStrings, RailKind, SandboxPayer, Settlement } from "./kit.js";
@@ -63,7 +64,7 @@ export function envFileOf(agentDir: string, cwd: string = process.env["INIT_CWD"
   return rel === "" || rel.startsWith("..") || isAbsolute(rel) ? path : rel;
 }
 
-export type ProviderKind = "anthropic" | "replay";
+export type ProviderKind = "anthropic" | "gemini" | "replay";
 
 export function stateDirOf(agent: Agent): string {
   return join(agent.dir, ".codespar");
@@ -156,10 +157,17 @@ export function readDotEnv(agentDir: string): void {
   }
 }
 
+/**
+ * Which model runs. An explicit `--provider` wins; otherwise a real Anthropic
+ * key keeps the reference harness, a Gemini key picks Gemini, and no key
+ * replays the recorded transcript.
+ */
 export function resolveProvider(env: NodeJS.ProcessEnv, requested: ProviderKind | undefined): ProviderKind {
   if (requested) return requested;
   const key = env["ANTHROPIC_API_KEY"]?.trim();
-  return key && key !== ANTHROPIC_KEY_PLACEHOLDER ? "anthropic" : "replay";
+  if (key && key !== ANTHROPIC_KEY_PLACEHOLDER) return "anthropic";
+  if (env["GEMINI_API_KEY"]?.trim()) return "gemini";
+  return "replay";
 }
 
 export function resolveRailKind(env: NodeJS.ProcessEnv, requested: RailKind | undefined): RailKind {
@@ -233,8 +241,13 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
   const makeRuntime = (): AgentRuntime => {
     const provider = resolveProvider(env, options.provider);
     if (provider === "anthropic") return new AnthropicRuntime({ apiKey: env["ANTHROPIC_API_KEY"] });
+    if (provider === "gemini") {
+      const runtime = new GeminiRuntime({ apiKey: env["GEMINI_API_KEY"]?.trim() || undefined, model: env["GEMINI_MODEL"]?.trim() || undefined });
+      say(`[gemini] model ${runtime.model}`);
+      return runtime;
+    }
     if (!options.transcript) throw new Error("the replay provider needs a transcript (--transcript <file> or --scenario <name>)");
-    say(`[replay] no ANTHROPIC_API_KEY: replaying ${options.transcript}`);
+    say(`[replay] no ANTHROPIC_API_KEY or GEMINI_API_KEY: replaying ${options.transcript}`);
     return ReplayRuntime.fromFile(options.transcript);
   };
 

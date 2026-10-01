@@ -116,7 +116,7 @@ function agent(args, env) {
   return spawnSync(process.execPath, [BIN, ...args], {
     cwd: ROOT,
     // Neither key: the replay provider and the stub rail are the whole world, and the simulator needs no Meta account.
-    env: { ...process.env, ANTHROPIC_API_KEY: "", CODESPAR_API_KEY: "", ...env },
+    env: { ...process.env, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", CODESPAR_API_KEY: "", ...env },
     encoding: "utf8",
     timeout: 180_000,
   });

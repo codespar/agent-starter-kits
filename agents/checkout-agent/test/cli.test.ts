@@ -19,7 +19,7 @@ function run(command: string, args: string[], env: Record<string, string>) {
   const result = spawnSync(NODE, [BIN, command, ...args], {
     cwd: AGENT_DIR,
     // Pinned inside the service hours (#16): these processes must not depend on the hour the suite runs at. A test overrides it.
-    env: { ...process.env, ANTHROPIC_API_KEY: "", CODESPAR_API_KEY: "", CODESPAR_AGENT_NOW: "2026-09-23T14:00:00-03:00", ...env },
+    env: { ...process.env, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", CODESPAR_API_KEY: "", CODESPAR_AGENT_NOW: "2026-09-23T14:00:00-03:00", ...env },
     encoding: "utf8",
     timeout: 60_000,
   });
