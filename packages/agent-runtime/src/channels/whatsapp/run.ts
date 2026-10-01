@@ -19,7 +19,7 @@ import type { ChargeInstrument, Execution } from "@codespar/agent-core";
 import { handleExecution, type TerminalOptions } from "../../terminal.js";
 import type { Setup } from "../../setup.js";
 import type { OutboundBody } from "../types.js";
-import { instrumentBodies } from "./present.js";
+import { instrumentBodies, offerFromReply, richWhatsApp, WHATSAPP_STYLE } from "./present.js";
 import { statusGraceMs } from "./open.js";
 import type { WhatsAppChannel } from "./index.js";
 
@@ -65,14 +65,17 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
   const { setup: s, channel, approver, say } = options;
   const outbox = new Outbox(channel);
   let toldOutcome = false;
+  let toldThisTurn = false;
   const replies: string[] = [];
   const toolCalls: Array<{ name: string; refused: boolean }> = [];
   let turns = 0;
 
   const presentInstrument = (execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument): Promise<void> => {
-    for (const body of instrumentBodies(execution, instalment, chargeId, instrument, s.mandate.currency, s.locale)) outbox.push(body);
+    for (const body of instrumentBodies(execution, instalment, chargeId, instrument, s.mandate.currency, s.locale, { orderDetails: richWhatsApp() })) outbox.push(body);
     // Awaited by the poll: the person has the code in hand before the next look, not after the cycle closed.
-    return outbox.drain();
+    // CODESPAR_WA_PAYER_DELAY_S (rich mode only): the person's time to open the card and pay, before the simulated payer does.
+    const pause = richWhatsApp() ? Number(process.env["CODESPAR_WA_PAYER_DELAY_S"] ?? 0) : 0;
+    return outbox.drain().then(() => (pause > 0 ? new Promise<void>((resolve) => setTimeout(resolve, pause * 1000)) : undefined));
   };
 
   const terminalOptions: TerminalOptions = {
@@ -80,7 +83,7 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
     approver,
     say,
     tell: (line: string, about?: Execution) => {
-      if (about) toldOutcome = true;
+      if (about) toldOutcome = toldThisTurn = true;
       outbox.push({ kind: "text", text: line, ...(about ? { about: { execution_id: about.id, state: about.state } } : {}) });
     },
     presentInstrument,
@@ -92,6 +95,8 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
 
   // The channel is opened by the caller, which is where an emulator that is not
   // running has to be reported: by here the run has already started.
+  // The rich mode also tells the model how a WhatsApp message reads; the rules above still bind it.
+  if (richWhatsApp() && !s.system.includes(WHATSAPP_STYLE)) s.system = `${s.system}\n\n${WHATSAPP_STYLE}`;
   const runtime = s.makeRuntime();
   const loop = s.makeLoop(runtime, (execution) => handleExecution(execution, terminalOptions));
 
@@ -102,11 +107,16 @@ export async function converse(options: ConverseOptions): Promise<ConverseResult
       const message = await channel.next();
       if (!message) break;
       turns += 1;
+      toldThisTurn = false;
       const result = await loop.turn(message.text);
       toolCalls.push(...result.tool_calls);
       // Whatever the execution put in the conversation goes first: the QR before the sentence that explains it.
       await outbox.drain();
-      if (result.reply.trim()) await channel.say(result.reply);
+      // Rich mode: when the code already told the outcome this turn, the model's paraphrase of it stays in the record and off the chat.
+      if (result.reply.trim() && !(richWhatsApp() && toldThisTurn)) {
+        if (richWhatsApp()) await channel.send(offerFromReply(result.reply));
+        else await channel.say(result.reply);
+      }
       replies.push(result.reply);
     }
     await outbox.drain();

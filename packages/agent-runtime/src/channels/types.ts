@@ -90,6 +90,29 @@ export type OutboundBody =
   | { kind: "text"; text: string; about?: OutcomeTag }
   | { kind: "media"; media: "qr"; data: string; caption?: string }
   | { kind: "instrument"; instrument: "pix_copy_paste" | "boleto_bank_line"; value: string }
+  /**
+   * WhatsApp's own payment card in Brazil (Cloud API `order_details`, action
+   * `review_and_pay`): the total on top, one "Revisar e pagar" button, and the
+   * Pix copy-and-paste and the boleto line inside the sheet it opens. The
+   * payable strings travel as structured fields, never as prose.
+   */
+  /**
+   * A message with WhatsApp reply buttons (Cloud API interactive `button`, at
+   * most three, titles of at most 20 characters). The options are the model's
+   * words; what a tap means is fixed by the channel when it sends them.
+   */
+  | { kind: "buttons"; text: string; options: Array<{ id: string; title: string }> }
+  | {
+      kind: "order";
+      reference: string;
+      body: string;
+      footer?: string;
+      item: string;
+      amountMinor: number;
+      currency: string;
+      pix?: { code: string; merchantName: string; key: string; keyType: string };
+      boleto?: string;
+    }
   /** `buttons` are the declaration's, attached by the channel; a caller never composes them. */
   | { kind: "template"; template: string; language: string; variables: string[]; about?: OutcomeTag; buttons?: Array<{ id: string; title: string }> };
 

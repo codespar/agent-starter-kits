@@ -37,7 +37,7 @@ import { resolveConversation } from "../channels/index.js";
 import { buildWhatsApp, simulatedCost, statusGraceMs, undeliveredCursor, type WhatsAppBackendName } from "../channels/whatsapp/open.js";
 import { EmulatorUnreachableError } from "../channels/whatsapp/emulator.js";
 import { sessionStateFromChannelLog, type SessionState } from "../channels/whatsapp/session.js";
-import { instrumentBodies } from "../channels/whatsapp/present.js";
+import { instrumentBodies, richWhatsApp } from "../channels/whatsapp/present.js";
 import type { WhatsAppChannel } from "../channels/whatsapp/index.js";
 import type { ChannelLogLine, OutboundBody, SentMessage } from "../channels/types.js";
 
@@ -274,7 +274,7 @@ function conversationRecord(agent: Agent, executions: readonly Execution[]): { b
  * it either.
  */
 async function presentInstrument(channel: WhatsAppChannel, s: Setup, execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument): Promise<void> {
-  for (const body of instrumentBodies(execution, instalment, chargeId, instrument, s.mandate.currency, s.locale)) await channel.send(body);
+  for (const body of instrumentBodies(execution, instalment, chargeId, instrument, s.mandate.currency, s.locale, { orderDetails: richWhatsApp() })) await channel.send(body);
 }
 
 /**

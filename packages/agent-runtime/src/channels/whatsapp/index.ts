@@ -17,6 +17,8 @@ import { CORE_STRINGS, WHATSAPP_LANGUAGE, declaredReplies, type CoreStrings, typ
 import { checkOutbound, type HoursRule, type RuleContext } from "../rules.js";
 import type { Channel, ChannelBackend, ChannelLogLine, Conversation, DeliveryState, InboundMessage, OutboundBody, SentMessage, StatusUpdate } from "../types.js";
 import { maskContact } from "../contact.js";
+import { redactInternalIds, toWhatsAppText } from "./cloud-api.js";
+import { richWhatsApp } from "./present.js";
 import { SessionWindow, type SessionState } from "./session.js";
 
 /**
@@ -77,6 +79,8 @@ export class WhatsAppChannel implements Channel {
   private readonly lines: ChannelLogLine[] = [];
   private lastInbound: InboundMessage | undefined;
   private readonly replies: Map<string, QuickReply>;
+  /** The reply buttons of the last `buttons` message this conversation sent: id → title. */
+  private modelOffered = new Map<string, string>();
   /** The furthest state the provider reported per message id (`PROGRESS`), this process. */
   private readonly delivery = new Map<string, DeliveryState>();
   /**
@@ -174,7 +178,8 @@ export class WhatsAppChannel implements Channel {
         return message;
       }
       const tapped = { type: message.reply.type, id: message.reply.id, title: message.reply.title };
-      const declared = this.replies.get(message.reply.id);
+      const offered = this.modelOffered.get(message.reply.id);
+      const declared = this.replies.get(message.reply.id) ?? (offered !== undefined ? { intent: this.text.waChoseOption(offered) } : undefined);
       const refusal = !declared
         ? { rule: "reply_not_offered", detail: `the person tapped ${message.reply.id}, which no template this agent declares offers; it is not a turn` }
         : message.reply.context_id && !this.offeredOn(message.reply.context_id, message.reply.id)
@@ -258,6 +263,9 @@ export class WhatsAppChannel implements Channel {
       locale: this.options.locale,
     };
 
+    // What the person reads carries no ids of ours; the log keeps the same text the person got.
+    if (body.kind === "text") body = { ...body, text: toWhatsAppText(richWhatsApp() ? redactInternalIds(body.text) : body.text) };
+    if (body.kind === "buttons") body = { ...body, text: toWhatsAppText(redactInternalIds(body.text)) };
     // The house rules first: a message the law refuses is not a message the provider should ever see.
     const refusal = checkOutbound(to, body, ctx) ?? this.providerRefusal(body);
     if (refusal) {
@@ -274,6 +282,8 @@ export class WhatsAppChannel implements Channel {
     if (sent.refused) this.options.say?.(this.text.waRefusedByBackend(sent.refused.rule, sent.refused.detail));
     if (sent.refused?.rule === "session_window_closed") this.session.observeProviderShut();
     this.logOutbound(outgoing, sent);
+    // A tap means only what the message that offered it said: the latest offer replaces the one before.
+    if (outgoing.kind === "buttons" && !sent.refused) this.modelOffered = new Map(outgoing.options.map((o) => [o.id, o.title]));
     return sent;
   }
 
@@ -308,6 +318,7 @@ export class WhatsAppChannel implements Channel {
       ...(sent.refused ? { refused: sent.refused } : {}),
       ...((body.kind === "text" || body.kind === "template") && body.about ? { about: body.about } : {}),
       ...(body.kind === "template" && body.buttons?.length ? { offered: body.buttons.map((b) => b.id) } : {}),
+      ...(body.kind === "buttons" ? { offered: body.options.map((o) => o.id) } : {}),
     });
   }
 
@@ -362,6 +373,10 @@ function textOf(body: OutboundBody): string | undefined {
       return body.caption;
     case "template":
       return `[template ${body.template}] ${body.variables.join(" | ")}${body.buttons?.length ? ` [${body.buttons.map((b) => b.title).join("] [")}]` : ""}`;
+    case "buttons":
+      return `${body.text} [${body.options.map((o) => o.title).join("] [")}]`;
+    case "order":
+      return `[order_details ${body.item} · ${(body.amountMinor / 100).toFixed(2)} ${body.currency}${body.pix ? " · pix" : ""}${body.boleto ? " · boleto" : ""}] ${body.body}`;
   }
 }
 

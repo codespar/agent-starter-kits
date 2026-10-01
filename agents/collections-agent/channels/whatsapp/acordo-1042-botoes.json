@@ -1,0 +1,11 @@
+{
+  "name": "acordo-1042-botoes",
+  "description": "acordo-1042 as WhatsApp renders it (CODESPAR_WA_RICH=1): the agent's offer comes with reply buttons and Joana TAPS the first one, pay in full, instead of typing; the charge arrives as WhatsApp's payment card and the sandbox payer pays. The tap carries no title on purpose: she taps the button the agent actually showed.",
+  "channel": "whatsapp",
+  "contact": "+5511987654321",
+  "subject": "acordo-1042",
+  "turns": [
+    { "text": "oi, recebi a mensagem sobre o acordo do pedido 1042" },
+    { "reply": { "id": "opcao_1" }, "after_seconds": 20 }
+  ]
+}

@@ -275,3 +275,71 @@ describe("a redelivered message is the same message", () => {
     }
   });
 });
+
+describe("toWhatsAppText", () => {
+  it("turns Markdown bold and italics into WhatsApp's single markers", async () => {
+    const { toWhatsAppText } = await import("../src/channels/whatsapp/cloud-api.js");
+    expect(toWhatsAppText("à vista: **R$ 1.020,00** hoje ou **3x de R$ 400,00**")).toBe("à vista: *R$ 1.020,00* hoje ou *3x de R$ 400,00*");
+    expect(toWhatsAppText("__atenção__")).toBe("_atenção_");
+    expect(toWhatsAppText("sem marcação * solta ** aqui")).toBe("sem marcação * solta ** aqui");
+  });
+});
+
+describe("rich WhatsApp: ids never reach the person, and the charge is WhatsApp's own card", () => {
+  it("drops charge ids and the parenthesis that only carried one", async () => {
+    const { redactInternalIds } = await import("../src/channels/whatsapp/cloud-api.js");
+    expect(redactInternalIds("Recebemos, acordo quitado. Obrigado! (chg_stub_dfc9bce2b31d3f3d)")).toBe("Recebemos, acordo quitado. Obrigado!");
+    expect(redactInternalIds("R$ 1.020,00, vence 23/09/2026 — cobrança chg_stub_dfc9bce2b31d3f3d")).toBe("R$ 1.020,00, vence 23/09/2026");
+    expect(redactInternalIds("Recebemos o pagamento, acordo quitado. (ID da cobrança: chg_stub_08f2dd4ea6e29da4)")).toBe("Recebemos o pagamento, acordo quitado.");
+    expect(redactInternalIds("Pode pagar *R$ 1.020,00* hoje?")).toBe("Pode pagar *R$ 1.020,00* hoje?");
+  });
+
+  it("builds order_details with the Pix code and the boleto as structured settings", async () => {
+    const { buildSendRequest } = await import("../src/channels/whatsapp/cloud-api.js");
+    const { instrumentBodies, readPix } = await import("../src/channels/whatsapp/present.js");
+    const code = "00020126580014br.gov.bcb.pix0136stub-chg_stub_dfc9bce2b31d3f3d5204000053039865802BR5909CODESPAR6009SAO PAULO62070503***6304STUB";
+    expect(readPix(code)).toMatchObject({ merchantName: "CODESPAR", keyType: "EVP" });
+    const execution = { items: [{ beneficiary: "Joana", payee: "x", amount: 102000, currency: "BRL", description: "Pedido #1042 · à vista" }] } as never;
+    const bodies = instrumentBodies(execution, 1, "chg_1", { pix_copy_paste: code, boleto_bank_line: "666539", due_date: "2026-09-23" } as never, "BRL", "pt-BR", { orderDetails: true });
+    expect(bodies).toHaveLength(1);
+    const req = buildSendRequest({ baseUrl: "http://x", apiVersion: "v22.0", phoneNumberId: "1", accessToken: "t" } as never, "+5511987654321", bodies[0]!);
+    const sent = JSON.parse((req as { body: string }).body);
+    expect(sent.interactive.type).toBe("order_details");
+    expect(sent.interactive.action.name).toBe("review_and_pay");
+    expect(sent.interactive.action.parameters.total_amount).toEqual({ value: 102000, offset: 100 });
+    expect(sent.interactive.action.parameters.payment_settings.map((p: { type: string }) => p.type)).toEqual(["pix_dynamic_code", "boleto"]);
+    expect(sent.interactive.body.text).not.toMatch(/chg_/);
+  });
+});
+
+describe("rich WhatsApp: the model's choices become reply buttons, within WhatsApp's limits", () => {
+  it("turns a trailing [[opções: …]] line into buttons with stable ids", async () => {
+    const { offerFromReply } = await import("../src/channels/whatsapp/present.js");
+    expect(offerFromReply("Consigo *R$ 1.020,00* à vista hoje.\n[[opções: À vista R$ 1.020 | Parcelar em 3x]]")).toEqual({
+      kind: "buttons",
+      text: "Consigo *R$ 1.020,00* à vista hoje.",
+      options: [
+        { id: "opcao_1", title: "À vista R$ 1.020" },
+        { id: "opcao_2", title: "Parcelar em 3x" },
+      ],
+    });
+  });
+
+  it("writes the choices out as text when WhatsApp could not show them as buttons", async () => {
+    const { offerFromReply } = await import("../src/channels/whatsapp/present.js");
+    const long = offerFromReply("Qual prefere?\n[[opções: Pagamento à vista com desconto | 3x]]");
+    expect(long).toEqual({ kind: "text", text: "Qual prefere?\n• Pagamento à vista com desconto\n• 3x" });
+    expect(offerFromReply("Sem opções aqui.")).toEqual({ kind: "text", text: "Sem opções aqui." });
+  });
+
+  it("sends them as an interactive button message", async () => {
+    const { buildSendRequest } = await import("../src/channels/whatsapp/cloud-api.js");
+    const req = buildSendRequest({ baseUrl: "http://x", apiVersion: "v22.0", phoneNumberId: "1", accessToken: "t" } as never, "+5511987654321", {
+      kind: "buttons",
+      text: "Qual prefere?",
+      options: [{ id: "opcao_1", title: "À vista" }],
+    });
+    const sent = JSON.parse((req as { body: string }).body);
+    expect(sent.interactive).toEqual({ type: "button", body: { text: "Qual prefere?" }, action: { buttons: [{ type: "reply", reply: { id: "opcao_1", title: "À vista" } }] } });
+  });
+});

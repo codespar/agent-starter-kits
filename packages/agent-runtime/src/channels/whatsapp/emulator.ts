@@ -147,6 +147,8 @@ export class WhatsAppEmulator implements ChannelBackend {
   private readonly api: WhatsAppCloudApi;
   private turn = 0;
   private closed = false;
+  /** The reply buttons on screen, id → title: a scripted tap without a title taps the one the person sees. */
+  private onScreen = new Map<string, string>();
 
   constructor(private readonly options: EmulatorBackendOptions) {
     const { driver: _driver, script: _script, pinAt: _pinAt, ask: _ask, render: _render, locale: _locale, ...api } = options;
@@ -186,7 +188,7 @@ export class WhatsAppEmulator implements ChannelBackend {
       // The person's own pause, on the emulator's clock. A conversation that
       // happens over days is what closes the 24-hour window.
       if (turn.after_seconds > 0) await this.options.driver.advanceHours(turn.after_seconds / 3600);
-      return turn.reply ? { id: turn.reply.id, title: turn.reply.title ?? turn.reply.id } : turn.text;
+      return turn.reply ? { id: turn.reply.id, title: turn.reply.title ?? this.onScreen.get(turn.reply.id) ?? turn.reply.id } : turn.text;
     }
     return this.nextText();
   }
@@ -206,6 +208,7 @@ export class WhatsAppEmulator implements ChannelBackend {
   }
 
   deliver(to: string, body: OutboundBody): Promise<SentMessage> {
+    if (body.kind === "buttons") this.onScreen = new Map(body.options.map((o) => [o.id, o.title]));
     return this.api.deliver(to, body);
   }
 
