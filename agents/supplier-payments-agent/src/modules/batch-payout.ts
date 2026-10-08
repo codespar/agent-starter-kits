@@ -237,6 +237,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     // every line is reported refused under the one reason, which is also what
     // keeps the counts adding up to the list that was presented.
     ctx.engine.note("batch.set_refused", null, { batch_ref: batch.ref, ...refusal });
+    for (const line of batch.lines) ctx.onNotRun?.({ ref: line.alias, why: "refused", detail: refusal.reason });
     return summarise(
       batch,
       presented,
@@ -271,6 +272,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
       const verdict = priorVerdict(prior);
       if (verdict) {
         lines.push({ ...describe(line, index), execution_id: held, state: prior?.state ?? "unknown", reason: null, dispatch: verdict, receipt_id: receiptOf(prior) });
+        ctx.onNotRun?.({ ref: line.alias, why: verdict === "attempt_id_conflict" ? "refused" : verdict, detail: verdict });
         continue;
       }
     }
@@ -292,6 +294,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
       });
     } catch (err) {
       lines.push({ ...describe(line, index), execution_id: null, state: "unreadable_line", reason: err instanceof Error ? err.message : String(err), dispatch: "refused", receipt_id: null });
+      ctx.onNotRun?.({ ref: line.alias, why: "refused", detail: "unreadable_line" });
       continue;
     }
     if (!draft.ok) {
@@ -299,6 +302,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
       // run of this batch tries the line again, which is right — the mandate
       // may have been re-signed by then.
       lines.push({ ...describe(line, index), execution_id: null, state: "refused_before_draft", reason: draft.reason, dispatch: "refused", receipt_id: null });
+      ctx.onNotRun?.({ ref: line.alias, why: "refused", detail: draft.reason });
       continue;
     }
 

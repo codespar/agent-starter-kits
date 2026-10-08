@@ -12,6 +12,7 @@ import { stdin, stderr, stdout } from "node:process";
 import { relative } from "node:path";
 import { formatBRL, railErrorOf, type AgentRuntime, type BatchGesture, type BatchPresentation, type ChargeInstrument, type Execution } from "@codespar/agent-core";
 import { pollUntilClosed, type PollResult } from "./poll.js";
+import { outcomeLine, runOutcome } from "./outcome.js";
 import { inLocaleOf, type Setup } from "./setup.js";
 
 export interface TerminalOptions {
@@ -273,7 +274,7 @@ export async function interactive(options: TerminalOptions & { runtime: AgentRun
     if (!trimmed) continue;
     if (["sair", "exit", "quit"].includes(trimmed.toLowerCase())) break;
     const result = await loop.turn(trimmed);
-    stdout.write(result.reply + "\n");
+    stdout.write(`${result.reply}\n${outcomeLine(setup.coreStrings, runOutcome(result.executions, result.not_run))}\n`);
   }
   closeTerminal();
 }

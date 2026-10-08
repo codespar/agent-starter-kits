@@ -234,7 +234,8 @@ describe("partial failure of a multi-item execution, and rerun reproducing it", 
     const runsDir = join(stateDir, "runs");
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir, BILLS_STUB_REFUSE: "+5511999990001" };
     const first = run("start", ["--input", "libera o lote do mes", "--transcript", "evals/adversarial/false-authority.transcript.jsonl", "--approve", "--json"], env);
-    expect(first.code).toBe(0);
+    // One attempt failed, so the execution is `failed` and the process says so.
+    expect(first.code).toBe(1);
     const payload = JSON.parse(first.stdout.trim()) as { run_id: string; executions: Array<{ state: string; receipt_ids: string[] }>; receipts: string[] };
     // Four bills, the SECOND refused by the rail. The execution closes `failed`
     // because one attempt failed, and the two bills after the refused one are

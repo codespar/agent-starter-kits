@@ -6,6 +6,9 @@
  *
  * `--json` puts machine data on stdout (valid JSON, nothing else) and the
  * human messages on stderr.
+ *
+ * A one-shot prints, after the reply, what the run did as the engine counts
+ * it (`outcome.ts`), and exits by it: see `EXIT_CODES`.
  */
 import { stderr, stdout } from "node:process";
 import { relative, resolve } from "node:path";
@@ -18,6 +21,9 @@ import { checkScenario, listScenarios, loadScenario, runScenario, scenariosDir }
 import { closeTerminal, defaultAsk, handleExecution, interactive } from "../terminal.js";
 import { loadTemplates, resolveConversation } from "../channels/index.js";
 import { startWhatsApp, type WhatsAppBackendName } from "./start-whatsapp.js";
+import { outcomeExitCode, outcomeLine, runOutcome } from "../outcome.js";
+
+const EXIT_CODES = `exit (--input): 0 nothing failed (settled, already paid, denied, expired or still open: the last line counts each); 1 an execution failed or a line was refused before a draft; 3 an execution was left executing (npm run reconcile)`;
 
 interface Args {
   input?: string;
@@ -112,7 +118,7 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     return 2;
   }
   if (args.help) {
-    stderr.write(usage + "\n");
+    stderr.write(`${usage}\n${EXIT_CODES}\n`);
     return 0;
   }
   const say = (line: string) => stderr.write(line + "\n");
@@ -215,9 +221,11 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     const result = await loop.turn(args.input);
     const executions = s.engine.list().filter((e) => e.run_id === s.runId);
     const payload = s.kit.oneShotPayload({ setup: s, reply: result.reply, toolCalls: result.tool_calls, executions, startedAt });
-    if (args.json) stdout.write(JSON.stringify(payload) + "\n");
-    else stdout.write(result.reply + "\n");
-    return executions.some((e) => e.state === "executing") ? 3 : 0;
+    // Counted from the engine, printed whatever the reply says: a recorded reply cannot know what this run found.
+    const outcome = runOutcome(executions, result.not_run);
+    if (args.json) stdout.write(JSON.stringify({ ...payload, outcome }) + "\n");
+    else stdout.write(`${result.reply}\n${outcomeLine(s.coreStrings, outcome)}\n`);
+    return executions.some((e) => e.state === "executing") ? 3 : outcomeExitCode(outcome);
   } finally {
     closeTerminal();
     s.close();
