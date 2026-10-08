@@ -17,6 +17,13 @@ describe("reconcileEnvNames", () => {
     expect(env["CODESPAR_PROJECT_ID"]).toBe("prj_cli");
   });
 
+  it("fills the CLI's names from the kit's too, so a .env read later cannot reopen a pair the shell closed", () => {
+    const env: NodeJS.ProcessEnv = { CODESPAR_API_URL: STAGING, CODESPAR_PROJECT_ID: "prj_kit" };
+    reconcileEnvNames(env);
+    expect(env["CODESPAR_BASE_URL"]).toBe(STAGING);
+    expect(env["CODESPAR_PROJECT"]).toBe("prj_kit");
+  });
+
   it("leaves the kit's names alone when the CLI's are unset or empty", () => {
     const env: NodeJS.ProcessEnv = { CODESPAR_API_URL: STAGING, CODESPAR_BASE_URL: "", CODESPAR_PROJECT_ID: "prj_kit" };
     reconcileEnvNames(env);
