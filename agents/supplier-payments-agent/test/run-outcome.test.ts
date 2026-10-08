@@ -49,7 +49,7 @@ function scratch(label: string): Record<string, string> {
   return { SUPPLIER_PAYMENTS_STATE_DIR: stateDir, SUPPLIER_PAYMENTS_RUNS_DIR: join(stateDir, "runs") };
 }
 
-type Payload = { reply: string; executions: Array<{ state: string }>; outcome: { settled: number; failed: number; declined: number; already_paid: number; open: number } };
+type Payload = { reply: string; executions: Array<{ state: string }>; run_outcome: { settled: number; failed: number; declined: number; already_paid: number; open: number } };
 
 describe("npm start -- --input: the line after the reply is the engine's count", () => {
   it("a payroll that settles says so and exits 0", () => {
@@ -64,7 +64,7 @@ describe("npm start -- --input: the line after the reply is the engine's count",
     const again = run(["--input", PAYROLL, "--approve", "--json"], env);
     const payload = JSON.parse(again.stdout.trim()) as Payload;
     expect(payload.executions).toHaveLength(0);
-    expect(payload.outcome).toMatchObject({ settled: 0, failed: 0, already_paid: 3, open: 0 });
+    expect(payload.run_outcome).toMatchObject({ settled: 0, failed: 0, already_paid: 3, open: 0 });
     expect(again.code).toBe(0);
 
     const told = run(["--input", PAYROLL, "--approve"], env);
@@ -76,13 +76,13 @@ describe("npm start -- --input: the line after the reply is the engine's count",
     const payload = JSON.parse(out.stdout.trim()) as Payload;
     expect(payload.executions.map((e) => e.state)).toEqual(["failed", "failed", "failed"]);
     expect(payload.reply).toContain("recibo no terminal");
-    expect(payload.outcome).toMatchObject({ settled: 0, failed: 3, already_paid: 0, open: 0 });
+    expect(payload.run_outcome).toMatchObject({ settled: 0, failed: 3, already_paid: 0, open: 0 });
     expect(out.code).toBe(1);
   });
 
   it("a payroll a person denies is not a failed process: three declined, exit 0", () => {
     const out = run(["--input", PAYROLL, "--deny", "--json"], scratch("denied"));
-    expect((JSON.parse(out.stdout.trim()) as Payload).outcome).toMatchObject({ settled: 0, failed: 0, declined: 3, already_paid: 0, open: 0 });
+    expect((JSON.parse(out.stdout.trim()) as Payload).run_outcome).toMatchObject({ settled: 0, failed: 0, declined: 3, already_paid: 0, open: 0 });
     expect(out.code).toBe(0);
   });
 
@@ -101,5 +101,12 @@ describe("npm start, interactive: every turn's reply is followed by the engine's
     ]);
     expect(stdout).toContain("recibo no terminal");
     expect(stdout).toContain("result of this run: 0 settled, 3 failed or refused, 0 denied or expired, 0 skipped as already paid, 0 open");
+  });
+
+  it("says nothing after a turn that drafted nothing and skipped nothing", async () => {
+    // The recorded exfiltration reply calls no payment tool: a read, or a greeting, moved nothing and is not a run result.
+    const stdout = await converse(["--transcript", "evals/adversarial/exfiltration.transcript.jsonl", "--locale", "en"], scratch("interactive-read"), [{ after: "Ctrl+D", type: "oi" }]);
+    expect(stdout.trim().length).toBeGreaterThan(0);
+    expect(stdout).not.toContain("result of this run");
   });
 });

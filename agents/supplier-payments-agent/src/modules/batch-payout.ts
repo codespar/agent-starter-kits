@@ -224,6 +224,15 @@ function dispatchOf(execution: Execution): BatchLineReport["dispatch"] {
 export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchReport> {
   const mandateId = ctx.engine.mandate.id;
   const lines: BatchLineReport[] = [];
+  // A line this run did not execute. The report is what the model reads; the
+  // runtime is told the same fact, derived from it, so the two cannot
+  // disagree. A line held by an earlier run, whatever that run's verdict on
+  // it, is not this run's refusal: it counts as open.
+  const skip = (line: Batch["lines"][number], report: BatchLineReport): void => {
+    lines.push(report);
+    if (report.dispatch === "refused") ctx.onNotRun?.({ ref: line.alias, why: "refused", detail: report.state === "refused_before_draft" && report.reason ? report.reason : report.state });
+    else ctx.onNotRun?.({ ref: line.alias, why: report.dispatch === "already_settled" ? "already_settled" : "in_progress", detail: report.dispatch });
+  };
 
   // The set is hashed HERE: before any line is drafted, over the whole
   // ordered list, so the hash every artifact carries is the hash of the list
@@ -237,13 +246,8 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
     // every line is reported refused under the one reason, which is also what
     // keeps the counts adding up to the list that was presented.
     ctx.engine.note("batch.set_refused", null, { batch_ref: batch.ref, ...refusal });
-    for (const line of batch.lines) ctx.onNotRun?.({ ref: line.alias, why: "refused", detail: refusal.reason });
-    return summarise(
-      batch,
-      presented,
-      batch.lines.map((line, index) => ({ ...describe(line, index), execution_id: null, state: refusal.reason, reason: refusal.detail, dispatch: "refused" as const, receipt_id: null })),
-      refusal,
-    );
+    for (const [index, line] of batch.lines.entries()) skip(line, { ...describe(line, index), execution_id: null, state: refusal.reason, reason: refusal.detail, dispatch: "refused", receipt_id: null });
+    return summarise(batch, presented, lines, refusal);
   }
 
   // One gesture for the list, when the channel can take one (section 3, v5.3:
@@ -271,8 +275,7 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
       const prior = ctx.engine.get(held);
       const verdict = priorVerdict(prior);
       if (verdict) {
-        lines.push({ ...describe(line, index), execution_id: held, state: prior?.state ?? "unknown", reason: null, dispatch: verdict, receipt_id: receiptOf(prior) });
-        ctx.onNotRun?.({ ref: line.alias, why: verdict === "attempt_id_conflict" ? "refused" : verdict, detail: verdict });
+        skip(line, { ...describe(line, index), execution_id: held, state: prior?.state ?? "unknown", reason: null, dispatch: verdict, receipt_id: receiptOf(prior) });
         continue;
       }
     }
@@ -293,16 +296,14 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
         batch: { ref: batch.ref, batch_hash: presented, index, count: batch.lines.length },
       });
     } catch (err) {
-      lines.push({ ...describe(line, index), execution_id: null, state: "unreadable_line", reason: err instanceof Error ? err.message : String(err), dispatch: "refused", receipt_id: null });
-      ctx.onNotRun?.({ ref: line.alias, why: "refused", detail: "unreadable_line" });
+      skip(line, { ...describe(line, index), execution_id: null, state: "unreadable_line", reason: err instanceof Error ? err.message : String(err), dispatch: "refused", receipt_id: null });
       continue;
     }
     if (!draft.ok) {
       // Refused before an execution exists: nothing to claim, and the next
       // run of this batch tries the line again, which is right — the mandate
       // may have been re-signed by then.
-      lines.push({ ...describe(line, index), execution_id: null, state: "refused_before_draft", reason: draft.reason, dispatch: "refused", receipt_id: null });
-      ctx.onNotRun?.({ ref: line.alias, why: "refused", detail: draft.reason });
+      skip(line, { ...describe(line, index), execution_id: null, state: "refused_before_draft", reason: draft.reason, dispatch: "refused", receipt_id: null });
       continue;
     }
 

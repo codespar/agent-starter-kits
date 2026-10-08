@@ -21,9 +21,9 @@ import { checkScenario, listScenarios, loadScenario, runScenario, scenariosDir }
 import { closeTerminal, defaultAsk, handleExecution, interactive } from "../terminal.js";
 import { loadTemplates, resolveConversation } from "../channels/index.js";
 import { startWhatsApp, type WhatsAppBackendName } from "./start-whatsapp.js";
-import { outcomeExitCode, outcomeLine, runOutcome } from "../outcome.js";
+import { outcomeExitCode, sayOutcome } from "../outcome.js";
 
-const EXIT_CODES = `exit (--input): 0 nothing failed (settled, already paid, denied, expired or still open: the last line counts each); 1 an execution failed or a line was refused before a draft; 3 an execution was left executing (npm run reconcile)`;
+const EXIT_CODES = `exit (--input): 0 nothing failed (settled, already paid, denied, expired or still open: the last line counts each payment); 1 a payment failed or a line was refused before a draft, and 1 wins over 3; 3 nothing failed and an execution of this run was left executing (npm run reconcile). A line an earlier run still holds is open and exits 0.`;
 
 interface Args {
   input?: string;
@@ -219,13 +219,13 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
       handleExecution(execution, { setup: s, approver, decision: args.decision ?? "none", say, waitSeconds: args.wait, simulatePayer: args.simulatePayer, ...(args.json ? { tell: say } : {}) }),
     );
     const result = await loop.turn(args.input);
-    const executions = s.engine.list().filter((e) => e.run_id === s.runId);
-    const payload = s.kit.oneShotPayload({ setup: s, reply: result.reply, toolCalls: result.tool_calls, executions, startedAt });
     // Counted from the engine, printed whatever the reply says: a recorded reply cannot know what this run found.
-    const outcome = runOutcome(executions, result.not_run);
-    if (args.json) stdout.write(JSON.stringify({ ...payload, outcome }) + "\n");
-    else stdout.write(`${result.reply}\n${outcomeLine(s.coreStrings, outcome)}\n`);
-    return executions.some((e) => e.state === "executing") ? 3 : outcomeExitCode(outcome);
+    const { executions, outcome, line } = sayOutcome(s, result.not_run);
+    const payload = s.kit.oneShotPayload({ setup: s, reply: result.reply, toolCalls: result.tool_calls, executions, startedAt });
+    // `run_outcome`, not `outcome`: the payload is the kit's, and a kit may name a field of its own that.
+    if (args.json) stdout.write(JSON.stringify({ ...payload, run_outcome: outcome }) + "\n");
+    else stdout.write(`${result.reply}\n${line}\n`);
+    return outcomeExitCode(outcome, executions);
   } finally {
     closeTerminal();
     s.close();
