@@ -40,6 +40,8 @@ export const codesparPay: ToolHandler = async (raw, ctx) => {
 
   const draft = await ctx.engine.draft({ items, ...claimed });
   if (!draft.ok) {
+    // Refused before a draft: no execution will ever say so, and the run's count is taken from this.
+    ctx.onNotRun?.({ ref: items.map((item) => item.payee).join(", "), why: "refused", detail: draft.reason });
     return { status: "refused", reason: draft.reason, message: draft.message, paid: false };
   }
   const execution = await ctx.onExecution(draft.execution);
