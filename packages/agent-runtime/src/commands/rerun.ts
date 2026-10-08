@@ -4,7 +4,7 @@
  * state, and compares the sequence of states with the original bundle. The
  * model's outputs are the recording; every decision of the core is recomputed.
  */
-import { existsSync, mkdtempSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stderr, stdout } from "node:process";
@@ -31,13 +31,16 @@ export async function rerun(agent: Agent, argv: string[]): Promise<number> {
   const events = original.readEvents();
   const originalTrail = events.filter((e) => e["type"] === "execution.transition").map((e) => (e["payload"] as { to: string }).to);
   const originalDecisions = events.filter((e) => e["type"] === "approval.created").map((e) => ((e["payload"] as { approver: { type: string } }).approver.type === "person" ? "approve" : "mandate"));
-  const userTurns = original.readTranscript().filter((l) => l.kind === "user").map((l) => l["text"] as string);
-  const transcriptPath = join(original.dir, "transcript.jsonl");
-  // The transcript is the model's side, and replaying it is all a rerun does. A run that never asked the model (an adversarial case of `kind: events` drives rail deliveries) recorded none.
-  if (!existsSync(transcriptPath)) {
-    say(`runs/${runId} has no transcript.jsonl: the run recorded no model turn, so there is nothing to replay`);
+  const transcript = original.readTranscript();
+  // The transcript is the model's side, and replaying it is all a rerun does. A run that never asked the model recorded no step to replay: an adversarial case of `kind: events` drives rail deliveries and writes no transcript at all.
+  if (!transcript.some((l) => l.kind === "assistant_step")) {
+    const error = `runs/${runId} has no model turn in transcript.jsonl, so there is nothing to replay`;
+    if (json) stdout.write(JSON.stringify({ run_id: runId, error }) + "\n");
+    say(error);
     return 1;
   }
+  const userTurns = transcript.filter((l) => l.kind === "user").map((l) => l["text"] as string);
+  const transcriptPath = join(original.dir, "transcript.jsonl");
   const plan = agent.kit.rerunPlan?.(events) ?? {};
 
   const s = setup(agent, {
