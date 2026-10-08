@@ -176,6 +176,42 @@ describe("npm run rerun <run-id>", () => {
   });
 });
 
+/**
+ * The kit reads `CODESPAR_API_URL` and `CODESPAR_PROJECT_ID`; the CodeSpar CLI
+ * reads `CODESPAR_BASE_URL` and `CODESPAR_PROJECT`. A command that talks to
+ * the API stops when the two disagree; the stub rail reads neither.
+ */
+describe("the two names for the deployment and the project", () => {
+  const STAGING = "https://api.staging.codespar.dev";
+  const DISAGREE = { CODESPAR_API_URL: "https://api.codespar.dev", CODESPAR_BASE_URL: STAGING };
+  const scratch = () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "bills-env-names-"));
+    return { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs"), CODESPAR_API_URL: "", CODESPAR_PROJECT_ID: "", CODESPAR_BASE_URL: "", CODESPAR_PROJECT: "" };
+  };
+  const ONE_SHOT = ["--input", "pague a escola de outubro", "--approve", "--json"];
+
+  it("with a key, two that disagree stop the command with both named, no stack, nothing run", () => {
+    // Not the placeholder; the underscore keeps it below the secret scan's key shape.
+    const out = run("start", ONE_SHOT, { ...scratch(), ...DISAGREE, CODESPAR_API_KEY: "csk_test_unit_0000" });
+    expect(out.code).toBe(1);
+    expect(out.stdout).toBe("");
+    expect(out.stderr).toContain("CODESPAR_API_URL=https://api.codespar.dev");
+    expect(out.stderr).toContain(`CODESPAR_BASE_URL=${STAGING}`);
+    expect(out.stderr).not.toMatch(/^\s+at /m);
+  });
+
+  it("on the stub rail the same disagreement is not read, and the run goes on", () => {
+    const out = run("start", ONE_SHOT, { ...scratch(), ...DISAGREE });
+    expect(out.code).toBe(0);
+    expect(out.stderr).not.toContain("disagree");
+  });
+
+  it("runs with only the CLI's names set", () => {
+    const out = run("start", ONE_SHOT, { ...scratch(), CODESPAR_BASE_URL: STAGING, CODESPAR_PROJECT: "prj_cli" });
+    expect(out.code).toBe(0);
+  });
+});
+
 describe("npm run check", () => {
   it("is green for the shipped agent and prints JSON with --json", () => {
     const out = run("check", ["--json"], {});

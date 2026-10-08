@@ -14,7 +14,7 @@
       "documentationUrl": "https://github.com/codespar/agent-starter-kits#quickstart-clone-to-first-receipt"
     },
     "CODESPAR_API_URL": {
-      "description": "Staging keys only: https://api.staging.codespar.dev. A production key needs nothing here.",
+      "description": "Staging keys only: https://api.staging.codespar.dev. A production key needs nothing here. The CodeSpar CLI's name for it, CODESPAR_BASE_URL, is read too; if both are set they must agree.",
       "documentationUrl": "https://github.com/codespar/agent-starter-kits/blob/main/docs/OPEN_QUESTIONS.md"
     }
   },

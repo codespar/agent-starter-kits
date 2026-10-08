@@ -61,8 +61,8 @@ import {
   type ReceiptVerification,
 } from "@codespar/agent-core";
 import { findAgentDir } from "../agent.js";
-import { EnvNamesDisagreeError, reconcileEnvNames } from "../env.js";
-import { envFileOf, readDotEnv } from "../setup.js";
+import { readAgentEnv } from "../env.js";
+import { envFileOf } from "../setup.js";
 
 const USAGE =
   "usage: npm run verify <receipt-file> [--json] [--keys <key-set.json> | --url <https://.../.well-known/codespar-receipt-keys.json>] [--approval <approval.json> [--approval-id <apr_...>]] [--from-api]";
@@ -151,14 +151,13 @@ export async function verify(argv: string[]): Promise<number> {
   // to production with it is a 401 (#66). Only `--from-api` touches it; the
   // other paths are the verifier who holds nothing.
   const agentDir = args.fromApi ? findAgentDir(dirname(resolve(args.receiptFile))) : undefined;
-  if (agentDir) readDotEnv(agentDir);
-  // The CLI's names for the deployment and the project are aliases of the kit's; two that disagree stop here, before a deployment is chosen.
-  try {
-    reconcileEnvNames();
-  } catch (err) {
-    if (!(err instanceof EnvNamesDisagreeError)) throw err;
-    say(err.message);
-    return 1;
+  // `--from-api` is also the one path that reads the deployment and the project, so it is the one that reconciles the CLI's names for them; a check against `--keys` or the default key set holds no opinion on either. Two names that disagree are a usage error (2), never 1: 1 means the receipt does not verify.
+  if (args.fromApi) {
+    const disagreement = readAgentEnv(agentDir);
+    if (disagreement) {
+      say(`${disagreement.message}\n${USAGE}`);
+      return 2;
+    }
   }
 
   // The read and the key set must come from ONE deployment: the recipe that
