@@ -4,7 +4,7 @@
  * state, and compares the sequence of states with the original bundle. The
  * model's outputs are the recording; every decision of the core is recomputed.
  */
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stderr, stdout } from "node:process";
@@ -33,6 +33,11 @@ export async function rerun(agent: Agent, argv: string[]): Promise<number> {
   const originalDecisions = events.filter((e) => e["type"] === "approval.created").map((e) => ((e["payload"] as { approver: { type: string } }).approver.type === "person" ? "approve" : "mandate"));
   const userTurns = original.readTranscript().filter((l) => l.kind === "user").map((l) => l["text"] as string);
   const transcriptPath = join(original.dir, "transcript.jsonl");
+  // The transcript is the model's side, and replaying it is all a rerun does. A run that never asked the model (an adversarial case of `kind: events` drives rail deliveries) recorded none.
+  if (!existsSync(transcriptPath)) {
+    say(`runs/${runId} has no transcript.jsonl: the run recorded no model turn, so there is nothing to replay`);
+    return 1;
+  }
   const plan = agent.kit.rerunPlan?.(events) ?? {};
 
   const s = setup(agent, {
