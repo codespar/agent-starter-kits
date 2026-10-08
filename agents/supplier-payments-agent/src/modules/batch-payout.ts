@@ -302,7 +302,6 @@ export async function runBatch(batch: Batch, ctx: ToolContext): Promise<BatchRep
       // run of this batch tries the line again, which is right — the mandate
       // may have been re-signed by then.
       lines.push({ ...describe(line, index), execution_id: null, state: "refused_before_draft", reason: draft.reason, dispatch: "refused", receipt_id: null });
-      ctx.onNotRun?.({ ref: line.alias, why: "refused", detail: draft.reason });
       continue;
     }
 

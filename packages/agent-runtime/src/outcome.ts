@@ -4,12 +4,12 @@
  * payroll ran when every line was already paid or every line failed; this is
  * the line the terminal prints after it, and the one-shot's exit code.
  */
-import { isReplayedSettlement, isTerminal, type CoreStrings, type Execution, type NotRunLine } from "@codespar/agent-core";
+import { isReplayedSettlement, isTerminal, type CoreStrings, type Execution, type NotRunLine, type StateStore } from "@codespar/agent-core";
 
 export interface RunOutcome {
   /** Executions this run settled. */
   settled: number;
-  /** Executions that ended `failed` (other than a charge left unpaid), plus lines refused before a draft existed. */
+  /** Executions that ended `failed` (other than a charge left unpaid), plus requests and lines refused before a draft existed. */
   failed: number;
   /** Executions that ended `denied` or `expired`, or `failed` with `charge_expired`: somebody said no, or nobody answered or paid in time. */
   declined: number;
@@ -19,8 +19,30 @@ export interface RunOutcome {
   open: number;
 }
 
-export function runOutcome(executions: readonly Execution[], notRun: readonly NotRunLine[]): RunOutcome {
-  const out: RunOutcome = { settled: 0, failed: 0, declined: 0, already_paid: 0, open: 0 };
+/** A request the engine refused at its first gate: no execution exists, so only the event log knows it happened. */
+export interface DraftRefusal {
+  reason: string;
+  detail: string;
+}
+
+/** The run's refusals before a draft, in order, read from the event log the engine wrote them to. */
+export function draftRefusals(store: StateStore, runId: string): DraftRefusal[] {
+  return store
+    .listEvents({ run_id: runId })
+    .filter((e) => e.type === "execution.refused_before_draft")
+    .map((e) => {
+      const payload = e.payload as { reason?: unknown; detail?: unknown };
+      return { reason: String(payload.reason ?? "refused"), detail: String(payload.detail ?? "") };
+    });
+}
+
+/** `  -> refused_before_draft (mandate_revoked): <the engine's own sentence>`, shaped like `transitionLine`. */
+export function refusalLine(refusal: DraftRefusal): string {
+  return `  -> refused_before_draft (${refusal.reason})${refusal.detail ? `: ${refusal.detail}` : ""}`;
+}
+
+export function runOutcome(executions: readonly Execution[], notRun: readonly NotRunLine[], refusedBeforeDraft = 0): RunOutcome {
+  const out: RunOutcome = { settled: 0, failed: refusedBeforeDraft, declined: 0, already_paid: 0, open: 0 };
   for (const e of executions) {
     if (isReplayedSettlement(e)) out.already_paid += 1;
     else if (e.state === "settled") out.settled += 1;
