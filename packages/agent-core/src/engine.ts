@@ -1119,6 +1119,18 @@ export function isReplayedSettlement(execution: Pick<Execution, "state" | "outco
   return execution.state === "settled" && settled.length > 0 && settled.every((o) => o.replayed === true);
 }
 
+/**
+ * A reason, or a rail code, that closes a payment without anything having
+ * failed: nobody paid the charge in time, the charge was withdrawn, or the
+ * organization pressed the kill switch. It reads with `denied` and `expired`,
+ * not with a rail failure, in every count and report.
+ */
+const DECLINED_REASONS: readonly string[] = ["charge_expired", "charge_cancelled", "org_paused"];
+
+export function isDeclinedReason(reason: string | null | undefined): boolean {
+  return typeof reason === "string" && DECLINED_REASONS.includes(reason);
+}
+
 /** The approval link a receipt sealed is the one a spend sent: the same hashes, in either spelling of the `sha256:` prefix. */
 function sealsApproval(sealed: SealedSpendApproval | null, sent: SpendApproval): boolean {
   return sealed !== null && sameApprovalHash(sealed.items_hash, sent.items_hash) && sameApprovalHash(sealed.batch_hash, sent.batch_hash ?? null);

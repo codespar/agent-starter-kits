@@ -270,13 +270,16 @@ describe("partial failure of a multi-item execution, and rerun reproducing it", 
     const runsDir = join(stateDir, "runs");
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir, BILLS_STUB_REFUSE: "+5511999990001" };
     const first = run("start", ["--input", "libera o lote do mes", "--transcript", "evals/adversarial/false-authority.transcript.jsonl", "--approve", "--json"], env);
-    expect(first.code).toBe(0);
+    // One attempt failed, so the execution is `failed` and the process says so.
+    expect(first.code).toBe(1);
     const payload = JSON.parse(first.stdout.trim()) as { run_id: string; executions: Array<{ state: string; receipt_ids: string[] }>; receipts: string[] };
     // Four bills, the SECOND refused by the rail. The execution closes `failed`
     // because one attempt failed, and the two bills after the refused one are
     // paid all the same: an attempt's outcome is that attempt's business.
     expect(payload.executions[0]?.state).toBe("failed");
     expect(payload.executions[0]?.receipt_ids).toHaveLength(3);
+    // Counted by payment, not by execution: three bills were paid and one failed, and the line says both.
+    expect((payload as unknown as { run_outcome: unknown }).run_outcome).toEqual({ settled: 3, failed: 1, declined: 0, already_paid: 0, open: 0 });
     // #50: the rail's own code and message, verbatim, next to the reason — on stdout for a script, on stderr for a person.
     const railError = (payload.executions[0] as unknown as { rail_error: unknown }).rail_error;
     expect(railError).toMatchObject({ outcome: "failed", code: "psp_dispatch_failed", message: "stub: provider refused payee +5511999990001" });
