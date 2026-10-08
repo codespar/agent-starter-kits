@@ -116,7 +116,7 @@ export async function verify(argv: string[]): Promise<number> {
       say(`the key set is public and needs no credential; its default is ${DEFAULT_RECEIPT_KEYS_URL}`);
       say("--keys reads a saved copy of that document instead, so the check runs with no network at all");
       say("the receipt file is the API's read (GET /v1/consumers/receipts/{id}), whose body is recomputed against the signed chain, or a run's copy, which proves the signature only");
-      say("--from-api reads a run's copy from the API with CODESPAR_API_KEY (in memory, nothing written), so its body and its approval are checked too; the key set then defaults to that deployment's. CODESPAR_API_KEY and CODESPAR_API_URL come from the environment, or else from the .env of the agent the copy sits in");
+      say("--from-api reads a run's copy from the API with CODESPAR_API_KEY (in memory, nothing written), so its body and its approval are checked too; the key set then defaults to that deployment's. CODESPAR_API_KEY and CODESPAR_API_URL come from the environment, or else from the .env of the agent the copy sits in; the CodeSpar CLI's name CODESPAR_BASE_URL is read too, and the two must agree");
       say("--approval holds a v4 receipt's sealed approval link against an approval artifact (a run's copy uses its own approval.json)");
       return 0;
     } else if (a.startsWith("-")) {

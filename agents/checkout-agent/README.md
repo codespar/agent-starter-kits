@@ -63,6 +63,7 @@ Maturity, from `agent.yaml`: `storefront-cart: sandbox`, `bolepix-receivables: b
 - **The NFS-e path has run against the stub issuer, not yet against the nfe.io sandbox.** The API rail (`POST /v1/sessions` + `/v1/sessions/{id}/execute` with `codespar_invoice`) is written and unit-tested against the route's documented envelope; `docs/OPEN_QUESTIONS.md` §61 says what stopped the sandbox run.
 - **No shipping is computed.**
 - **The customer is who they say they are.** In the terminal there is no identity check; the customer book (`mandate.example.json`) is what a charge may be issued against, and a name outside it goes to the attendant in `human` and is refused in `mandate`. On a channel, the contact binding is what identifies the customer.
+- **Key scopes this agent uses on the sandbox rail:** `tools:execute` for the charge (`POST /v1/charges`, `GET /v1/charges/{chargeId}`, `POST /v1/charges/{chargeId}/cancel`, the sandbox payer's `POST /v1/test/charges/{chargeId}/pay`) and for the NFS-e's `POST /v1/sessions/{id}/execute`, and `sessions:create` for its `POST /v1/sessions`. The stub rail uses no key. The names are each operation's `x-codespar-scope` in the API's `/openapi.json`; a key holding `*` needs nothing here.
 - **CodeSpar does not host or run third-party agents.** This repository ships; the developer runs it.
 - **Who answers when the agent errs.** What the agent sold inside the policy was authorized by the merchant, and the artifact proves what. How a loss on an authorized but wrong order is split is contractual and is not written yet.
 

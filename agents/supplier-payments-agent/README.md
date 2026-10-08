@@ -20,6 +20,9 @@ Three lines, one question ("3 linha(s), total R$ …, batch_hash sha256:…" —
 - `ANTHROPIC_API_KEY` can stay empty: the agent then replays a recorded transcript. The old placeholder `sk-ant-your_key_here` counts as empty.
 - One-shot form: `npm start -- --input "roda a folha de outubro" --approve --json`.
 - Sandbox rail: put a `csk_test_` key in `.env` (copy `.env.example`) and the agent talks to the CodeSpar sandbox instead of the stub. It needs a signed mandate in `.codespar/mandate.json`; unlike the bills-agent there is no in-terminal consent, because the mandate behind a payroll is the company's and is minted by whoever owns finance, not by whoever is at the keyboard.
+- How `.codespar/mandate.json` exists today: the mandate is issued by a consent on the API's partner surface (`POST /v1/consents/init`, then `POST /v1/consents/{token}/submit` with the consumer and an attestation), which answers the signed envelope. The file is that mandate in the kit's shape with the envelope in `canonical` and `signature`, the shape `agents/bills-agent/src/modules/embedded-consent.ts` writes for the bills-agent. No command of this kit writes it for this agent, and `codespar mandate create` in the CLI runs the consent and writes no file, so whoever holds the organization's key places the file by hand. Without it the sandbox rail refuses to start. [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §65.
+- Test mode today: since 2026-10-07 the API refuses a pix-consent payment made with a test key (`test_provider_call_refused`), so a batch on the sandbox rail does not reach a receipt and the kit prints the API's code on each line. Restoring that path is a separate delivery on the API side. The stub rail and the replay model keep working.
+- A staging key also needs `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env`. The CodeSpar CLI's name for it, `CODESPAR_BASE_URL`, is read too; if both are set they must agree.
 - `npm start` inside `agents/supplier-payments-agent` works the same once the root is installed.
 
 ## What a batch is, and why it is not one execution
@@ -94,7 +97,7 @@ receipts/               the receipts the rail returned, each stamped with the ac
 run.json                mode, rail, mandate id
 ```
 
-No key and no secret is written there. Payee keys are masked.
+No API key and no secret is written there. The payee's Pix key is masked in `mandate.snapshot.json` and in `receipts/`, and written in the clear in `events.jsonl` and `approval.json`: `rerun` reads it from the event log and `items_hash` is computed over it ([`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §37). `npm run inspect` masks it on the way out. Treat the folder as holding payee keys before handing it over.
 
 The receipt copies carry both of the API's seals. `receipt_sig` is the HMAC, which proves the payment to whoever runs this agent; `receipt_sig_ed25519` and `receipt_sig_kid` are the asymmetric half, which proves it to anybody:
 
@@ -114,6 +117,7 @@ That reads the public key set from `/.well-known/codespar-receipt-keys.json`, pi
 - `batch_hash` binds the list; it does not bind the list to the payables file it came from. A batch whose lines changed is refused on the next run of the SAME `batch_ref`, because that is when there is an approved set to contradict. A list edited before it was ever presented is simply the list, and the mandate's allowlist and caps are what stand between it and a payment.
 - The hash is over the resolved payees, so re-signing the mandate with a different Pix key for a payee moves it too, and the next run of an already-approved batch is refused. That is correct — where the money goes did change — but the refusal cannot see WHY, so it names what it measured and offers both ways out rather than guessing.
 - Revocation is checked before every `executing`. Without a key the same check answers from a local stub (`packages/agent-core/src/stubs/mandate-status.ts`), which is also where the organization kill switch lives.
+- Key scopes this agent uses on the sandbox rail: `payments:execute` (`POST /v1/consumer-payments/execute`; `mandates:spend` on `POST /v1/consumers/mandates/{id}/spend` when the mandate file holds no signed envelope), `mandates:read` (`GET /v1/mandates/{id}`, before every `executing`) and `receipts:read` (`GET /v1/consumers/receipts/{id}`, also `verify --from-api`). The stub rail uses no key. The names are each operation's `x-codespar-scope` in the API's `/openapi.json`; a key holding `*` needs nothing here.
 - CodeSpar does not host or run this agent. The repository delivers it; whoever runs it, runs it.
 
 ## Going to production
