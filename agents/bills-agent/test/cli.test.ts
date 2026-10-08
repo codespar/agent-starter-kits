@@ -3,11 +3,13 @@
  * else, the restart in `executing` followed by `resume`, and `rerun`.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
+import { loadAdversarialCase, runAdversarialCase } from "@codespar/agent-runtime";
+import { agent } from "../src/kit.js";
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const NODE = process.execPath;
@@ -173,6 +175,58 @@ describe("npm run rerun <run-id>", () => {
     expect(payload.same_states).toBe(true);
     expect(payload.original).toEqual(["awaiting_approval", "approved", "executing", "settled"]);
     expect(readFileSync(join(runsDir, run_id, "transcript.jsonl"), "utf8")).toContain("assistant_step");
+  });
+});
+
+/**
+ * `rerun` replays the model's side of a run. An adversarial case of
+ * `kind: events` has none: it drives rail deliveries and never asks the
+ * model, so its bundle holds no `transcript.jsonl`.
+ */
+describe("npm run rerun <run-id> on a run with no model turn", () => {
+  const NOTHING = "has no model turn in transcript.jsonl, so there is nothing to replay";
+
+  it("refuses the adversarial events case by name of what is missing, with no stack", async () => {
+    const runsDir = mkdtempSync(join(tmpdir(), "bills-rerun-adv-"));
+    const env = { BILLS_STATE_DIR: join(runsDir, "state"), BILLS_RUNS_DIR: runsDir };
+    const original = await runAdversarialCase(agent, loadAdversarialCase(agent, "webhook-replay"), { runsDir });
+    expect(original.ok).toBe(true);
+    expect(existsSync(join(runsDir, original.run_id, "transcript.jsonl"))).toBe(false);
+
+    const out = run("rerun", [original.run_id], env);
+    expect(out.code).toBe(1);
+    expect(out.stdout).toBe("");
+    expect(out.stderr).toContain(`runs/${original.run_id} ${NOTHING}`);
+    expect(out.stderr).not.toContain("ENOENT");
+    expect(out.stderr).not.toMatch(/^\s+at /m);
+
+    // A script reading stdout gets the refusal as data, not an empty line.
+    const asJson = run("rerun", [original.run_id, "--json"], env);
+    expect(asJson.code).toBe(1);
+    expect(JSON.parse(asJson.stdout.trim())).toEqual({ run_id: original.run_id, error: `runs/${original.run_id} ${NOTHING}` });
+  });
+
+  it("refuses a transcript that is empty, or holds the person's turn and no step of the model", async () => {
+    const runsDir = mkdtempSync(join(tmpdir(), "bills-rerun-adv-"));
+    const env = { BILLS_STATE_DIR: join(runsDir, "state"), BILLS_RUNS_DIR: runsDir };
+    const original = await runAdversarialCase(agent, loadAdversarialCase(agent, "webhook-replay"), { runsDir });
+    const transcript = join(runsDir, original.run_id, "transcript.jsonl");
+    for (const content of ["", JSON.stringify({ kind: "user", text: "pague a escola de outubro" }) + "\n"]) {
+      writeFileSync(transcript, content);
+      const out = run("rerun", [original.run_id], env);
+      expect(out.code).toBe(1);
+      expect(out.stderr).toContain(NOTHING);
+      expect(out.stderr).not.toContain("rerun ok");
+    }
+  });
+
+  it("still replays an adversarial case that did ask the model", async () => {
+    const runsDir = mkdtempSync(join(tmpdir(), "bills-rerun-adv-"));
+    const original = await runAdversarialCase(agent, loadAdversarialCase(agent, "prompt-injection"), { runsDir });
+    expect(original.ok).toBe(true);
+    const out = run("rerun", [original.run_id], { BILLS_STATE_DIR: join(runsDir, "state"), BILLS_RUNS_DIR: runsDir });
+    expect(out.code).toBe(0);
+    expect(out.stderr).toContain("rerun ok");
   });
 });
 
