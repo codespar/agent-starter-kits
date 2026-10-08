@@ -242,6 +242,8 @@ describe("partial failure of a multi-item execution, and rerun reproducing it", 
     // paid all the same: an attempt's outcome is that attempt's business.
     expect(payload.executions[0]?.state).toBe("failed");
     expect(payload.executions[0]?.receipt_ids).toHaveLength(3);
+    // Counted by payment, not by execution: three bills were paid and one failed, and the line says both.
+    expect((payload as unknown as { run_outcome: unknown }).run_outcome).toEqual({ settled: 3, failed: 1, declined: 0, already_paid: 0, open: 0 });
     // #50: the rail's own code and message, verbatim, next to the reason — on stdout for a script, on stderr for a person.
     const railError = (payload.executions[0] as unknown as { rail_error: unknown }).rail_error;
     expect(railError).toMatchObject({ outcome: "failed", code: "psp_dispatch_failed", message: "stub: provider refused payee +5511999990001" });

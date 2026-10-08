@@ -91,6 +91,10 @@ describe.skipIf(!emulatorUp)("the sale closes over the WhatsApp channel", () => 
     expect(out.code).toBe(0);
     const p = payloadOf(out.stdout);
     expect(p.executions.map((e) => e.state)).toEqual(["settled"]);
+    // The channel's one-shot carries the same count and refusal list as the terminal's.
+    const counted = p as unknown as { run_outcome: Record<string, number>; refused_before_draft: unknown[] };
+    expect(counted.run_outcome).toMatchObject({ settled: 1, failed: 0 });
+    expect(counted.refused_before_draft).toEqual([]);
     expect(p.invoices.map((i) => i.state)).toEqual(["accepted"]);
     expect(p.channel.backend).toBe("emulator");
     const outbound = conversationOf(p).filter((l) => l.direction === "out");

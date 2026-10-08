@@ -83,6 +83,8 @@ npm run check                               # the manifest agrees with its files
 npm run inspect -- <run-id>                 # the bundle as a timeline
 ```
 
+`npm start -- --input ...`: after the reply, stdout carries one line counting what the run did, by payment (`resultado deste run: ...`: settled, failed or refused, denied or expired, skipped as already paid, open); `--json` carries the same count as `run_outcome`. Exit code: 1 when a payment failed or a line was refused before a draft, and 1 wins over 3; 3 when nothing failed and an execution of this run was left `executing`; 0 otherwise, denied, expired and an unpaid or withdrawn charge included. A charge still waiting for its payer is that 3.
+
 The locale is `locale:` in `agent.yaml` (`pt-BR`) unless `--locale` says otherwise, and it is fixed for the conversation: the order proposed in English is confirmed in English, and `poll --channel whatsapp` sends the `en_US` copy of the template to a conversation that started in English. It changes what is shown, never what `[s/N]` / `[y/N]` decides, and it is not the model's reply language, which follows what the customer types.
 
 `--json` puts one JSON object on stdout (`cart_id`, `cart_hash`, `total_minor`, the state, `charge_id`, `pix_copy_paste`, and `rail_error` with the API's own code and message when an issue failed or was left unknown) and everything a person reads on stderr.

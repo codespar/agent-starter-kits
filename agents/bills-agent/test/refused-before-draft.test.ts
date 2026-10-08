@@ -45,12 +45,12 @@ describe("a request under a revoked mandate, one-shot", () => {
 
   it("carries the same refusal in --json, with no execution", () => {
     const out = run(["--input", SCHOOL, "--approve", "--json"], revoked("json"));
-    const payload = JSON.parse(out.stdout.trim()) as { executions: unknown[]; outcome: { failed: number }; refused_before_draft: Array<{ reason: string; detail: string }> };
+    const payload = JSON.parse(out.stdout.trim()) as { executions: unknown[]; run_outcome: { failed: number }; refused_before_draft: Array<{ reason: string; detail: string }> };
     expect(payload.executions).toHaveLength(0);
     expect(payload.refused_before_draft).toHaveLength(1);
     expect(payload.refused_before_draft[0]).toMatchObject({ reason: "mandate_revoked" });
     expect(payload.refused_before_draft[0]?.detail).not.toBe("");
-    expect(payload.outcome.failed).toBe(1);
+    expect(payload.run_outcome.failed).toBe(1);
     expect(out.code).toBe(1);
   });
 });
