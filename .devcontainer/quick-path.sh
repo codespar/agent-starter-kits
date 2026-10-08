@@ -23,7 +23,8 @@ CodeSpar Agent Starter Kits, in a container ($(node --version))
 
   $key_line
   $model_line
-  CODESPAR_API_URL   ${CODESPAR_API_URL:-unset (production; staging keys need https://api.staging.codespar.dev)}
+  CODESPAR_API_URL   ${CODESPAR_API_URL:-${CODESPAR_BASE_URL:-unset (production; staging keys need https://api.staging.codespar.dev)}}
+                     (the CodeSpar CLI's name, CODESPAR_BASE_URL, is read too; if both are set they must agree)
 
   Keys: Settings > Codespaces > Secrets on GitHub, then reload this window.
   No .env file is needed here; a secret already in the environment wins over one.
