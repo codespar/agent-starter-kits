@@ -86,7 +86,11 @@ export function makeHandlers(envelope: Envelope, locale: () => Locale = () => "p
     const claimed = typeof input.total_minor === "number" ? { claimed_total: input.total_minor } : {};
 
     const draft = await ctx.engine.draft({ items, ...claimed });
-    if (!draft.ok) return { status: "refused", reason: draft.reason, message: draft.message, issued: false, paid: false };
+    if (!draft.ok) {
+      // Refused before a draft: no execution will ever say so, and the run's count is taken from this.
+      ctx.onNotRun?.({ ref: alias, why: "refused", detail: draft.reason });
+      return { status: "refused", reason: draft.reason, message: draft.message, issued: false, paid: false };
+    }
     const execution = await ctx.onExecution(draft.execution);
     return describe(execution);
   };

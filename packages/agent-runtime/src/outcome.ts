@@ -8,7 +8,7 @@
  * bills and failed the fourth closes `failed`, and counts three settled and
  * one failed.
  */
-import { isDeclinedReason, isTerminal, type CoreStrings, type Execution, type ExecutionEngine, type NotRunLine } from "@codespar/agent-core";
+import { isDeclinedReason, isTerminal, type CoreStrings, type Execution, type ExecutionEngine, type NotRunLine, type StateStore } from "@codespar/agent-core";
 
 export interface RunOutcome {
   /** Payments this run settled. */
@@ -21,6 +21,32 @@ export interface RunOutcome {
   already_paid: number;
   /** Executions not yet terminal, plus lines an earlier execution still holds. */
   open: number;
+}
+
+/** A request the engine refused before a draft existed (`execution.refused_before_draft`): the gate's own reason and detail. */
+export interface DraftRefusal {
+  reason: string;
+  detail: string;
+}
+
+/**
+ * Every refusal before a draft the engine recorded for this run, in order,
+ * for the sentence on the terminal and for `--json`. It is NOT what the count
+ * is taken from: each tool reports its refused request through `onNotRun`,
+ * and that is the one source of the count.
+ */
+export function draftRefusals(store: StateStore, runId: string): DraftRefusal[] {
+  return store
+    .listEvents({ run_id: runId })
+    .filter((e) => e.type === "execution.refused_before_draft")
+    .map((e) => {
+      const payload = e.payload as { reason?: unknown; detail?: unknown };
+      return { reason: String(payload.reason ?? "unknown"), detail: String(payload.detail ?? "") };
+    });
+}
+
+export function refusalLine(refusal: DraftRefusal): string {
+  return `  -> refused_before_draft (${refusal.reason}): ${refusal.detail}`;
 }
 
 export function runOutcome(executions: readonly Execution[], notRun: readonly NotRunLine[]): RunOutcome {
@@ -59,19 +85,21 @@ export function runExecutions(engine: ExecutionEngine, runId: string): Execution
 
 /**
  * The one place the terminal and the one-shot count a run: the engine's
- * executions of this run, plus the lines that created none. `say`, when
- * given, receives the line.
+ * executions of this run plus the lines that created none. The refusals
+ * before a draft come back with it, to be said and listed. `say`, when given,
+ * receives the count line.
  */
 export function sayOutcome(
-  source: { engine: ExecutionEngine; runId: string; coreStrings: CoreStrings },
+  source: { engine: ExecutionEngine; store: StateStore; runId: string; coreStrings: CoreStrings },
   notRun: readonly NotRunLine[],
   say?: (line: string) => void,
-): { executions: Execution[]; outcome: RunOutcome; line: string } {
+): { executions: Execution[]; refusals: DraftRefusal[]; outcome: RunOutcome; line: string } {
   const executions = runExecutions(source.engine, source.runId);
+  const refusals = draftRefusals(source.store, source.runId);
   const outcome = runOutcome(executions, notRun);
   const line = outcomeLine(source.coreStrings, outcome);
   say?.(line);
-  return { executions, outcome, line };
+  return { executions, refusals, outcome, line };
 }
 
 /**

@@ -21,7 +21,7 @@ import { checkScenario, listScenarios, loadScenario, runScenario, scenariosDir }
 import { closeTerminal, defaultAsk, handleExecution, interactive } from "../terminal.js";
 import { loadTemplates, resolveConversation } from "../channels/index.js";
 import { startWhatsApp, type WhatsAppBackendName } from "./start-whatsapp.js";
-import { outcomeExitCode, sayOutcome } from "../outcome.js";
+import { outcomeExitCode, refusalLine, sayOutcome } from "../outcome.js";
 
 const EXIT_CODES = `exit (--input): 0 nothing failed (settled, already paid, denied, expired or still open: the last line counts each payment); 1 a payment failed or a line was refused before a draft, and 1 wins over 3; 3 nothing failed and an execution of this run was left executing (npm run reconcile). A line an earlier run still holds is open and exits 0.`;
 
@@ -220,10 +220,12 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     );
     const result = await loop.turn(args.input);
     // Counted from the engine, printed whatever the reply says: a recorded reply cannot know what this run found.
-    const { executions, outcome, line } = sayOutcome(s, result.not_run);
+    const { executions, refusals, outcome, line } = sayOutcome(s, result.not_run);
+    // A request refused before a draft left no execution to describe: said here with the engine's own reason, or the terminal would be silent about it.
+    for (const refusal of refusals) say(refusalLine(refusal));
     const payload = s.kit.oneShotPayload({ setup: s, reply: result.reply, toolCalls: result.tool_calls, executions, startedAt });
     // `run_outcome`, not `outcome`: the payload is the kit's, and a kit may name a field of its own that.
-    if (args.json) stdout.write(JSON.stringify({ ...payload, run_outcome: outcome }) + "\n");
+    if (args.json) stdout.write(JSON.stringify({ ...payload, run_outcome: outcome, refused_before_draft: refusals }) + "\n");
     else stdout.write(`${result.reply}\n${line}\n`);
     return outcomeExitCode(outcome, executions);
   } finally {

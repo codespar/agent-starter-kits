@@ -13,6 +13,7 @@ import { z } from "zod";
 import type { ApprovalMode, Execution, Locale, StubChargeRailOptions, StubRailOptions } from "@codespar/agent-core";
 import type { Agent } from "./agent.js";
 import type { RailKind } from "./kit.js";
+import { draftRefusals } from "./outcome.js";
 import { setup, type Setup } from "./setup.js";
 import { announceOutcome, followUp, handleExecution } from "./terminal.js";
 
@@ -210,7 +211,7 @@ export async function runScenario(agent: Agent, scenario: Scenario, options: Run
       });
       const result = await loop.turn(turn.input);
       replies.push(result.reply);
-      refusedBeforeDraft += s.store.listEvents({ run_id: s.runId }).filter((e) => e.type === "execution.refused_before_draft").length - refusedBeforeDraft;
+      refusedBeforeDraft = draftRefusals(s.store, s.runId).length;
       if (turn.payer === "late") for (const e of s.engine.list({ state: "executing" })) if (!before.has(e.id)) late.push(e.id);
     }
     // A late payer pays after the conversation ended (the receivable was in flight while the world changed).
