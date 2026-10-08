@@ -61,6 +61,7 @@ import {
   type ReceiptVerification,
 } from "@codespar/agent-core";
 import { findAgentDir } from "../agent.js";
+import { EnvNamesDisagreeError, reconcileEnvNames } from "../env.js";
 import { envFileOf, readDotEnv } from "../setup.js";
 
 const USAGE =
@@ -151,6 +152,14 @@ export async function verify(argv: string[]): Promise<number> {
   // other paths are the verifier who holds nothing.
   const agentDir = args.fromApi ? findAgentDir(dirname(resolve(args.receiptFile))) : undefined;
   if (agentDir) readDotEnv(agentDir);
+  // The CLI's names for the deployment and the project are aliases of the kit's; two that disagree stop here, before a deployment is chosen.
+  try {
+    reconcileEnvNames();
+  } catch (err) {
+    if (!(err instanceof EnvNamesDisagreeError)) throw err;
+    say(err.message);
+    return 1;
+  }
 
   // The read and the key set must come from ONE deployment: the recipe that
   // binds the body is the key document's, and a staging read checked under

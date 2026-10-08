@@ -6,6 +6,7 @@
 import { stderr } from "node:process";
 import { loadAgent, type Agent } from "./agent.js";
 import { NotATestKeyError } from "@codespar/agent-core";
+import { EnvNamesDisagreeError, reconcileEnvNames } from "./env.js";
 import { envFileOf, localeFlag, readDotEnv } from "./setup.js";
 import { loadManifest, resolveLocale } from "@codespar/agent-core";
 import { join } from "node:path";
@@ -47,8 +48,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   const agent = await loadAgent(dir);
   readDotEnv(agent.dir);
   try {
+    // After the `.env`, before anything reads a URL or a project: the CLI's names are aliases, and two names that disagree stop here.
+    reconcileEnvNames();
     return await run(agent, command, rest);
   } catch (err) {
+    if (err instanceof EnvNamesDisagreeError) {
+      stderr.write(err.message + "\n");
+      return 1;
+    }
     // A key refusal is the first thing a newcomer meets (#50): one sentence naming the file this agent reads, never a stack trace.
     if (err instanceof NotATestKeyError) {
       stderr.write(new NotATestKeyError(err.problem, envFileOf(agent.dir)).message + "\n");

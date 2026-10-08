@@ -2,6 +2,7 @@ export * from "./agent.js";
 export * from "./kit.js";
 export * from "./default-kit.js";
 export * from "./setup.js";
+export * from "./env.js";
 export * from "./terminal.js";
 export * from "./channels/index.js";
 export * from "./poll.js";
