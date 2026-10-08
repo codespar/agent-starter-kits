@@ -37,7 +37,7 @@ Notes:
 - The agents answer in the language you write in, Brazilian Portuguese or English. The loop reads it from what you type and states it to the model on every step, because a prompt rule alone lost to Portuguese tool results. One real-model run on 2026-09-28 answered 14 cases out of 14 in the input's language, by a function-word heuristic; one run is not a distribution (§64).
 - The lines the code prints (the approval question, the batch gesture, the execution lines, the consent summary, the WhatsApp templates) are in the agent's `locale`: `pt-BR` by default, `en` with `locale: en` in `agent.yaml` or `--locale en` on the command. The locale is fixed for a run and for a conversation, so a proposal and its approval are asked in the same language, and it changes only what is shown: `[s/N]` takes `s`, `sim`, `y` and `yes` in both. It is independent of the model's reply language above (§64).
 - Run the consent before `npm start -- --input ...`. The one-shot form refuses to run without a signed mandate; the interactive `npm start` offers the consent on its own.
-- Using a staging key? Uncomment `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` first.
+- Using a staging key? Uncomment `CODESPAR_API_URL=https://api.staging.codespar.dev` in `.env` first. The CodeSpar CLI's name for it, `CODESPAR_BASE_URL`, is read too; if both are set they must agree.
 
 Check the receipt against the API (the key and a staging `CODESPAR_API_URL` are read from the agent's `.env`, never printed; an exported variable wins over the file):
 
@@ -62,7 +62,7 @@ approval: mandate   # the agent pays inside the signed limits; escalate_above se
 
 Same code, same states, same receipts. Start with `human`, switch when you trust it.
 
-**Every run leaves a proof bundle** in `runs/<run-id>/`: transcript, approval artifacts, mandate snapshot, every state transition with who acted, and the receipts. Keys and payee details are masked. `npm run inspect <run-id>` reads it back as a timeline — who proposed what, who approved it under which version of the mandate, which call went out, what the rail answered, which receipts came back — in the terminal, as JSON with `--json`, or as one self-contained HTML page with `--html`.
+**Every run leaves a proof bundle** in `runs/<run-id>/`: transcript, approval artifacts, mandate snapshot, every state transition with who acted, and the receipts. No API key or secret is written there. The payee's Pix key is masked in the mandate snapshot and in the receipt copies, and is in the clear in `events.jsonl` and `approval.json` ([`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §37). `npm run inspect <run-id>` is a script of each agent, not of the root: run it inside the agent's folder, or from the root as `npm run inspect --workspace=agents/bills-agent -- <run-id>`. It masks the payee on the way out and reads the bundle back as a timeline — who proposed what, who approved it under which version of the mandate, which call went out, what the rail answered, which receipts came back — in the terminal, as JSON with `--json`, or as one self-contained HTML page with `--html`.
 
 ## What runs today
 

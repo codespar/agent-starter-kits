@@ -1443,3 +1443,17 @@ The "read" column is the run script's heuristic: function words counted in the r
 - **The emulator.** `@dyvit/whatsapp-simulator-cli@0.3.0` does not read `template.language` at all, so it accepts `en_US` and would accept anything. The English templates are exercised through our own registry and channel refusals, not through the emulator. Whether Meta approves either copy is still the developer's to register, as before.
 - **Auto-detecting the locale from the first message is not done, and if it is ever added it is opt-in and off by default** (owner's decision, 2026-09-29). The reason is that Brazilian users mix Portuguese and English as a matter of course. A locale detected from the first message would get them wrong, and it would then stay wrong for the whole conversation, approval included. The locale stays configuration: `--locale`, or `locale:` in `agent.yaml`.
 - **Accents, swept across every kit** (owner's decision, same day). A missing accent in a new string usually comes from copying an old one. So the sweep covered every user-visible Portuguese string in `agents/`, `packages/` and `skills/`, not only the ones #64 localized: templates, refusal details, consent text, the prompts' Portuguese examples, catalog and payee display names, and recorded replies. What a person types was left as typed, because a replay looks a recording up by its input. `node scripts/pt-accents.mjs` (part of `npm run check`) fails on a curated list of unaccented words. It has an explicit allowlist for machine values, such as payee aliases, the catalog category, the refused `preco` field, the parser's `nao`, and the pt button intents #62 recorded (a replay and the tests compare them).
+
+## 65. The supplier agent has no command that produces its signed mandate (2026-10-08)
+
+On the sandbox rail `supplier-payments-agent` reads a signed mandate from `agents/supplier-payments-agent/.codespar/mandate.json` and refuses to start without it (`agents/supplier-payments-agent/src/kit.ts`). Nothing in this repository writes that file for it.
+
+How the file exists today:
+
+- The mandate is issued by a consent on the API's partner surface: `POST /v1/consents/init`, then `POST /v1/consents/{token}/submit` with the consumer and an attestation. The answer carries the signed envelope, `{ mandate, signature }`.
+- The file is that mandate in the kit's `MandateSchema` with the envelope in `canonical` and `signature`, which is what `POST /v1/consumer-payments/execute` presents on every spend. `agents/bills-agent/src/modules/embedded-consent.ts` is the one place that writes this shape, and it writes it for the bills-agent, with the account holder at the keyboard.
+- `codespar mandate create` (`@codespar/cli@0.18.0`) runs the same consent and writes no file.
+
+So the file is placed by hand by whoever holds the organization's key. The agent's README says this and promises no command.
+
+**Open:** whether this becomes a command, in the kit or in the CLI, has not been decided by the API's owner. Until it is, the README describes the manual path and nothing else.
