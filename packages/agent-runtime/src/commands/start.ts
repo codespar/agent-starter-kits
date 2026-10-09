@@ -10,6 +10,7 @@
  * A one-shot prints, after the reply, what the run did as the engine counts
  * it (`outcome.ts`), and exits by it: see `EXIT_CODES`.
  */
+import { statSync } from "node:fs";
 import { stderr, stdout } from "node:process";
 import { relative, resolve } from "node:path";
 import { CORE_STRINGS, NotATestKeyError, WHATSAPP_LANGUAGE, declaredReplies, loadManifest, parseLocale, resolveLocale, testKeyProblem, resolveFixedClock, type ApprovalMode, type ChannelName, type Locale } from "@codespar/agent-core";
@@ -24,6 +25,10 @@ import { startWhatsApp, type WhatsAppBackendName } from "./start-whatsapp.js";
 import { outcomeExitCode, refusalLine, sayOutcome } from "../outcome.js";
 
 const EXIT_CODES = `exit (--input): 0 nothing failed (settled, already paid, denied, expired or still open: the last line counts each payment); 1 a payment failed or a line was refused before a draft, and 1 wins over 3; 3 nothing failed and an execution of this run was left executing (npm run reconcile). A line an earlier run still holds is open and exits 0.`;
+
+function isFile(path: string): boolean {
+  return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
+}
 
 interface Args {
   input?: string;
@@ -139,6 +144,12 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
   const keyProblem = railKind === "api" ? testKeyProblem(process.env["CODESPAR_API_KEY"]) : undefined;
   if (keyProblem) {
     say(new NotATestKeyError(keyProblem, envFileOf(agent.dir)).message);
+    return 1;
+  }
+
+  // A recording that is not there is said by its path, before a mandate is asked for or a run is opened.
+  if (args.transcript !== undefined && !isFile(args.transcript)) {
+    say(`no transcript at ${args.transcript}`);
     return 1;
   }
 
