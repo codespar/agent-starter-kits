@@ -29,8 +29,13 @@ export async function rerun(agent: Agent, argv: string[]): Promise<number> {
   const meta = original.readMeta() ?? {};
   const mode = (meta["mode"] as ApprovalMode | undefined) ?? "human";
   const events = original.readEvents();
-  const originalTrail = events.filter((e) => e["type"] === "execution.transition").map((e) => (e["payload"] as { to: string }).to);
-  const originalDecisions = events.filter((e) => e["type"] === "approval.created").map((e) => ((e["payload"] as { approver: { type: string } }).approver.type === "person" ? "approve" : "mandate"));
+  const transitions = events.filter((e) => e["type"] === "execution.transition").map((e) => ({ execution: e["execution_id"] as string, ...(e["payload"] as { from: string; to: string }) }));
+  const originalTrail = transitions.map((t) => t.to);
+  // What the original did with each approval it asked for, in the order it asked: approved it, denied it, or left it open. A run that stopped at `awaiting_approval` (a one-shot with no --approve or --deny, an adversarial case that only has to escalate) is replayed to the same place, not decided on its behalf.
+  const asked = transitions.flatMap((t, i) => (t.to === "awaiting_approval" ? [transitions.slice(i + 1).find((n) => n.execution === t.execution)?.to] : []));
+  // Nobody decides an approval that expired either: the rerun's clock does, or the sequences differ and the last line says so.
+  const originalDecisions = asked.map((next) => (next === "approved" ? "approve" : next === "denied" ? "deny" : "none"));
+  const leftOpen = asked.filter((next) => next === undefined).length;
   const transcript = original.readTranscript();
   // The transcript is the model's side, and replaying it is all a rerun does. A run that never asked the model recorded no step to replay: an adversarial case of `kind: events` drives rail deliveries and writes no transcript at all.
   if (!transcript.some((l) => l.kind === "assistant_step")) {
@@ -59,7 +64,7 @@ export async function rerun(agent: Agent, argv: string[]): Promise<number> {
     let decisionIndex = 0;
     const runtime = s.makeRuntime();
     const loop = s.makeLoop(runtime, (execution: Execution) => {
-      const decision = execution.state === "awaiting_approval" ? (originalDecisions[decisionIndex++] === "approve" ? "approve" : "deny") : "none";
+      const decision = execution.state === "awaiting_approval" ? (originalDecisions[decisionIndex++] ?? "deny") : "none";
       return handleExecution(execution, {
         setup: s,
         approver: { id: "usr_rerun", channel: "terminal" },
@@ -88,7 +93,8 @@ export async function rerun(agent: Agent, argv: string[]): Promise<number> {
         }) + "\n",
       );
     }
-    say(same ? `rerun ok: ${trail.length} transition(s), same sequence as ${runId}` : `rerun DIFFERS: original ${JSON.stringify(originalTrail)} vs rerun ${JSON.stringify(trail)}`);
+    const open = leftOpen > 0 ? `; ${leftOpen} execution(s) left in awaiting_approval, as the original left ${leftOpen === 1 ? "it" : "them"}` : "";
+    say(same ? `rerun ok: ${trail.length} transition(s), same sequence as ${runId}${open}` : `rerun DIFFERS: original ${JSON.stringify(originalTrail)} vs rerun ${JSON.stringify(trail)}`);
     return same ? 0 : 1;
   } finally {
     s.close();
