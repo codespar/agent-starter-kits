@@ -1,32 +1,9 @@
-import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { detectLanguage, replyLanguageDirective } from "../src/language.js";
+import { recordedTurns } from "./recorded-turns.js";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
-
-/** Every turn a person types in a recorded scenario or WhatsApp conversation of this repository: all Portuguese. */
-function recordedTurns(): string[] {
-  const out: string[] = [];
-  for (const agent of readdirSync(join(ROOT, "agents"))) {
-    for (const dir of ["scenarios", join("channels", "whatsapp")]) {
-      let files: string[] = [];
-      try {
-        files = readdirSync(join(ROOT, "agents", agent, dir)).filter((f) => f.endsWith(".json") && f !== "templates.json");
-      } catch {
-        continue;
-      }
-      for (const f of files) {
-        const doc = JSON.parse(readFileSync(join(ROOT, "agents", agent, dir, f), "utf8")) as { turns?: Array<{ input?: string; text?: string }> };
-        for (const t of doc.turns ?? []) {
-          const text = t.input ?? t.text;
-          if (typeof text === "string") out.push(text);
-        }
-      }
-    }
-  }
-  return out;
-}
 
 describe("detectLanguage: what the person typed, pt-BR or English", () => {
   it("the requests of the first real-model runs (§64)", () => {
@@ -48,9 +25,10 @@ describe("detectLanguage: what the person typed, pt-BR or English", () => {
     for (const text of ["ok", "", "5000", "chave@x.com", "Escola Aurora"]) expect(detectLanguage(text)).toBeUndefined();
   });
 
-  it("no recorded Portuguese turn of this repository reads as English", () => {
-    const turns = recordedTurns();
-    expect(turns.length).toBeGreaterThan(20);
+  // No floor on how many: this file is copied into every scaffold, and a scaffold carries one agent (two turns, for hello-agent). The floor over the whole repository is in the root `test/recorded-turns.test.ts`.
+  it("no recorded Portuguese turn under agents/ reads as English", () => {
+    const turns = recordedTurns(ROOT);
+    expect(turns.length).toBeGreaterThan(0);
     for (const text of turns) expect([text, detectLanguage(text)]).not.toEqual([text, "en"]);
   });
 
