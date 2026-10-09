@@ -1,9 +1,10 @@
 /**
  * What the terminal says a run did is counted from the engine, not taken from
- * the reply. The replayed reply of the payroll says it ran and the receipts
- * are on the terminal; these runs are the two where that is false (every line
- * already paid; every line failed), driven as real processes because the exit
- * code is part of the contract.
+ * the reply. The replayed reply of the payroll is one sentence whatever the
+ * run does: it says the payroll was proposed and that the result of each line
+ * is on the terminal. These runs are the two where a reply could not say more
+ * (every line already paid; every line failed), driven as real processes
+ * because the exit code is part of the contract.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
@@ -86,6 +87,18 @@ describe("npm start -- --input: the line after the reply is the engine's count",
     const out = run(["--input", PAYROLL, "--deny", "--json"], scratch("denied"));
     expect((JSON.parse(out.stdout.trim()) as Payload).run_outcome).toMatchObject({ settled: 0, failed: 0, declined: 3, already_paid: 0, open: 0 });
     expect(out.code).toBe(0);
+  });
+
+  it("the suppliers' batch replays one reply whether its lines were paid, denied or refused, and it claims none of the three", () => {
+    const SUPPLIERS = "paga os fornecedores de outubro";
+    const paid = JSON.parse(run(["--input", SUPPLIERS, "--approve", "--json"], scratch("suppliers-paid")).stdout.trim()) as Payload;
+    const denied = JSON.parse(run(["--input", SUPPLIERS, "--deny", "--json"], scratch("suppliers-denied")).stdout.trim()) as Payload;
+    expect(paid.run_outcome).toMatchObject({ settled: 3, failed: 0 });
+    expect(denied.run_outcome).toMatchObject({ settled: 0, declined: 3 });
+    // The recording was written for the run where the rail refuses one payee, and said who was paid and who was refused under these two as well.
+    expect(denied.reply).toBe(paid.reply);
+    expect(paid.reply).toContain("O resultado de cada linha está no terminal");
+    expect(paid.reply).not.toMatch(/foram pagos|foi recusado|recibo/i);
   });
 
   it("--help says what the exit code means", () => {
