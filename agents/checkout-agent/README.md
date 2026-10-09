@@ -79,7 +79,7 @@ npm run deny -- <execution-id>
 npm run resume                              # after a crash: reconcile, never re-issue; a pending NFS-e is sent, one left mid-call is reported uncertain
 npm run poll                                # keep looking at an issued charge until it is paid or expires
 npm run rerun -- <run-id>                   # the same run again, offline
-npm run eval                                # the adversarial suite and every scenario, replay provider, stub rail
+npm run eval                                # the adversarial suite and every scenario, replay provider, stub rail; bundles go to runs/eval/
 npm run check                               # the manifest agrees with its files
 npm run inspect -- <run-id>                 # the bundle as a timeline
 ```
