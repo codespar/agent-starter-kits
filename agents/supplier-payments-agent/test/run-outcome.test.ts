@@ -75,7 +75,9 @@ describe("npm start -- --input: the line after the reply is the engine's count",
     const out = run(["--input", PAYROLL, "--approve", "--json"], { ...scratch("failed"), SUPPLIER_PAYMENTS_STUB_REFUSE: PAYROLL_KEYS });
     const payload = JSON.parse(out.stdout.trim()) as Payload;
     expect(payload.executions.map((e) => e.state)).toEqual(["failed", "failed", "failed"]);
-    expect(payload.reply).toContain("recibo no terminal");
+    // The recording cannot know what the rail answered, so it promises a result and no receipt.
+    expect(payload.reply).toContain("O resultado de cada linha está no terminal");
+    expect(payload.reply).not.toMatch(/recibo/i);
     expect(payload.run_outcome).toMatchObject({ settled: 0, failed: 3, already_paid: 0, open: 0 });
     expect(out.code).toBe(1);
   });
@@ -99,7 +101,7 @@ describe("npm start, interactive: every turn's reply is followed by the engine's
       { after: "Ctrl+D", type: PAYROLL },
       { after: "Approve the list?", type: "all" },
     ]);
-    expect(stdout).toContain("recibo no terminal");
+    expect(stdout).toContain("O resultado de cada linha está no terminal");
     expect(stdout).toContain("result of this run: 0 settled, 3 failed or refused, 0 denied or expired, 0 skipped as already paid, 0 open");
   });
 
