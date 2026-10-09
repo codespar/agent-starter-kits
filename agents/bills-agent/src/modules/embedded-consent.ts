@@ -13,9 +13,9 @@
  * bundle, never committed.
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, relative } from "node:path";
 import type { ApiClient } from "@codespar/sdk";
-import { MandateSchema, windowCap, type Locale, type Mandate, describeApiError } from "@codespar/agent-core";
+import { ApiMandateStatusSource, MandateSchema, windowCap, type Locale, type Mandate, describeApiError } from "@codespar/agent-core";
 import { STRINGS } from "../strings.js";
 
 export interface ConsentOptions {
@@ -38,6 +38,24 @@ const YEAR_SECONDS = 365 * 24 * 3600;
 export function loadLocalMandate(path: string): Mandate | undefined {
   if (!existsSync(path)) return undefined;
   return MandateSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+}
+
+/** The words for what the API says of the mandate the file already holds; `unknown` is the API not answering. */
+const PREVIOUS = {
+  active: "consentPreviousActive",
+  paused: "consentPreviousPaused",
+  revoked: "consentPreviousRevoked",
+  expired: "consentPreviousExpired",
+  unknown: "consentPreviousUnknown",
+} as const;
+
+/** The mandate the file holds before this consent, when it holds one this kit can read. A file it cannot read is not a reason to stop a new consent. */
+function previousMandate(path: string): Mandate | undefined {
+  try {
+    return loadLocalMandate(path);
+  } catch {
+    return undefined;
+  }
 }
 
 export async function runEmbeddedConsent(options: ConsentOptions): Promise<Mandate> {
@@ -65,8 +83,12 @@ export async function runEmbeddedConsent(options: ConsentOptions): Promise<Manda
     },
   });
 
+  // A consent after a revocation is not a first one: the file holds the mandate it replaces, and the API says what became of it.
+  const previous = previousMandate(options.mandatePath);
+  const state = previous ? (await new ApiMandateStatusSource(api, now).check(previous.id)).status : undefined;
+
   say("");
-  say(text.consentHeader);
+  say(previous && state ? text.consentReplaces(previous.id, text[PREVIOUS[state]], relative(process.cwd(), options.mandatePath)) : text.consentHeader);
   say(text.consentAgent(example.agent_id, example.purpose));
   say(text.consentCaps(example.per_tx_cap_minor, windowCap(example), example.cap_minor));
   for (const b of example.beneficiaries) say(text.consentPayee(b.name, b.alias));
