@@ -76,7 +76,7 @@ Not in this kit: WhatsApp, `embedded-consent` (see above), scheduling a batch fo
 | `npm start -- --scenario <name> [--mode human\|mandate]` | A scenario pack from `scenarios/`. |
 | `npm start -- --locale en` (any form above) | The lines the code prints in English, the batch gesture included: `Approve the list? [all / all except 3,7 / none]`, `3 line(s), total R$5,400.00`. The default is `locale:` in `agent.yaml`, `pt-BR`. The gesture reads `todas` / `all`, `todas exceto` / `all except` and `nenhuma` / `none` in either locale, so the same answer vetoes the same lines. |
 | `npm run check` | The manifest gate: fails if the prompt, tools or guardrails contradict `agent.yaml`, if `AGENTS.md` and `CLAUDE.md` differ, or if `mcp`, `cli` or `schema` are missing. |
-| `npm run eval` | The adversarial suite (`evals/adversarial/`) and every scenario in every mode, on the replay provider. |
+| `npm run eval` | The adversarial suite (`evals/adversarial/`) and every scenario in every mode, on the replay provider. Its proof bundles go to `runs/eval/`, apart from your own runs; `inspect` and `rerun` take their run ids as usual. |
 | `npm run approve <execution-id>` / `npm run deny <execution-id>` | Decides one line left in `awaiting_approval`. A batch left undecided is decided line by line, which is the same granularity the terminal asks at. |
 | `npm run resume` | After a crash: dispatches only what the outbox proves was never sent, reconciles the rest from the rail, expires what went stale. Never pays twice. |
 | `npm run rerun <run-id>` | Replays a recorded run with no network and checks the state sequence matches. |
