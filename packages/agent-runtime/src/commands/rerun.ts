@@ -8,9 +8,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stderr, stdout } from "node:process";
-import { ProofBundle, isLocale, type ApprovalMode, type Execution } from "@codespar/agent-core";
+import { isLocale, type ApprovalMode, type Execution } from "@codespar/agent-core";
 import type { Agent } from "../agent.js";
-import { runsDir, setup } from "../setup.js";
+import { setup } from "../setup.js";
+import { openRun } from "../runs.js";
 import { handleExecution } from "../terminal.js";
 
 export async function rerun(agent: Agent, argv: string[]): Promise<number> {
@@ -21,8 +22,9 @@ export async function rerun(agent: Agent, argv: string[]): Promise<number> {
     say("usage: npm run rerun <run-id> [--json]");
     return 2;
   }
-  const original = ProofBundle.open(runsDir(agent), runId);
-  if (!original) {
+  const found = openRun(agent, runId);
+  const original = found?.bundle;
+  if (!found || !original) {
     say(`no bundle at runs/${runId}`);
     return 1;
   }
@@ -48,7 +50,9 @@ export async function rerun(agent: Agent, argv: string[]): Promise<number> {
     rail: "stub",
     provider: "replay",
     transcript: transcriptPath,
-    runId: `${runId}_rerun_${Date.now().toString(36)}`,
+    runId: `${original.runId}_rerun_${Date.now().toString(36)}`,
+    // Beside the run it replays: the rerun of an eval run stays with the eval runs.
+    runsDir: found.runsDir,
     stateDir: mkdtempSync(join(tmpdir(), `${agent.slug}-rerun-`)),
     stubRail: plan.stubRail,
     say,
