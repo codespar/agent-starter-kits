@@ -258,7 +258,9 @@ async function runScenarioCommand(agent: Agent, args: Args, railKind: RailKind, 
     });
     const check = checkScenario(scenario, run);
     for (const reply of run.replies) say(text.scenarioReply(reply));
-    say(check.ok ? text.scenarioOk(agent.settlement === "await-payer" ? run.cycle_seconds : undefined, relative(process.cwd(), run.bundle_dir)) : `== FAIL: ${check.failures.join("; ")}`);
+    // Seconds are said only where a clock measured them. On the stub the clock is the scenario's, ticking a second per read: its "16s" is a count of reads in a run that took under one.
+    const measured = agent.settlement === "await-payer" && run.rail === "api" ? run.cycle_seconds : undefined;
+    say(check.ok ? text.scenarioOk(measured, relative(process.cwd(), run.bundle_dir)) : `== FAIL: ${check.failures.join("; ")}`);
     results.push({ mode, ok: check.ok, failures: check.failures, run });
   }
   if (args.json) stdout.write(JSON.stringify({ scenario: scenario.name, ...(picksRail ? { rail } : {}), results }) + "\n");
