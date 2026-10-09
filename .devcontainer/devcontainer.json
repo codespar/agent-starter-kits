@@ -6,7 +6,7 @@
   "postAttachCommand": "bash .devcontainer/quick-path.sh",
   "secrets": {
     "CODESPAR_API_KEY": {
-      "description": "Test key from https://dashboard.codespar.dev (starts with csk_test_). A live key is refused. Set it as a Codespaces secret, never in a committed file.",
+      "description": "Test key from https://codespar.dev/auth/signup (starts with csk_test_). A live key is refused. Set it as a Codespaces secret, never in a committed file.",
       "documentationUrl": "https://github.com/codespar/agent-starter-kits#quickstart-clone-to-first-receipt"
     },
     "ANTHROPIC_API_KEY": {

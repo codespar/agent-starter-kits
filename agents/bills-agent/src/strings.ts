@@ -7,7 +7,7 @@
  * What goes to the API is not here: the consent's display name and intent
  * note are part of the consent the API records, not lines on this terminal.
  */
-import type { LocaleTable } from "@codespar/agent-core";
+import { formatBRL, type LocaleTable } from "@codespar/agent-core";
 import type { KitStrings } from "@codespar/agent-runtime";
 
 const pt = {
@@ -21,12 +21,12 @@ const pt = {
 
   consentHeader: "O mandato ainda não existe. Este é o consentimento que o titular assina (sandbox):",
   consentAgent: (agentId: string, purpose: string) => `  agente: ${agentId}    finalidade: ${purpose}`,
-  consentCaps: (perTx: number, window: number, lifetime: number) => `  teto por pagamento: ${perTx} centavos    teto do mês: ${window} centavos    vitalício: ${lifetime} centavos`,
+  consentCaps: (perTx: number, window: number, lifetime: number) => `  teto por pagamento: ${formatBRL(perTx, "pt-BR")}    teto do mês: ${formatBRL(window, "pt-BR")}    vitalício: ${formatBRL(lifetime, "pt-BR")}`,
   consentPayee: (name: string, alias: string) => `  favorecido: ${name} (${alias})`,
   consentValidity: (tokenExpiresAt: string) => `  validade: 1 ano    (o token do consentimento vale até ${tokenExpiresAt})`,
   consentQuestion: "  Você é o titular e autoriza este mandato? [s/N] ",
   consentSigned: (mandateId: string, consumerId: string) => `Mandato assinado: ${mandateId} (consumidor ${consumerId}).`,
-  consentFunded: (amount: number, account: string, depositId: string) => `Sandbox creditado: ${amount} centavos em ${account} (deposit ${depositId}).`,
+  consentFunded: (amount: number, account: string, depositId: string) => `Sandbox creditado: ${formatBRL(amount, "pt-BR")} em ${account} (deposit ${depositId}).`,
   consentNotFunded: (code: string) => `Sandbox não creditado (${code}); o gasto de teste sob pix-consent não depende disso.`,
   consentSaved: (mandateId: string) => `mandato ${mandateId} salvo em .codespar/mandate.json`,
 };
@@ -44,12 +44,12 @@ export const STRINGS: LocaleTable<typeof pt & KitStrings> = {
 
     consentHeader: "The mandate does not exist yet. This is the consent the account holder signs (sandbox):",
     consentAgent: (agentId, purpose) => `  agent: ${agentId}    purpose: ${purpose}`,
-    consentCaps: (perTx, window, lifetime) => `  cap per payment: ${perTx} cents    cap per month: ${window} cents    lifetime: ${lifetime} cents`,
+    consentCaps: (perTx, window, lifetime) => `  cap per payment: ${formatBRL(perTx, "en")}    cap per month: ${formatBRL(window, "en")}    lifetime: ${formatBRL(lifetime, "en")}`,
     consentPayee: (name, alias) => `  payee: ${name} (${alias})`,
     consentValidity: (tokenExpiresAt) => `  valid for: 1 year    (the consent token is valid until ${tokenExpiresAt})`,
     consentQuestion: "  Are you the account holder, and do you authorize this mandate? [y/N] ",
     consentSigned: (mandateId, consumerId) => `Mandate signed: ${mandateId} (consumer ${consumerId}).`,
-    consentFunded: (amount, account, depositId) => `Sandbox credited: ${amount} cents to ${account} (deposit ${depositId}).`,
+    consentFunded: (amount, account, depositId) => `Sandbox credited: ${formatBRL(amount, "en")} to ${account} (deposit ${depositId}).`,
     consentNotFunded: (code) => `Sandbox not credited (${code}); the test spend under pix-consent does not depend on it.`,
     consentSaved: (mandateId) => `mandate ${mandateId} saved to .codespar/mandate.json`,
   },
