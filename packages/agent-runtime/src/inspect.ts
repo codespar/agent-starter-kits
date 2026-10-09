@@ -160,7 +160,10 @@ export interface InspectReport {
   mandate: {
     id: string;
     version: number;
+    /** The status in `mandate.snapshot.json`: what the local copy said when the run started. */
     status: string;
+    /** What the status source answered at a gate of this run, when that is the last word the run has on the mandate; null when no gate refused for it, or when a payment executed after the refusal. */
+    status_seen: MandateStatusSeen | null;
     expires_at: string;
     currency: string;
     per_tx_cap_minor: number;
@@ -320,6 +323,7 @@ export function assembleTimeline(bundle: ProofBundle): InspectReport {
   const executions = new Map<string, InspectExecution>();
   const attemptsBy = new Map<string, Map<string, InspectAttempt>>();
   const runEvents: InspectReport["run_events"] = [];
+  let statusSeen: MandateStatusSeen | null = null;
 
   const executionOf = (id: string): InspectExecution => {
     const existing = executions.get(id);
@@ -352,6 +356,7 @@ export function assembleTimeline(bundle: ProofBundle): InspectReport {
     const p = payload(event);
 
     if (!executionId) {
+      if (type === "execution.refused_before_draft") statusSeen = mandateStatusSeen(str(p["reason"]), str(p["detail"]), at) ?? statusSeen;
       const detail = str(p["detail"]) ?? str(p["reason"]) ?? str(event["reason"]) ?? str(event["tool"]) ?? str(event["message"]) ?? "";
       const tool = str(event["tool"]);
       runEvents.push({ at, type, detail: redact(tool ? `${tool}: ${detail || String(event["reason"] ?? "")}` : detail) ?? "" });
@@ -375,6 +380,8 @@ export function assembleTimeline(bundle: ProofBundle): InspectReport {
         const to = str(p["to"]) ?? "unknown";
         execution.transitions.push({ at: str(p["at"]) ?? at, from: str(p["from"]), to, actor: actorLabel(p["actor"] ?? event["actor"]), reason: str(p["reason"]), detail: redact(str(p["detail"])) });
         execution.final_state = to;
+        // A gate that let a payment through read `active` after whatever an earlier gate saw (a mandate paused and resumed).
+        statusSeen = to === "executing" ? null : (mandateStatusSeen(str(p["reason"]), str(p["detail"]), str(p["at"]) ?? at) ?? statusSeen);
         break;
       }
       case "approval.created":
@@ -525,6 +532,7 @@ export function assembleTimeline(bundle: ProofBundle): InspectReport {
           id: str(snapshot["id"]) ?? "unknown",
           version: num(snapshot["version"]) ?? 0,
           status: str(snapshot["status"]) ?? "unknown",
+          status_seen: statusSeen,
           expires_at: str(snapshot["expires_at"]) ?? "unknown",
           currency,
           per_tx_cap_minor: num(snapshot["per_tx_cap_minor"]) ?? 0,
@@ -660,6 +668,37 @@ export function batchLineRows(batch: InspectBatch): string[] {
   });
 }
 
+/** The mandate's status as a gate of the run saw it, and who answered. */
+export interface MandateStatusSeen {
+  status: "revoked" | "paused" | "expired";
+  /** `api` or `stub`: the status source that answered. Null when the refusal names none: the run's own clock passed `expires_at`, or the bundle predates the source on the detail. */
+  source: "api" | "stub" | null;
+  at: string;
+}
+
+const SEEN_BY_REASON: Record<string, MandateStatusSeen["status"]> = { mandate_revoked: "revoked", mandate_paused: "paused", mandate_expired: "expired" };
+
+/** A refusal the mandate gate recorded (`mandateGate` in the core): the reason is the status, and the detail ends with the source that answered. */
+function mandateStatusSeen(reason: string | null, detail: string | null, at: string): MandateStatusSeen | undefined {
+  const status = reason ? SEEN_BY_REASON[reason] : undefined;
+  if (!status) return undefined;
+  const source = /\(source: (api|stub)\)/.exec(detail ?? "")?.[1] as "api" | "stub" | undefined;
+  return { status, source: source ?? null, at };
+}
+
+/**
+ * The header's word for the mandate. The snapshot is the local copy at the
+ * start of the run, and it goes on saying `active` under a mandate the API
+ * answered was revoked; where a gate of the run heard otherwise, the header
+ * says what it heard, from whom, and what the snapshot had said.
+ */
+function mandateStatusLabel(m: NonNullable<InspectReport["mandate"]>): string {
+  const seen = m.status_seen;
+  if (!seen || seen.status === m.status) return m.status;
+  const by = seen.source ? `source: ${seen.source}` : seen.status === "expired" ? "by the run's clock" : "source not recorded";
+  return `${seen.status} (${by}, ${clock(seen.at)}; ${m.status} in the snapshot at the start of the run)`;
+}
+
 /** What a replayed answer means, in the one sentence both renderings print under it. */
 export const REPLAY_NOTE = "idempotent_replay: the rail answered with an earlier payment of this attempt; this run moved no money for it";
 
@@ -677,7 +716,7 @@ export function renderText(report: InspectReport): string {
   const m = report.mandate;
   if (m) {
     const caps = [`per payment ${formatMinor(m.per_tx_cap_minor)}`, m.periodic_cap ? `per ${m.periodic_cap.window} ${formatMinor(m.periodic_cap.cap_minor)}` : "", `lifetime ${formatMinor(m.cap_minor)}`].filter(Boolean);
-    out.push(`  mandate ${m.status}, expires ${m.expires_at} · ${caps.join(" · ")}`);
+    out.push(`  mandate ${mandateStatusLabel(m)}, expires ${m.expires_at} · ${caps.join(" · ")}`);
     if (m.beneficiaries.length) out.push(`  named payees: ${m.beneficiaries.map((b) => `${b.name} <${b.payee}>`).join(", ")}`);
   }
 
@@ -739,7 +778,7 @@ export function renderHtml(report: InspectReport): string {
     `<h1>${esc(r.run_id)}</h1>`,
     `<p class="lede">${esc(r.agent ?? "unknown agent")} · mode <b>${esc(r.mode ?? "?")}</b> · rail <b>${esc(r.rail ?? "?")}</b> · mandate <b>${esc(r.mandate_id ?? "?")}</b>${r.mandate_version !== null ? ` v${r.mandate_version}` : ""}${r.started_at ? ` · started ${esc(r.started_at)}` : ""}</p>`,
     m
-      ? `<p class="lede">mandate ${esc(m.status)}, expires ${esc(m.expires_at)} · per payment ${esc(formatMinor(m.per_tx_cap_minor))}${m.periodic_cap ? ` · per ${esc(m.periodic_cap.window)} ${esc(formatMinor(m.periodic_cap.cap_minor))}` : ""} · lifetime ${esc(formatMinor(m.cap_minor))}</p>`
+      ? `<p class="lede">mandate ${esc(mandateStatusLabel(m))}, expires ${esc(m.expires_at)} · per payment ${esc(formatMinor(m.per_tx_cap_minor))}${m.periodic_cap ? ` · per ${esc(m.periodic_cap.window)} ${esc(formatMinor(m.periodic_cap.cap_minor))}` : ""} · lifetime ${esc(formatMinor(m.cap_minor))}</p>`
       : "",
     m && m.beneficiaries.length ? `<p class="lede">named payees: ${m.beneficiaries.map((b) => `${esc(b.name)} <code>${esc(b.payee)}</code>`).join(", ")}</p>` : "",
   ].join("\n");
