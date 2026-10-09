@@ -47,7 +47,7 @@ npm run verify -- agents/bills-agent/runs/<run-id>/receipts/rcpt_....json --from
 
 `verify` reads the receipt from the API in memory, checks it and prints the verdict, the chain, the approval and the two payment fields the chain seals. It prints and writes nothing else of the read. Do not print the raw read (`consumers get-receipts`, or `GET /v1/consumers/receipts/{id}` by hand). For a key with the `*` or `mandates:spend` scope, which the signup key has, it still carries `mandate.sig`, the mandate's own HMAC, and that authorizes spends (codespar-enterprise ent#1707).
 
-Prefer a fresh directory over a clone? `npx -y @codespar/cli@0.18.0 init my-agent --template bills-agent` (or `collections-agent`) scaffolds the same agent.
+Prefer a fresh directory over a clone? `npx -y @codespar/cli@0.18.1 init my-agent --template bills-agent` (or `collections-agent`) scaffolds the same agent.
 
 ## How it works
 
