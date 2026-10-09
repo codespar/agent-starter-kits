@@ -14,10 +14,14 @@
  *
  * What it reads: string literals starting with `../`, resolved against the
  * directory of the file they are in, which is how `import.meta.dirname`
- * paths are written here. It flags one that leaves the file's own package or
- * agent AND lands on something a template does not carry. A path built from
- * another base, or computed, is not seen; the end-to-end proof is a scaffold's
- * own `npm test`, which the CLI's opt-in e2e runs.
+ * paths are written here, and the same path spelled as arguments (`"..",
+ * "..", "scripts"`). It flags one that leaves the file's own package or agent
+ * AND lands on something a template does not carry. A path built from another
+ * base, or computed, is not seen, and neither is a test that reaches nothing
+ * foreign and still counts on the whole repository being around it (a floor
+ * on how many recorded turns `agents/` holds). For those the proof is a
+ * scaffold's own `npm test`: `one-agent-scaffold.test.ts` runs one here, and
+ * the CLI's opt-in e2e runs the real ones.
  */
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,6 +44,18 @@ function sources(dir: string): string[] {
   });
 }
 
+/**
+ * The upward paths a source spells out: a `"../x/y"` literal, and the same
+ * path written as arguments, `"..", "..", "x", "y"`, which is how
+ * `join(import.meta.dirname, "..", "..", "..", "scripts")` reads. The second
+ * form is returned joined, so both are judged as one path.
+ */
+function upwardPaths(source: string): string[] {
+  const literals = [...source.matchAll(/["'`](\.\.\/[^"'`$]*)["'`]/g)].map((m) => m[1]!);
+  const segments = [...source.matchAll(/((?:["']\.\.["']\s*,\s*)*["']\.\.["'](?:\s*,\s*["'][^"'`$,]+["'])*)/g)].map((m) => [...m[1]!.matchAll(/["']([^"']+)["']/g)].map((s) => s[1]!).join("/"));
+  return [...literals, ...segments];
+}
+
 /** Every `../` literal under `packages/*` and `agents/*` of `root` that reaches something a template made from that unit would not have. */
 function outsideReads(root: string): string[] {
   const units = ["packages", "agents"].flatMap((top) => readdirSync(join(root, top), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(top, e.name)));
@@ -47,14 +63,14 @@ function outsideReads(root: string): string[] {
   const found: string[] = [];
   for (const unit of units) {
     for (const file of sources(join(root, unit))) {
-      for (const match of readFileSync(file, "utf8").matchAll(/["'`](\.\.\/[^"'`$]*)["'`]/g)) {
-        const target = relative(root, resolve(dirname(file), match[1]!));
+      for (const literal of upwardPaths(readFileSync(file, "utf8"))) {
+        const target = relative(root, resolve(dirname(file), literal));
         if (!relative(unit, target).startsWith("..")) continue; // still inside its own package or agent
         const [top, name] = target.split(sep);
         // A sibling agent, not merely a path that happens to pass through `agents/` (an agent test resolving `../../packages/…` from its own directory).
         const sibling = top === "agents" && name !== undefined && agents.has(join("agents", name)) && join("agents", name) !== unit;
         const kitsOnly = KITS_ONLY.has(top!) || sibling;
-        if (kitsOnly) found.push(`${relative(root, file)}: "${match[1]}" reaches ${target}, which a template does not carry`);
+        if (kitsOnly) found.push(`${relative(root, file)}: "${literal}" reaches ${target}, which a template does not carry`);
       }
     }
   }
@@ -79,8 +95,13 @@ describe("a template reads nothing it does not carry", () => {
     put("agents/collections-agent/agent.yaml", "schema: 1\n");
     put("agents/checkout-agent/test/bin.test.ts", 'const bin = resolve(agentDir, "../../packages/agent-runtime/bin.mjs");');
     put("agents/checkout-agent/test/sibling.test.ts", 'const other = resolve(import.meta.dirname, "../../collections-agent/agent.yaml");');
+    // The same reads spelled as arguments, which the literal form alone did not see; and the repository root, which every template has.
+    put("packages/agent-core/test/pin.test.ts", 'const PIN = join(import.meta.dirname, "..", "..", "..", "scripts", "whatsapp-emulator.mjs");');
+    put("packages/agent-core/test/language.test.ts", 'const ROOT = join(import.meta.dirname, "..", "..", "..");');
+    put("packages/agent-core/test/home.test.ts", 'const SRC = join(import.meta.dirname, "..", "src", "language.ts");');
     expect(outsideReads(tree).sort()).toEqual([
       'agents/checkout-agent/test/sibling.test.ts: "../../collections-agent/agent.yaml" reaches agents/collections-agent/agent.yaml, which a template does not carry',
+      'packages/agent-core/test/pin.test.ts: "../../../scripts/whatsapp-emulator.mjs" reaches scripts/whatsapp-emulator.mjs, which a template does not carry',
       'packages/agent-runtime/test/emulator.test.ts: "../../../scripts/whatsapp-emulator.mjs" reaches scripts/whatsapp-emulator.mjs, which a template does not carry',
       'packages/agent-runtime/test/fallback.test.ts: "../../../agents/collections-agent" reaches agents/collections-agent, which a template does not carry',
     ]);
