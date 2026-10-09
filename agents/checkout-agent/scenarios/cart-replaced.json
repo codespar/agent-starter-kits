@@ -8,7 +8,7 @@
   "transcript": "./cart-replaced.transcript.jsonl",
   "turns": [
     {
-      "input": "oi, sou a Marina, quero duas aulas avulsas",
+      "input": "oi, sou a Marina, queria marcar duas aulas avulsas",
       "decision": "none"
     },
     {
