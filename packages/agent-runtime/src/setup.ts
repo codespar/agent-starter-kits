@@ -190,7 +190,7 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
   const signer = loadOrCreateLocalApprovalKey(stateDir);
 
   const railKind = resolveRailKind(env, options.rail);
-  const built = agent.kit.buildRail({
+  const built = buildRailOf(agent, {
     kind: railKind,
     env,
     agentDir: agent.dir,
@@ -302,8 +302,28 @@ export function inLocaleOf(s: Setup, execution: Execution): Setup {
 }
 
 export class NoMandateError extends Error {
-  constructor() {
-    super("no signed mandate yet: run `npm run consent -- --yes` first (or `npm start` without --input, which starts the consent when a test key is present)");
+  /** `consent` is whether the agent has a consent step to send the person to. A kit throws this bare; `setup` answers the question from the kit. */
+  constructor(consent = true) {
+    super(
+      consent
+        ? "no signed mandate yet: run `npm run consent -- --yes` first (or `npm start` without --input, which starts the consent when a test key is present)"
+        : "no signed mandate yet: this agent has no consent step, because its mandate is issued outside the terminal. Save the signed mandate as .codespar/mandate.json in the agent's directory; the agent's README says who issues it (\"Sandbox rail\")",
+    );
     this.name = "NoMandateError";
+  }
+}
+
+/**
+ * The kit's rail, with the missing-mandate refusal worded for the agent: a kit
+ * says only that the mandate is absent, and whether there is a `consent` to
+ * name is read from the kit itself, so no agent is promised a script it does
+ * not have.
+ */
+function buildRailOf(agent: Agent, ctx: Parameters<AgentKit["buildRail"]>[0]): ReturnType<AgentKit["buildRail"]> {
+  try {
+    return agent.kit.buildRail(ctx);
+  } catch (err) {
+    if (err instanceof NoMandateError && !agent.kit.consent) throw new NoMandateError(false);
+    throw err;
   }
 }
