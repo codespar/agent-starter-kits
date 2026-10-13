@@ -44,6 +44,8 @@ interface Fake {
 }
 
 /** The API as the proof's project answers it: `sources` is what GET /v1/consumers/funding-sources lists, `signed` what the submit signs. */
+const ttl: number[] = [];
+
 function fakeApi(sources: Array<Record<string, unknown>>, signed: Partial<{ consumer_id: string; funding_source_id: string }> = {}): Fake {
   const posts: string[] = [];
   const api = {
@@ -51,8 +53,9 @@ function fakeApi(sources: Array<Record<string, unknown>>, signed: Partial<{ cons
       if (path === "/v1/consumers/funding-sources") return { funding_sources: sources, unattributed_count: 0 };
       throw new Error(`unexpected GET ${path}`);
     },
-    post: async (path: string) => {
+    post: async (path: string, options?: { body?: { intent?: { mandate_ttl_seconds?: number } } }) => {
       posts.push(path);
+      if (path === "/v1/consents/init") ttl.push(options?.body?.intent?.mandate_ttl_seconds ?? -1);
       if (path === "/v1/consents/init") return { token: "tok_test", expires_at: "2026-10-12T18:30:00.000Z" };
       if (path === "/v1/consents/{token}/submit") {
         return {
@@ -185,10 +188,14 @@ describe("no new funding", () => {
     const mandate = await run;
     expect(fake.posts).toEqual(["/v1/consents/init", "/v1/consents/{token}/submit"]);
     expect(fake.posts).not.toContain("/v1/test/fund");
+    expect(ttl.at(-1)).toBe(7 * 24 * 3600);
     expect(mandate.consumer_id).toBe(PROOF.consumerId);
     expect(mandate.canonical?.["funding_source_id"]).toBe(CELCOIN_FS);
     expect(existsSync(mandatePath)).toBe(true);
     expect(said.join("\n")).toMatch(/Nada creditado/);
+    // What the person reads before authorizing: the consumer's payee, the caps and a week's validity.
+    expect(said.join("\n")).toMatch(/Recebedor de teste da prova/);
+    expect(said.join("\n")).toMatch(/validade: 7 dias/);
   });
 });
 

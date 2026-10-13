@@ -17,7 +17,7 @@ import { dirname, relative } from "node:path";
 import type { ApiClient } from "@codespar/sdk";
 import { ApiMandateStatusSource, MandateSchema, windowCap, type Locale, type Mandate, describeApiError } from "@codespar/agent-core";
 import { STRINGS } from "../strings.js";
-import { assertCelcoinBinding, assertMandateBinding, type IntegratedProof } from "./integrated-proof.js";
+import { INTEGRATED_MANDATE_DAYS, assertCelcoinBinding, assertMandateBinding, type IntegratedProof } from "./integrated-proof.js";
 
 export interface ConsentOptions {
   api: ApiClient;
@@ -78,7 +78,7 @@ export async function runEmbeddedConsent(options: ConsentOptions): Promise<Manda
         cap_minor: example.cap_minor,
         per_tx_cap_minor: example.per_tx_cap_minor,
         currency: "BRL",
-        mandate_ttl_seconds: YEAR_SECONDS,
+        mandate_ttl_seconds: options.integrated ? INTEGRATED_MANDATE_DAYS * 24 * 3600 : YEAR_SECONDS,
         merchant_allowlist: example.beneficiaries.map((b) => b.payee),
         merchant_pin_kind: "pix-key",
         ...(example.periodic_cap ? { periodic_cap: example.periodic_cap } : {}),
@@ -98,7 +98,7 @@ export async function runEmbeddedConsent(options: ConsentOptions): Promise<Manda
   say(text.consentAgent(example.agent_id, example.purpose));
   say(text.consentCaps(example.per_tx_cap_minor, windowCap(example), example.cap_minor));
   for (const b of example.beneficiaries) say(text.consentPayee(b.name, b.alias));
-  say(text.consentValidity(init.expires_at));
+  say(options.integrated ? text.consentValidityDays(INTEGRATED_MANDATE_DAYS, init.expires_at) : text.consentValidity(init.expires_at));
   const yes = await options.confirm(text.consentQuestion);
   if (!yes) throw new Error("consent not authorized by the titular; nothing was created");
 

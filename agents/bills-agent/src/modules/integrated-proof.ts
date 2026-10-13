@@ -31,6 +31,8 @@ export interface IntegratedProof {
 /** R$ 10,00: the terminal's share of the proof budget, as the mandate's every cap. */
 export const INTEGRATED_CAP_MINOR = 1000;
 export const RECEIVER_ALIAS = "recebedor-prova";
+/** The proof's mandate lasts a week, not the kit's year: it is a demonstration, said on screen at the consent. */
+export const INTEGRATED_MANDATE_DAYS = 7;
 
 const CONSUMER_RE = /^[A-Za-z0-9_-]+$/;
 const EVP_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
