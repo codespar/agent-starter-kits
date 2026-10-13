@@ -30,10 +30,12 @@ const pt = {
   consentCaps: (perTx: number, window: number, lifetime: number) => `  teto por pagamento: ${formatBRL(perTx, "pt-BR")}    teto do mês: ${formatBRL(window, "pt-BR")}    vitalício: ${formatBRL(lifetime, "pt-BR")}`,
   consentPayee: (name: string, alias: string) => `  favorecido: ${name} (${alias})`,
   consentValidity: (tokenExpiresAt: string) => `  validade: 1 ano    (o token do consentimento vale até ${tokenExpiresAt})`,
+  consentValidityDays: (days: number, tokenExpiresAt: string) => `  validade: ${days} dias    (o token do consentimento vale até ${tokenExpiresAt})`,
   consentQuestion: "  Você é o titular e autoriza este mandato? [s/N] ",
   consentSigned: (mandateId: string, consumerId: string) => `Mandato assinado: ${mandateId} (consumidor ${consumerId}).`,
   consentFunded: (amount: number, account: string, depositId: string) => `Sandbox creditado: ${formatBRL(amount, "pt-BR")} em ${account} (deposit ${depositId}).`,
   consentNotFunded: (code: string) => `Sandbox não creditado (${code}); o gasto de teste sob pix-consent não depende disso.`,
+  consentNotFundedIntegrated: "Nada creditado: na prova integrada, a conta Celcoin do consumidor já foi abastecida pelo operador, uma vez, dentro do teto da prova.",
   consentSaved: (mandateId: string) => `mandato ${mandateId} salvo em .codespar/mandate.json`,
 };
 
@@ -59,10 +61,12 @@ export const STRINGS: LocaleTable<typeof pt & KitStrings> = {
     consentCaps: (perTx, window, lifetime) => `  cap per payment: ${formatBRL(perTx, "en")}    cap per month: ${formatBRL(window, "en")}    lifetime: ${formatBRL(lifetime, "en")}`,
     consentPayee: (name, alias) => `  payee: ${name} (${alias})`,
     consentValidity: (tokenExpiresAt) => `  valid for: 1 year    (the consent token is valid until ${tokenExpiresAt})`,
+    consentValidityDays: (days, tokenExpiresAt) => `  valid for: ${days} days    (the consent token is valid until ${tokenExpiresAt})`,
     consentQuestion: "  Are you the account holder, and do you authorize this mandate? [y/N] ",
     consentSigned: (mandateId, consumerId) => `Mandate signed: ${mandateId} (consumer ${consumerId}).`,
     consentFunded: (amount, account, depositId) => `Sandbox credited: ${formatBRL(amount, "en")} to ${account} (deposit ${depositId}).`,
     consentNotFunded: (code) => `Sandbox not credited (${code}); the test spend under pix-consent does not depend on it.`,
+    consentNotFundedIntegrated: "Nothing credited: in the integrated proof, the consumer's Celcoin account was funded once by the operator, within the proof's ceiling.",
     consentSaved: (mandateId) => `mandate ${mandateId} saved to .codespar/mandate.json`,
   },
 };
