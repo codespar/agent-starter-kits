@@ -171,4 +171,13 @@ describe("the mandate refuses above its caps", () => {
     const within = await h.engine.draft({ items: [{ payee: RECEIVER_ALIAS, amount: 1000 }] });
     expect(within.ok).toBe(true);
   });
+
+  it("in human mode R$ 20,00 is still a refusal, not a request for approval", async () => {
+    const h = harness({ mode: "human", mandate: { ...example(), id: "mdt_proof_human" } });
+    const over = await h.engine.draft({ items: [{ payee: RECEIVER_ALIAS, amount: 2000 }] });
+    const state = over.ok ? over.execution.state : "refused_before_draft";
+    const reason = over.ok ? over.execution.reason : over.reason;
+    expect(state).not.toBe("awaiting_approval");
+    expect(reason).toBe("per_tx_cap_exceeded");
+  });
 });
