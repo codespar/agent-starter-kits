@@ -117,7 +117,7 @@ describe("which locale a run speaks", () => {
     const stateDir = mkdtempSync(join(tmpdir(), "bills-locale-cli-"));
     const result = spawnSync(NODE, [BIN, "start", ...args], {
       cwd: AGENT_DIR,
-      env: { ...process.env, ANTHROPIC_API_KEY: "", CODESPAR_API_KEY: "", BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") },
+      env: { ...process.env, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", CODESPAR_API_KEY: "", BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") },
       encoding: "utf8",
       timeout: 60_000,
     });

@@ -16,7 +16,7 @@ const BIN = resolve(AGENT_DIR, "../../packages/agent-runtime/bin.mjs");
 function run(command: string, args: string[], env: Record<string, string>) {
   const result = spawnSync(NODE, [BIN, command, ...args], {
     cwd: AGENT_DIR,
-    env: { ...process.env, ANTHROPIC_API_KEY: "", CODESPAR_API_KEY: "", ...env },
+    env: { ...process.env, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", CODESPAR_API_KEY: "", ...env },
     encoding: "utf8",
     timeout: 60_000,
   });
