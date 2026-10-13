@@ -65,6 +65,21 @@ describe("the rail's answer, verbatim", () => {
     expect(railErrorOf(out)).toMatchObject({ outcome: "uncertain", code: "provider_error", message: PROVIDER.body.error.message });
   });
 
+  it("a failure learned at reconcile carries the API's message too, the same as one learned at dispatch", async () => {
+    answer = PROVIDER;
+    const h = harness({ mode: "human", wrapRail: () => new CodeSparRail(createCodeSparClient({ apiKey: "csk_test_unit_0000", baseUrl, timeoutMs: 5_000 })) });
+    const d = await h.engine.draft({ items: [{ payee: "escola", amount: 185000 }] });
+    if (!d.ok) throw new Error("refused");
+    const open = await h.engine.execute(h.engine.approve(d.execution.id, { id: "usr_demo", channel: "terminal" }).id);
+    expect(open.state).toBe("executing");
+
+    answer = INSUFFICIENT;
+    const out = await h.engine.reconcile(open.id);
+    expect(out.state).toBe("failed");
+    expect(out.outcomes[0]).toMatchObject({ status: "failed", code: "insufficient_funds", message: INSUFFICIENT.body.error.message });
+    expect(railErrorOf(out)).toEqual({ outcome: "failed", attempt_id: out.outcomes[0]!.attempt_id, code: "insufficient_funds", message: INSUFFICIENT.body.error.message });
+  });
+
   it("an unknown answer is superseded once its attempt has an outcome", () => {
     const answers = [{ attempt_id: "att_0", code: "provider_error", message: "x" }];
     expect(railErrorOf({ outcomes: [], uncertain_answers: answers })).toMatchObject({ outcome: "uncertain" });
