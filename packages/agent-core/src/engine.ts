@@ -689,7 +689,7 @@ export class ExecutionEngine {
         continue;
       }
       if (seen.status === "failed") {
-        replace({ index, attempt_id: payment.attempt_id, status: "failed", code: seen.code, error: `${seen.code}: ${seen.message}`, ...(seen.held ? { held: seen.held } : {}) });
+        replace({ index, attempt_id: payment.attempt_id, status: "failed", code: seen.code, message: seen.message, error: `${seen.code}: ${seen.message}`, ...(seen.held ? { held: seen.held } : {}) });
         continue;
       }
       // No `replayed` here, whatever the rail said. A lookup IS a second

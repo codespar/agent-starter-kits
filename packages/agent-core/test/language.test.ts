@@ -25,6 +25,17 @@ describe("detectLanguage: what the person typed, pt-BR or English", () => {
     for (const text of ["ok", "", "5000", "chave@x.com", "Escola Aurora"]) expect(detectLanguage(text)).toBeUndefined();
   });
 
+  it("\"no\" and \"do\" are words of both languages, and count for neither", () => {
+    // An English refusal typed at an approval is not a Portuguese message.
+    expect(detectLanguage("no")).toBeUndefined();
+    expect(detectLanguage("No.")).toBeUndefined();
+    expect(detectLanguage("do it")).toBe("en");
+    expect(detectLanguage("no, do not pay that")).toBe("en");
+    // A Portuguese sentence that uses them is still read by its other words.
+    expect(detectLanguage("pague a conta do condominio no dia 10")).toBe("pt-BR");
+    expect(detectLanguage("quanto gastei no mercado?")).toBe("pt-BR");
+  });
+
   // No floor on how many: this file is copied into every scaffold, and a scaffold carries one agent (two turns, for hello-agent). The floor over the whole repository is in the root `test/recorded-turns.test.ts`.
   it("no recorded Portuguese turn under agents/ reads as English", () => {
     const turns = recordedTurns(ROOT);

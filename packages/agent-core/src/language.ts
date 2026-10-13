@@ -16,8 +16,9 @@
 
 export type ReplyLanguage = "pt-BR" | "en";
 
+// "no" and "do" are in neither set: they are words of both languages, and an English "no" at an approval is not Portuguese.
 const PT = new Set(
-  "de da das do dos para pra pro que com um uma os é está esta estou já foi o e em na nas nos no ao aos meu minha minhas meus você voce vocês não nao sim oi olá ola quanto quanta quais qual quero queria pague paga pagar pagamento pagamentos manda mande mandar roda rode rodar gastei gastou mês mes conta contas folha essa esse isso esta este semana tudo vence venceu obrigado obrigada por favor hoje agora fechado até como onde quando quem aqui sou eu pode posso preciso".split(" "),
+  "de da das dos para pra pro que com um uma os é está esta estou já foi o e em na nas nos ao aos meu minha minhas meus você voce vocês não nao sim oi olá ola quanto quanta quais qual quero queria pague paga pagar pagamento pagamentos manda mande mandar roda rode rodar gastei gastou mês mes conta contas folha essa esse isso esta este semana tudo vence venceu obrigado obrigada por favor hoje agora fechado até como onde quando quem aqui sou eu pode posso preciso".split(" "),
 );
 const EN = new Set(
   "the to and of for pay paid please my i i'm i'd i'll you your how much many what which when who is are was were have has had spent this that month week bill bills run payroll school cleaner electricity it it's next year's hi hello thanks thank can could would will with yes send show list due all everything from on in at by fee enrollment rules ignore".split(" "),
