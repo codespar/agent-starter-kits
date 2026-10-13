@@ -9,8 +9,19 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ApiClient } from "@codespar/sdk";
-import { loadMandate, type Mandate } from "@codespar/agent-core";
-import { harness } from "../../../packages/agent-core/test/helpers.js";
+import {
+  ExecutionEngine,
+  LocalMandateStatusStub,
+  ProofBundle,
+  StateStore,
+  StubRail,
+  hmacSigner,
+  loadGuardrails,
+  loadManifest,
+  loadMandate,
+  type ApprovalMode,
+  type Mandate,
+} from "@codespar/agent-core";
 import { runEmbeddedConsent } from "../src/modules/embedded-consent.js";
 import {
   INTEGRATED_BILLS,
@@ -69,6 +80,28 @@ function fakeApi(sources: Array<Record<string, unknown>>, signed: Partial<{ cons
 
 const celcoinRow = (over: Record<string, unknown> = {}) => ({ id: CELCOIN_FS, consumer_id: PROOF.consumerId, rail: "pix-celcoin", status: "active", ...over });
 
+/** An engine over the kit's own manifest and guardrails, with the proof's mandate and the stub rail (no network). */
+function engineFor(mandate: Mandate, mode: ApprovalMode): ExecutionEngine {
+  const dir = mkdtempSync(join(tmpdir(), "bills-proof-engine-"));
+  const clock = () => new Date("2026-10-13T15:00:00Z"); // 12:00 in Sao Paulo, inside hours
+  const store = new StateStore(join(dir, "state.db"));
+  const manifest = loadManifest(resolve(AGENT_DIR, "agent.yaml"));
+  return new ExecutionEngine({
+    store,
+    rail: new StubRail(store, { clock }),
+    status: new LocalMandateStatusStub(store, clock),
+    signer: hmacSigner("test", Buffer.alloc(32, 1)),
+    manifest: manifest.manifest,
+    guardrails: { ...loadGuardrails(resolve(AGENT_DIR, "guardrails.json")), approval: mode },
+    mandate,
+    bundle: new ProofBundle(join(dir, "runs"), "run_proof_test"),
+    mode,
+    runId: "run_proof_test",
+    onBehalfOf: PROOF.consumerId,
+    clock,
+  });
+}
+
 function example(): Mandate {
   return integratedExample(loadMandate(resolve(AGENT_DIR, "mandate.example.json")), PROOF);
 }
@@ -105,8 +138,8 @@ describe("the proof's settings", () => {
   it("list the proof's bills instead of the month's, both to the test receiver", async () => {
     process.env["BILLS_CONSUMER_ID"] = PROOF.consumerId;
     process.env["BILLS_PROOF_RECEIVER_KEY"] = PROOF.receiverKey;
-    const h = harness({ mandate: { beneficiaries: [{ alias: RECEIVER_ALIAS, name: "Recebedor de teste da prova", payee: PROOF.receiverKey }] } });
-    const out = (await listBills({}, { engine: h.engine } as never)) as { bills: Array<{ alias: string; amount_minor: number }> };
+    const engine = engineFor({ ...example(), id: "mdt_proof_bills" }, "human");
+    const out = (await listBills({}, { engine } as never)) as { bills: Array<{ alias: string; amount_minor: number }> };
     expect(out.bills.map((b) => [b.alias, b.amount_minor])).toEqual(INTEGRATED_BILLS.map((b) => [b.alias, b.amount_minor]));
   });
 });
@@ -162,19 +195,19 @@ describe("no new funding", () => {
 describe("the mandate refuses above its caps", () => {
   it("R$ 20,00 (above the mandate's R$ 10,00, below the proof's R$ 50,00) is denied per_tx_cap_exceeded by the mandate; R$ 10,00 is not", async () => {
     const m = example();
-    const h = harness({ mode: "mandate", mandate: { ...m, id: "mdt_proof_test" } });
-    const over = await h.engine.draft({ items: [{ payee: RECEIVER_ALIAS, amount: 2000 }] });
+    const engine = engineFor({ ...m, id: "mdt_proof_test" }, "mandate");
+    const over = await engine.draft({ items: [{ payee: RECEIVER_ALIAS, amount: 2000 }] });
     // The proof's own R$ 50,00 per-payment limit (API side) is not what refuses it: this is the mandate's cap, before any call.
     const reason = over.ok ? over.execution.reason : over.reason;
     expect(over.ok ? over.execution.state : "refused_before_draft").not.toBe("settled");
     expect(reason).toBe("per_tx_cap_exceeded");
-    const within = await h.engine.draft({ items: [{ payee: RECEIVER_ALIAS, amount: 1000 }] });
+    const within = await engine.draft({ items: [{ payee: RECEIVER_ALIAS, amount: 1000 }] });
     expect(within.ok).toBe(true);
   });
 
   it("in human mode R$ 20,00 is still a refusal, not a request for approval", async () => {
-    const h = harness({ mode: "human", mandate: { ...example(), id: "mdt_proof_human" } });
-    const over = await h.engine.draft({ items: [{ payee: RECEIVER_ALIAS, amount: 2000 }] });
+    const engine = engineFor({ ...example(), id: "mdt_proof_human" }, "human");
+    const over = await engine.draft({ items: [{ payee: RECEIVER_ALIAS, amount: 2000 }] });
     const state = over.ok ? over.execution.state : "refused_before_draft";
     const reason = over.ok ? over.execution.reason : over.reason;
     expect(state).not.toBe("awaiting_approval");

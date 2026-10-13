@@ -109,7 +109,7 @@ export async function assertCelcoinBinding(api: ApiClient, proof: IntegratedProo
 }
 
 /** The signed (or stored) mandate is this consumer's, on its Celcoin source. */
-export function assertMandateBinding(mandate: { consumer_id?: unknown; canonical?: Record<string, unknown> }, proof: IntegratedProof, where: string): void {
+export function assertMandateBinding(mandate: { consumer_id?: unknown; canonical?: Record<string, unknown> | undefined }, proof: IntegratedProof, where: string): void {
   if (mandate.consumer_id !== proof.consumerId) {
     throw new IntegratedProofError("wrong_consumer", `${where}: the mandate is for another consumer, not ${proof.consumerId}`);
   }
