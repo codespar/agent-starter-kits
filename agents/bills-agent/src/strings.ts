@@ -34,6 +34,7 @@ const pt = {
   consentSigned: (mandateId: string, consumerId: string) => `Mandato assinado: ${mandateId} (consumidor ${consumerId}).`,
   consentFunded: (amount: number, account: string, depositId: string) => `Sandbox creditado: ${formatBRL(amount, "pt-BR")} em ${account} (deposit ${depositId}).`,
   consentNotFunded: (code: string) => `Sandbox não creditado (${code}); o gasto de teste sob pix-consent não depende disso.`,
+  consentNotFundedIntegrated: "Nada creditado: na prova integrada, a conta Celcoin do consumidor já foi abastecida pelo operador, uma vez, dentro do teto da prova.",
   consentSaved: (mandateId: string) => `mandato ${mandateId} salvo em .codespar/mandate.json`,
 };
 
@@ -63,6 +64,7 @@ export const STRINGS: LocaleTable<typeof pt & KitStrings> = {
     consentSigned: (mandateId, consumerId) => `Mandate signed: ${mandateId} (consumer ${consumerId}).`,
     consentFunded: (amount, account, depositId) => `Sandbox credited: ${formatBRL(amount, "en")} to ${account} (deposit ${depositId}).`,
     consentNotFunded: (code) => `Sandbox not credited (${code}); the test spend under pix-consent does not depend on it.`,
+    consentNotFundedIntegrated: "Nothing credited: in the integrated proof, the consumer's Celcoin account was funded once by the operator, within the proof's ceiling.",
     consentSaved: (mandateId) => `mandate ${mandateId} saved to .codespar/mandate.json`,
   },
 };

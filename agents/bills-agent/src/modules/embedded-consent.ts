@@ -17,6 +17,7 @@ import { dirname, relative } from "node:path";
 import type { ApiClient } from "@codespar/sdk";
 import { ApiMandateStatusSource, MandateSchema, windowCap, type Locale, type Mandate, describeApiError } from "@codespar/agent-core";
 import { STRINGS } from "../strings.js";
+import { assertCelcoinBinding, assertMandateBinding, type IntegratedProof } from "./integrated-proof.js";
 
 export interface ConsentOptions {
   api: ApiClient;
@@ -30,6 +31,8 @@ export interface ConsentOptions {
   confirm: (question: string) => Promise<boolean>;
   /** The consumer this mandate is for. Defaults to the example's. */
   consumerId?: string;
+  /** The restricted integrated Celcoin proof: the consumer's Celcoin binding is checked first, and nothing is funded. */
+  integrated?: IntegratedProof;
   now?: () => Date;
 }
 
@@ -62,7 +65,10 @@ export async function runEmbeddedConsent(options: ConsentOptions): Promise<Manda
   const { api, example, say } = options;
   const text = STRINGS[options.locale ?? "pt-BR"];
   const now = options.now ?? (() => new Date());
-  const consumerId = options.consumerId ?? example.consumer_id;
+  const consumerId = options.integrated?.consumerId ?? options.consumerId ?? example.consumer_id;
+  // Before any write: without the consumer's own Celcoin source, the submit below would open a new
+  // pix-consent source (the Mercado Pago path in Test). Refused here, with nothing created.
+  if (options.integrated) await assertCelcoinBinding(api, options.integrated);
 
   const init = await api.post("/v1/consents/init", {
     body: {
@@ -131,12 +137,16 @@ export async function runEmbeddedConsent(options: ConsentOptions): Promise<Manda
     source: "consent",
   });
 
+  if (options.integrated) assertMandateBinding(mandate, options.integrated, "signed mandate");
+
   mkdirSync(dirname(options.mandatePath), { recursive: true });
   writeFileSync(options.mandatePath, JSON.stringify(mandate, null, 2) + "\n", { mode: 0o600 });
   chmodSync(options.mandatePath, 0o600);
   say(text.consentSigned(mandate.id, mandate.consumer_id));
 
-  await fundSandbox(api, mandate, say, options.locale);
+  // The proof's account is credited once, by the operator, under the proof's own ceiling: never from here.
+  if (options.integrated) say(text.consentNotFundedIntegrated);
+  else await fundSandbox(api, mandate, say, options.locale);
   return mandate;
 }
 
