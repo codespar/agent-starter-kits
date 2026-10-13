@@ -12,6 +12,7 @@ import type { ApiClient } from "@codespar/sdk";
 import {
   ExecutionEngine,
   LocalMandateStatusStub,
+  MandateSchema,
   ProofBundle,
   StateStore,
   StubRail,
@@ -45,6 +46,7 @@ interface Fake {
 
 /** The API as the proof's project answers it: `sources` is what GET /v1/consumers/funding-sources lists, `signed` what the submit signs. */
 const ttl: number[] = [];
+const intents: Array<Record<string, unknown>> = [];
 
 function fakeApi(sources: Array<Record<string, unknown>>, signed: Partial<{ consumer_id: string; funding_source_id: string }> = {}): Fake {
   const posts: string[] = [];
@@ -53,9 +55,10 @@ function fakeApi(sources: Array<Record<string, unknown>>, signed: Partial<{ cons
       if (path === "/v1/consumers/funding-sources") return { funding_sources: sources, unattributed_count: 0 };
       throw new Error(`unexpected GET ${path}`);
     },
-    post: async (path: string, options?: { body?: { intent?: { mandate_ttl_seconds?: number } } }) => {
+    post: async (path: string, options?: { body?: { intent?: { mandate_ttl_seconds?: number } & Record<string, unknown> } }) => {
       posts.push(path);
       if (path === "/v1/consents/init") ttl.push(options?.body?.intent?.mandate_ttl_seconds ?? -1);
+      if (path === "/v1/consents/init") intents.push(options?.body?.intent ?? {});
       if (path === "/v1/consents/init") return { token: "tok_test", expires_at: "2026-10-12T18:30:00.000Z" };
       if (path === "/v1/consents/{token}/submit") {
         return {
@@ -133,7 +136,12 @@ describe("the proof's settings", () => {
   it("rewrite the mandate to the consumer, one payee (the test receiver) and R$ 10,00 caps", () => {
     const m = example();
     expect(m.consumer_id).toBe(PROOF.consumerId);
-    expect([m.cap_minor, m.per_tx_cap_minor, m.periodic_cap?.cap_minor]).toEqual([1000, 1000, 1000]);
+    expect([m.cap_minor, m.per_tx_cap_minor]).toEqual([1000, 1000]);
+    // No window cap: the API refuses one at or above the lifetime cap (periodic_cap_never_binds), and the
+    // kit's schema carries the same rule. The example's own month cap must not survive the rewrite.
+    expect(loadMandate(resolve(AGENT_DIR, "mandate.example.json")).periodic_cap).toBeDefined();
+    expect(m.periodic_cap).toBeUndefined();
+    expect(MandateSchema.safeParse(m).success).toBe(true);
     expect(m.beneficiaries).toEqual([{ alias: RECEIVER_ALIAS, name: "Recebedor de teste da prova", payee: PROOF.receiverKey }]);
     expect(m.merchant_allowlist).toEqual([PROOF.receiverKey]);
   });
@@ -189,6 +197,8 @@ describe("no new funding", () => {
     expect(fake.posts).toEqual(["/v1/consents/init", "/v1/consents/{token}/submit"]);
     expect(fake.posts).not.toContain("/v1/test/fund");
     expect(ttl.at(-1)).toBe(7 * 24 * 3600);
+    expect(intents.at(-1)).toMatchObject({ cap_minor: 1000, per_tx_cap_minor: 1000 });
+    expect(intents.at(-1)).not.toHaveProperty("periodic_cap");
     expect(mandate.consumer_id).toBe(PROOF.consumerId);
     expect(mandate.canonical?.["funding_source_id"]).toBe(CELCOIN_FS);
     expect(existsSync(mandatePath)).toBe(true);

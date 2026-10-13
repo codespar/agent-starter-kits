@@ -63,15 +63,19 @@ export function integratedProofFrom(env: Record<string, string | undefined>): In
 
 export const celcoinSourceId = (consumerId: string): string => `fs_celcoin_${consumerId}`;
 
-/** The example mandate rewritten for the proof: its consumer, one payee (the test receiver), R$ 10,00 caps. */
+/**
+ * The example mandate rewritten for the proof: its consumer, one payee (the test receiver), R$ 10,00 per
+ * payment and in total. No window cap: the API refuses one at or above the lifetime cap
+ * (`periodic_cap_never_binds`), and with R$ 10,00 in total the month's limit is that same R$ 10,00.
+ */
 export function integratedExample(base: Mandate, proof: IntegratedProof): Mandate {
+  const { periodic_cap: _window, ...rest } = base;
   return {
-    ...base,
+    ...rest,
     consumer_id: proof.consumerId,
     purpose: "conta de teste da prova integrada",
     cap_minor: INTEGRATED_CAP_MINOR,
     per_tx_cap_minor: INTEGRATED_CAP_MINOR,
-    periodic_cap: { window: "month", cap_minor: INTEGRATED_CAP_MINOR },
     merchant_allowlist: [proof.receiverKey],
     beneficiaries: [{ alias: RECEIVER_ALIAS, name: "Recebedor de teste da prova", payee: proof.receiverKey }],
   };
