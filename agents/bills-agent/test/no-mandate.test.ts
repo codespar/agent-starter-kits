@@ -3,16 +3,27 @@
  * sentence follows the kit: an agent with a `consent` step is sent to it, and
  * an agent without one is told the mandate is issued outside the terminal.
  */
-import { cpSync, mkdtempSync } from "node:fs";
+import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { NoMandateError, setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 /** The agent's own files in a scratch directory, so no local `.codespar/` or `.env` decides the outcome. */
 function scratchAgent() {
-  const dir = mkdtempSync(join(tmpdir(), "bills-no-mandate-"));
+  const dir = tempDir(join(tmpdir(), "bills-no-mandate-"));
   for (const file of ["agent.yaml", "SYSTEM_PROMPT.md", "tools.json", "guardrails.json", "mandate.example.json"]) cpSync(join(agent.dir, file), join(dir, file));
   return { ...agent, dir };
 }
