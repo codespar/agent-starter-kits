@@ -4,11 +4,22 @@
  * followed by `resume` and `poll`, `rerun`, `approve`/`deny`, and `check`.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const NODE = process.execPath;
@@ -27,7 +38,7 @@ function run(command: string, args: string[], env: Record<string, string>) {
 }
 
 function scratch(label: string): Record<string, string> {
-  const stateDir = mkdtempSync(join(tmpdir(), `checkout-${label}-`));
+  const stateDir = tempDir(join(tmpdir(), `checkout-${label}-`));
   return { CHECKOUT_STATE_DIR: stateDir, CHECKOUT_RUNS_DIR: join(stateDir, "runs") };
 }
 

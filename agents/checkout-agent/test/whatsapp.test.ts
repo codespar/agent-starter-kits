@@ -7,13 +7,24 @@
  * and runs everywhere.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { WHATSAPP_LANGUAGE, parseConversationScript, parseTemplateRegistry, templateArity, type Execution } from "@codespar/agent-core";
 import { handleExecution, setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const NODE = process.execPath;
@@ -34,7 +45,7 @@ interface Payload {
 }
 
 function start(args: string[], extra: Record<string, string> = {}) {
-  const stateDir = mkdtempSync(join(tmpdir(), "checkout-wa-"));
+  const stateDir = tempDir(join(tmpdir(), "checkout-wa-"));
   const result = spawnSync(NODE, [BIN, "start", ...args], {
     cwd: AGENT_DIR,
     env: {
@@ -136,7 +147,7 @@ describe.skipIf(!emulatorUp)("§46: a tap is a turn on the checkout-agent too", 
 
 describe("the conversation decides who is charged, with no emulator in sight", () => {
   it("an order in Marina's conversation for another customer of the store is refused before it exists", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "checkout-wa-bind-"));
+    const dir = tempDir(join(tmpdir(), "checkout-wa-bind-"));
     const transcript = join(dir, "swap.transcript.jsonl");
     writeFileSync(
       transcript,

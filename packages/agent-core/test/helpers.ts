@@ -1,6 +1,7 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterAll } from "vitest";
 import { hmacSigner } from "../src/approval.js";
 import { ProofBundle } from "../src/bundle.js";
 import { ExecutionEngine, type EngineDeps } from "../src/engine.js";
@@ -13,6 +14,17 @@ import type { PaymentRail } from "../src/rail.js";
 import type { MandateStatusSource } from "../src/revocation.js";
 import { StubRail, type StubRailOptions } from "../src/stubs/rail.js";
 import type { ApprovalMode } from "../src/types.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 export const ESCOLA = "escola@exemplo.com.br";
 export const MERCADO = "+5511999990001";
@@ -101,7 +113,7 @@ export interface HarnessOptions {
 }
 
 export function harness(options: HarnessOptions = {}): Harness {
-  const dir = options.dir ?? mkdtempSync(join(tmpdir(), "agent-core-"));
+  const dir = options.dir ?? tempDir(join(tmpdir(), "agent-core-"));
   let now = options.now ?? new Date("2026-09-23T18:00:00Z"); // 15:00 in Sao Paulo
   const clock = () => now;
   const store = new StateStore(join(dir, "state.db"));

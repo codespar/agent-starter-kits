@@ -3,18 +3,29 @@
  * with is clean, and a planted word makes it fail: a guard nobody has seen
  * refuse anything is not a guard.
  */
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { accented, fix, scan } from "../scripts/pt-accents.mjs";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 type Finding = { file: string; line: number; word: string; suggestion: string };
 const ROOT = resolve(import.meta.dirname, "..");
 
 /** A tree with no git, so the scanner walks it; `files` is path -> content. */
 function tree(files: Record<string, string>): string {
-  const dir = mkdtempSync(join(tmpdir(), "pt-accents-"));
+  const dir = tempDir(join(tmpdir(), "pt-accents-"));
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), content);

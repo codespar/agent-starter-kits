@@ -4,16 +4,27 @@
  * the payer told once, the paid record fetched.
  */
 import { createHmac } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { announceOutcome, createWebhookHandler, setup, verifySignature } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 function issued(mode: "human" | "mandate" = "mandate") {
   let clock = new Date("2026-09-23T18:00:00Z");
-  const s = setup(agent, { mode, rail: "stub", provider: "replay", transcript: "unused", stateDir: mkdtempSync(join(tmpdir(), "collections-webhook-")), runsDir: mkdtempSync(join(tmpdir(), "collections-webhook-runs-")), now: () => (clock = new Date(clock.getTime() + 1000)), say: () => undefined });
+  const s = setup(agent, { mode, rail: "stub", provider: "replay", transcript: "unused", stateDir: tempDir(join(tmpdir(), "collections-webhook-")), runsDir: tempDir(join(tmpdir(), "collections-webhook-runs-")), now: () => (clock = new Date(clock.getTime() + 1000)), say: () => undefined });
   s.payer!.behave("never");
   return s;
 }

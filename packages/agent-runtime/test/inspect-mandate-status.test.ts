@@ -4,12 +4,23 @@
  * mandate the API answered was revoked two lines below; the header says what
  * a gate of the run heard, when that is the last word the run has.
  */
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { ProofBundle } from "@codespar/agent-core";
 import { assembleTimeline, renderHtml, renderText } from "../src/inspect.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT = { type: "agent", agent: "bills-agent@0.1.0", on_behalf_of: "usr_demo_titular" };
 const SNAPSHOT = "active in the snapshot at the start of the run";
@@ -17,7 +28,7 @@ const SNAPSHOT = "active in the snapshot at the start of the run";
 type Step = { execution: string | null; to?: string; reason?: string; detail?: string; at: string };
 
 function bundleOf(steps: Step[]): ProofBundle {
-  const bundle = new ProofBundle(mkdtempSync(join(tmpdir(), "inspect-mandate-status-")), "run_status_mandate_abc123");
+  const bundle = new ProofBundle(tempDir(join(tmpdir(), "inspect-mandate-status-")), "run_status_mandate_abc123");
   bundle.meta({ run_id: bundle.runId, agent: "bills-agent@0.1.0", mode: "mandate", rail: "api", mandate_id: "cm_fixture", mandate_version: 1, started_at: "2026-09-23T18:00:00.000Z" });
   writeFileSync(join(bundle.dir, "mandate.snapshot.json"), JSON.stringify({ id: "cm_fixture", version: 1, status: "active", currency: "BRL", cap_minor: 7200000, per_tx_cap_minor: 250000, expires_at: "2027-09-23T00:00:00.000Z", beneficiaries: [] }));
   steps.forEach((step, i) => {

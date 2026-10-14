@@ -9,7 +9,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync, sign as signDetached } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -17,13 +17,24 @@ import { join, resolve } from "node:path";
 import { canonicalize, itemsHash, maskPayee, type ExecutionItem } from "@codespar/agent-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 const BIN = resolve(import.meta.dirname, "../bin.mjs");
 const KID = "did:web:id.codespar.dev#1";
 const CHAIN = "9f2c4a1b6d0e8f3a5c7b9d1e2f4a6b8c0d2e4f6a8b0c2d4e6f8a0b2c4d6e8f01";
 const RECEIPT_ID = "rcpt_V1StGXR8Z5jdHi6BmyT0sw";
 
 function fixture(over: Record<string, unknown> = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "verify-cli-"));
+  const dir = tempDir(join(tmpdir(), "verify-cli-"));
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const x = Buffer.from(publicKey.export({ format: "der", type: "spki" }).subarray(-32)).toString("base64url");
   const signature = signDetached(null, Buffer.from(`codespar-receipt:v1:${RECEIPT_ID}:${CHAIN}`, "utf8"), privateKey).toString("base64url");
@@ -147,7 +158,7 @@ const ITEMS: ExecutionItem[] = [{ alias: "escola", beneficiary: "Escola Aurora",
 const sha256 = (v: string) => createHash("sha256").update(v, "utf8").digest("hex");
 
 function v4Fixture(sealedItemsHash = itemsHash(ITEMS)) {
-  const dir = mkdtempSync(join(tmpdir(), "verify-cli-v4-"));
+  const dir = tempDir(join(tmpdir(), "verify-cli-v4-"));
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const x = Buffer.from(publicKey.export({ format: "der", type: "spki" }).subarray(-32)).toString("base64url");
   const mandate = { id: "cm_test_1", nonce: "nonce-1", scope: "contas do mes", currency: "BRL", sig_sha256: sha256("s".repeat(64)) };

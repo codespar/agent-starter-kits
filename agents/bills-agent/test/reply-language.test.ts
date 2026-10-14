@@ -10,13 +10,24 @@
  * loop now reads the language of what the person typed and states it in the
  * system prompt of every step of that turn.
  */
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { fixedClock, type Execution } from "@codespar/agent-core";
 import { setup, type Setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 interface SentRequest {
   system: string;
@@ -45,8 +56,8 @@ function open(): Setup {
     rail: "stub",
     provider: "anthropic",
     env: { ANTHROPIC_API_KEY: "sk-ant-test-not-a-key" },
-    runsDir: mkdtempSync(join(tmpdir(), "bills-lang-runs-")),
-    stateDir: mkdtempSync(join(tmpdir(), "bills-lang-state-")),
+    runsDir: tempDir(join(tmpdir(), "bills-lang-runs-")),
+    stateDir: tempDir(join(tmpdir(), "bills-lang-state-")),
     now: fixedClock("2026-09-28T14:00:00-03:00"),
     say: () => undefined,
   });

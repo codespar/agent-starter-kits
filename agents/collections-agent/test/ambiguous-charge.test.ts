@@ -3,18 +3,29 @@
  * may still be paid. The agent must not report the agreement as open, must not tell the
  * debtor nothing was charged, and must not issue a second charge for the same debt.
  */
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import type { Execution } from "@codespar/agent-core";
 import { announceOutcome, setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 describe("a receivable closed charge_reference_ambiguous: reconcile, never reissue", () => {
   it("list_agreements does not reopen it, a new charge for it is refused before the rail, and the debtor is not told nothing was charged", async () => {
     let clock = new Date("2026-09-23T18:00:00Z");
-    const s = setup(agent, { mode: "mandate", rail: "stub", provider: "replay", transcript: "unused", stateDir: mkdtempSync(join(tmpdir(), "collections-ambiguous-")), runsDir: mkdtempSync(join(tmpdir(), "collections-ambiguous-runs-")), now: () => (clock = new Date(clock.getTime() + 1000)), say: () => undefined });
+    const s = setup(agent, { mode: "mandate", rail: "stub", provider: "replay", transcript: "unused", stateDir: tempDir(join(tmpdir(), "collections-ambiguous-")), runsDir: tempDir(join(tmpdir(), "collections-ambiguous-runs-")), now: () => (clock = new Date(clock.getTime() + 1000)), say: () => undefined });
     try {
       s.payer!.behave("never");
       const d = await s.engine.draft({ items: [{ payee: "acordo-1042", amount: 108000, due_date: "2026-09-30" }] });

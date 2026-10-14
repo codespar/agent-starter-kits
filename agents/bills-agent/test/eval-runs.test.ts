@@ -4,16 +4,27 @@
  * `inspect` and `rerun` still find an eval run by its id.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const BIN = resolve(AGENT_DIR, "../../packages/agent-runtime/bin.mjs");
 
 describe("npm run eval beside a person's own runs", () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "bills-eval-runs-"));
+  const stateDir = tempDir(join(tmpdir(), "bills-eval-runs-"));
   const runsDir = join(stateDir, "runs");
   const run = (command: string, args: string[]) => {
     const result = spawnSync(process.execPath, [BIN, command, ...args], {

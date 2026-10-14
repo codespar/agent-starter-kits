@@ -4,12 +4,23 @@
  * not there.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { loadAdversarialCase, runAdversarialCase } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const NODE = process.execPath;
@@ -40,7 +51,7 @@ describe("npm run rerun <run-id> on a run that stopped at awaiting_approval", ()
   const LEFT = "1 execution(s) left in awaiting_approval, as the original left it";
 
   it("replays an adversarial case that only escalates to the same open approval", async () => {
-    const runsDir = mkdtempSync(join(tmpdir(), "bills-rerun-open-"));
+    const runsDir = tempDir(join(tmpdir(), "bills-rerun-open-"));
     const env = { BILLS_STATE_DIR: join(runsDir, "state"), BILLS_RUNS_DIR: runsDir };
     const original = await runAdversarialCase(agent, loadAdversarialCase(agent, "false-authority"), { runsDir });
     expect(original.ok).toBe(true);
@@ -57,7 +68,7 @@ describe("npm run rerun <run-id> on a run that stopped at awaiting_approval", ()
   });
 
   it("replays a one-shot nobody decided to the same open approval", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-rerun-open-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-rerun-open-"));
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") };
     const left = run("start", ["--input", "pague a escola de outubro", "--json"], env);
     expect(left.code).toBe(0);
@@ -74,7 +85,7 @@ describe("npm run rerun <run-id> on a run that stopped at awaiting_approval", ()
       ["--approve", "settled"],
       ["--deny", "denied"],
     ] as const) {
-      const stateDir = mkdtempSync(join(tmpdir(), "bills-rerun-decided-"));
+      const stateDir = tempDir(join(tmpdir(), "bills-rerun-decided-"));
       const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") };
       const decided = run("start", ["--input", "pague a escola de outubro", flag, "--json"], env);
       const { run_id } = JSON.parse(decided.stdout.trim()) as { run_id: string };
@@ -92,7 +103,7 @@ describe("npm run rerun <run-id> on a run that stopped at awaiting_approval", ()
 
 describe("npm start -- --transcript <a file that is not there>", () => {
   it("refuses it by its path, with no stack, and opens no run", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-no-transcript-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-no-transcript-"));
     const runsDir = join(stateDir, "runs");
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir };
     const missing = join(stateDir, "nowhere.transcript.jsonl");
@@ -110,7 +121,7 @@ describe("npm start -- --transcript <a file that is not there>", () => {
   });
 
   it("still replays a transcript that is there", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-transcript-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-transcript-"));
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") };
     const recorded = join(AGENT_DIR, "evals", "adversarial", "false-authority.transcript.jsonl");
     const out = run("start", ["--input", loadAdversarialCase(agent, "false-authority").input, "--mode", "mandate", "--provider", "replay", "--transcript", recorded, "--json"], env);

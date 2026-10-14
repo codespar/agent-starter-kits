@@ -7,7 +7,18 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const NODE = process.execPath;
@@ -29,7 +40,7 @@ describe("codespar-agent inspect", () => {
   let runs: string;
 
   beforeAll(() => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-inspect-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-inspect-"));
     runs = join(stateDir, "runs");
     env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runs };
     const paid = run("start", ["--input", "pague a escola de outubro", "--approve", "--json", "--now", "2026-09-23T14:00:00-03:00"], env);
@@ -90,7 +101,7 @@ describe("codespar-agent inspect", () => {
   });
 
   it("--html writes one standalone file: no script, no external src or href", () => {
-    const target = join(mkdtempSync(join(tmpdir(), "bills-inspect-html-")), "run.html");
+    const target = join(tempDir(join(tmpdir(), "bills-inspect-html-")), "run.html");
     const out = run("inspect", [runId, "--html", target], env);
     expect(out.code).toBe(0);
     const html = readFileSync(target, "utf8");

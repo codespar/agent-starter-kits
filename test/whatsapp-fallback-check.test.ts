@@ -12,16 +12,27 @@
  * the `npm test` of every scaffold that is not both of them. The root `test/`
  * ships nowhere; here it runs unconditionally and fails when the rule does.
  */
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { checkAgent } from "@codespar/agent-core";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 describe("an outcome with no template of its own: the registry declares a fallback, and check requires one", () => {
   const COLLECTIONS = resolve(import.meta.dirname, "../agents/collections-agent");
   const copy = () => {
-    const dir = mkdtempSync(join(tmpdir(), "wa-fallback-check-"));
+    const dir = tempDir(join(tmpdir(), "wa-fallback-check-"));
     cpSync(COLLECTIONS, dir, { recursive: true, filter: (src) => !/node_modules|\/runs|\.codespar/.test(src) });
     return dir;
   };
