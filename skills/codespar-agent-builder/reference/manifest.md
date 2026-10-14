@@ -79,8 +79,14 @@ read-only agent `[]`.
 }
 ```
 
-Optional: `velocity.max_per_payee`, `envelope` (free map the core carries to
-your `policyExtension`; it does not interpret the keys). Strict.
+`velocity.max_per_payee` (optional) caps how many executions one payee may
+have inside `velocity.window_hours`, counting settled, in flight and awaiting a
+decision. The next one past it is denied with reason `payee_velocity_exceeded`,
+in `human` and `mandate` mode alike and at every gate: a person's yes does not
+lift it. Absent, there is no count ceiling.
+
+`envelope` (optional) is a free map the core carries to your
+`policyExtension`; it does not interpret the keys. Strict.
 
 ## `tools.json` (`packages/agent-core/src/tools.ts`)
 
