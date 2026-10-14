@@ -10,7 +10,7 @@ This package is the decisions. The RUNNER around them — the terminal channel, 
 
 ## The one policy, three gates
 
-`ExecutionEngine.policy()` runs at draft, at a human's approval and again immediately before `executing`, inside the transaction that writes the outbox row. Mandate status, allowlist, per-transaction cap, the window cap (counting settled, in flight AND awaiting executions as reservations), `escalate_above` and the artifact's `items_hash` are all re-checked at the last gate. A person's approval satisfies `escalate_above` and nothing else.
+`ExecutionEngine.policy()` runs at draft, at a human's approval and again immediately before `executing`, inside the transaction that writes the outbox row. Mandate status, allowlist, per-transaction cap, the window cap (counting settled, in flight AND awaiting executions as reservations), the per-payee count ceiling (`velocity.max_per_payee`, counted the same way), `escalate_above` and the artifact's `items_hash` are all re-checked at the last gate. A person's approval satisfies `escalate_above` and nothing else.
 
 ## What the artifact binds besides the items
 
