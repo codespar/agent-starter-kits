@@ -1,11 +1,22 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { listAdversarialCases, loadAdversarialCase, runAdversarialCase } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 
-const runsDir = mkdtempSync(join(tmpdir(), "checkout-adv-runs-"));
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+const runsDir = tempDir(join(tmpdir(), "checkout-adv-runs-"));
 const run = (name: string) => runAdversarialCase(agent, loadAdversarialCase(agent, name), { runsDir });
 const bundleOf = (runId: string) => join(runsDir, runId);
 const approvals = (runId: string) => JSON.parse(readFileSync(join(bundleOf(runId), "approval.json"), "utf8")) as Array<{ execution_id: string; items_hash: string; composition?: { composition_hash: string } }>;

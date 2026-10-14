@@ -6,7 +6,11 @@
  *
  * `--json` puts machine data on stdout (valid JSON, nothing else) and the
  * human messages on stderr.
+ *
+ * A one-shot prints, after the reply, what the run did as the engine counts
+ * it (`outcome.ts`), and exits by it: see `EXIT_CODES`.
  */
+import { statSync } from "node:fs";
 import { stderr, stdout } from "node:process";
 import { relative, resolve } from "node:path";
 import { CORE_STRINGS, NotATestKeyError, WHATSAPP_LANGUAGE, declaredReplies, loadManifest, parseLocale, resolveLocale, testKeyProblem, resolveFixedClock, type ApprovalMode, type ChannelName, type Locale } from "@codespar/agent-core";
@@ -18,6 +22,13 @@ import { checkScenario, listScenarios, loadScenario, runScenario, scenariosDir }
 import { closeTerminal, defaultAsk, handleExecution, interactive } from "../terminal.js";
 import { loadTemplates, resolveConversation } from "../channels/index.js";
 import { startWhatsApp, type WhatsAppBackendName } from "./start-whatsapp.js";
+import { outcomeExitCode, refusalLine, sayOutcome } from "../outcome.js";
+
+const EXIT_CODES = `exit (--input): 0 nothing failed (settled, already paid, denied, expired or still open: the last line counts each payment); 1 a payment failed or a line was refused before a draft, and 1 wins over 3; 3 nothing failed and an execution of this run was left executing (npm run reconcile). A line an earlier run still holds is open and exits 0.`;
+
+function isFile(path: string): boolean {
+  return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
+}
 
 interface Args {
   input?: string;
@@ -66,7 +77,7 @@ export function parseArgs(argv: string[], awaitsPayer: boolean): Args {
     else if (a === "--deny") args.decision = "deny";
     else if (a === "--provider") {
       const v = next();
-      if (v !== "anthropic" && v !== "replay") throw new Error("--provider must be anthropic or replay");
+      if (v !== "anthropic" && v !== "gemini" && v !== "replay") throw new Error("--provider must be anthropic, gemini or replay");
       args.provider = v;
     } else if (a === "--transcript") args.transcript = next();
     else if (a === "--rail") {
@@ -112,7 +123,7 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     return 2;
   }
   if (args.help) {
-    stderr.write(usage + "\n");
+    stderr.write(`${usage}\n${EXIT_CODES}\n`);
     return 0;
   }
   const say = (line: string) => stderr.write(line + "\n");
@@ -133,6 +144,12 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
   const keyProblem = railKind === "api" ? testKeyProblem(process.env["CODESPAR_API_KEY"]) : undefined;
   if (keyProblem) {
     say(new NotATestKeyError(keyProblem, envFileOf(agent.dir)).message);
+    return 1;
+  }
+
+  // A recording that is not there is said by its path, before a mandate is asked for or a run is opened.
+  if (args.transcript !== undefined && !isFile(args.transcript)) {
+    say(`no transcript at ${args.transcript}`);
     return 1;
   }
 
@@ -176,7 +193,7 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     const match = listScenarios(agent).map((n) => loadScenario(agent, n)).find((s) => s.turns[0].input === firstInput);
     if (match) transcript = resolve(scenariosDir(agent), match.transcript);
     else {
-      say(`no ANTHROPIC_API_KEY and no recorded transcript for that input. Set the key, pass --transcript, or use one of: ${listScenarios(agent).map((n) => `"${loadScenario(agent, n).turns[0].input}"`).join(", ")}`);
+      say(`no ANTHROPIC_API_KEY or GEMINI_API_KEY and no recorded transcript for that input. Set the key, pass --transcript, or use one of: ${listScenarios(agent).map((n) => `"${loadScenario(agent, n).turns[0].input}"`).join(", ")}`);
       return 1;
     }
   }
@@ -213,11 +230,15 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
       handleExecution(execution, { setup: s, approver, decision: args.decision ?? "none", say, waitSeconds: args.wait, simulatePayer: args.simulatePayer, ...(args.json ? { tell: say } : {}) }),
     );
     const result = await loop.turn(args.input);
-    const executions = s.engine.list().filter((e) => e.run_id === s.runId);
+    // Counted from the engine, printed whatever the reply says: a recorded reply cannot know what this run found.
+    const { executions, refusals, outcome, line } = sayOutcome(s, result.not_run);
+    // A request refused before a draft left no execution to describe: said here with the engine's own reason, or the terminal would be silent about it.
+    for (const refusal of refusals) say(refusalLine(refusal));
     const payload = s.kit.oneShotPayload({ setup: s, reply: result.reply, toolCalls: result.tool_calls, executions, startedAt });
-    if (args.json) stdout.write(JSON.stringify(payload) + "\n");
-    else stdout.write(result.reply + "\n");
-    return executions.some((e) => e.state === "executing") ? 3 : 0;
+    // `run_outcome`, not `outcome`: the payload is the kit's, and a kit may name a field of its own that.
+    if (args.json) stdout.write(JSON.stringify({ ...payload, run_outcome: outcome, refused_before_draft: refusals }) + "\n");
+    else stdout.write(`${result.reply}\n${line}\n`);
+    return outcomeExitCode(outcome, executions);
   } finally {
     closeTerminal();
     s.close();
@@ -248,7 +269,9 @@ async function runScenarioCommand(agent: Agent, args: Args, railKind: RailKind, 
     });
     const check = checkScenario(scenario, run);
     for (const reply of run.replies) say(text.scenarioReply(reply));
-    say(check.ok ? text.scenarioOk(agent.settlement === "await-payer" ? run.cycle_seconds : undefined, relative(process.cwd(), run.bundle_dir)) : `== FAIL: ${check.failures.join("; ")}`);
+    // Seconds are said only where a clock measured them. On the stub the clock is the scenario's, ticking a second per read: its "16s" is a count of reads in a run that took under one.
+    const measured = agent.settlement === "await-payer" && run.rail === "api" ? run.cycle_seconds : undefined;
+    say(check.ok ? text.scenarioOk(measured, relative(process.cwd(), run.bundle_dir)) : `== FAIL: ${check.failures.join("; ")}`);
     results.push({ mode, ok: check.ok, failures: check.failures, run });
   }
   if (args.json) stdout.write(JSON.stringify({ scenario: scenario.name, ...(picksRail ? { rail } : {}), results }) + "\n");

@@ -10,8 +10,9 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stderr, stdout } from "node:process";
 import { relative } from "node:path";
-import { formatBRL, railErrorOf, type AgentRuntime, type BatchGesture, type BatchPresentation, type ChargeInstrument, type Execution } from "@codespar/agent-core";
+import { formatBRL, railErrorOf, type AgentRuntime, type BatchGesture, type BatchPresentation, type ChargeInstrument, type Execution, type NotRunLine } from "@codespar/agent-core";
 import { pollUntilClosed, type PollResult } from "./poll.js";
+import { draftRefusals, refusalLine, sayOutcome } from "./outcome.js";
 import { inLocaleOf, type Setup } from "./setup.js";
 
 export interface TerminalOptions {
@@ -262,6 +263,8 @@ export async function interactive(options: TerminalOptions & { runtime: AgentRun
   say(setup.coreStrings.banner(setup.manifest.manifest.name, setup.manifest.manifest.version, setup.mode, setup.railKind, words.mandateWord, setup.mandate.id));
   say(setup.coreStrings.bundleAt(setup.runId, relative(process.cwd(), setup.bundle.dir)));
   say(words.intro);
+  const notRun: NotRunLine[] = [];
+  let refusalsSaid = 0;
   for (;;) {
     let text: string;
     try {
@@ -273,7 +276,14 @@ export async function interactive(options: TerminalOptions & { runtime: AgentRun
     if (!trimmed) continue;
     if (["sair", "exit", "quit"].includes(trimmed.toLowerCase())) break;
     const result = await loop.turn(trimmed);
-    stdout.write(result.reply + "\n");
+    stdout.write(`${result.reply}\n`);
+    // The line counts the run so far, and is said only after a turn that paid, tried to, or skipped a line: a greeting or a read moved nothing.
+    notRun.push(...result.not_run);
+    // A request refused before a draft: said with the engine's own reason, once, in the turn that met it.
+    const refused = draftRefusals(setup.store, setup.runId).slice(refusalsSaid);
+    refusalsSaid += refused.length;
+    for (const refusal of refused) say(refusalLine(refusal));
+    if (result.executions.length > 0 || result.not_run.length > 0 || refused.length > 0) sayOutcome(setup, notRun, (line) => stdout.write(`${line}\n`));
   }
   closeTerminal();
 }

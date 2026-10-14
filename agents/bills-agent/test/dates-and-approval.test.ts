@@ -4,22 +4,33 @@
  * both approval modes exist and not which one ran, it said a payment the
  * titular approved needed "no extra approval". The tools now carry both facts.
  */
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { daysUntil, fixedClock, localDate, type Execution, type ToolContext } from "@codespar/agent-core";
 import { setup, type Setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 import { codesparPay, listBills } from "../src/modules/pix-out.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 function open(mode: "human" | "mandate", now: string): Setup {
   return setup(agent, {
     mode,
     rail: "stub",
     provider: "replay",
-    runsDir: mkdtempSync(join(tmpdir(), "bills-dates-runs-")),
-    stateDir: mkdtempSync(join(tmpdir(), "bills-dates-state-")),
+    runsDir: tempDir(join(tmpdir(), "bills-dates-runs-")),
+    stateDir: tempDir(join(tmpdir(), "bills-dates-state-")),
     now: fixedClock(now),
     say: () => undefined,
   });

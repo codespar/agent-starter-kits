@@ -18,7 +18,7 @@ npm start -- --scenario happy-path                            # the recorded sal
 npm start -- --input "oi, sou a Marina. quero o pacote de dez aulas e uma avaliacao inicial"   # one turn of it
 ```
 
-With keys (`cp .env.example .env`, a `csk_test_` key and an Anthropic key) `npm start` opens the terminal: you type as the customer, and in `approval: human` the attendant's question comes on the same keyboard, labelled `[atendente]`. Without a real `ANTHROPIC_API_KEY` a one-shot replays the recorded scenario whose first turn you typed.
+With keys (`cp agents/checkout-agent/.env.example agents/checkout-agent/.env`, a `csk_test_` key and an Anthropic key) `npm start` opens the terminal: you type as the customer, and in `approval: human` the attendant's question comes on the same keyboard, labelled `[atendente]`. Without a real `ANTHROPIC_API_KEY` a one-shot replays the recorded scenario whose first turn you typed.
 
 With a `csk_test_` key the sale stops at issuance today, because the sandbox does not issue a payable bolepix (on staging the charge ends `ERROR`, production test mode refuses it). The stub rail and the scenarios run the whole sale. The test payer still settles a charge in `ERROR`, and the read then answers `CONFIRMED`; that half is [ent#1816](https://github.com/codespar/codespar-enterprise/issues/1816). [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §63 has the runs.
 
@@ -63,6 +63,7 @@ Maturity, from `agent.yaml`: `storefront-cart: sandbox`, `bolepix-receivables: b
 - **The NFS-e path has run against the stub issuer, not yet against the nfe.io sandbox.** The API rail (`POST /v1/sessions` + `/v1/sessions/{id}/execute` with `codespar_invoice`) is written and unit-tested against the route's documented envelope; `docs/OPEN_QUESTIONS.md` §61 says what stopped the sandbox run.
 - **No shipping is computed.**
 - **The customer is who they say they are.** In the terminal there is no identity check; the customer book (`mandate.example.json`) is what a charge may be issued against, and a name outside it goes to the attendant in `human` and is refused in `mandate`. On a channel, the contact binding is what identifies the customer.
+- **Key scopes this agent uses on the sandbox rail:** `tools:execute` for the charge (`POST /v1/charges`, `GET /v1/charges/{chargeId}`, `POST /v1/charges/{chargeId}/cancel`, the sandbox payer's `POST /v1/test/charges/{chargeId}/pay`) and for the NFS-e's `POST /v1/sessions/{id}/execute`, and `sessions:create` for its `POST /v1/sessions`. The stub rail uses no key. The names are each operation's `x-codespar-scope` in the API's `/openapi.json`; a key holding `*` needs nothing here.
 - **CodeSpar does not host or run third-party agents.** This repository ships; the developer runs it.
 - **Who answers when the agent errs.** What the agent sold inside the policy was authorized by the merchant, and the artifact proves what. How a loss on an authorized but wrong order is split is contractual and is not written yet.
 
@@ -78,10 +79,12 @@ npm run deny -- <execution-id>
 npm run resume                              # after a crash: reconcile, never re-issue; a pending NFS-e is sent, one left mid-call is reported uncertain
 npm run poll                                # keep looking at an issued charge until it is paid or expires
 npm run rerun -- <run-id>                   # the same run again, offline
-npm run eval                                # the adversarial suite and every scenario, replay provider, stub rail
+npm run eval                                # the adversarial suite and every scenario, replay provider, stub rail; bundles go to runs/eval/
 npm run check                               # the manifest agrees with its files
 npm run inspect -- <run-id>                 # the bundle as a timeline
 ```
+
+`npm start -- --input ...`: after the reply, stdout carries one line counting what the run did, by payment (`resultado deste run: ...`: settled, failed or refused, denied or expired, skipped as already paid, open); `--json` carries the same count as `run_outcome`. Exit code: 1 when a payment failed or a line was refused before a draft, and 1 wins over 3; 3 when nothing failed and an execution of this run was left `executing`; 0 otherwise, denied, expired and an unpaid or withdrawn charge included. A charge still waiting for its payer is that 3.
 
 The locale is `locale:` in `agent.yaml` (`pt-BR`) unless `--locale` says otherwise, and it is fixed for the conversation: the order proposed in English is confirmed in English, and `poll --channel whatsapp` sends the `en_US` copy of the template to a conversation that started in English. It changes what is shown, never what `[s/N]` / `[y/N]` decides, and it is not the model's reply language, which follows what the customer types.
 

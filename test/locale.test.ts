@@ -7,12 +7,23 @@
  * Here and not inside a package because it reads `agents/*`, and `codespar
  * init` copies the packages into a template with ONE agent.
  */
-import { cpSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { LOCALES, checkAgent } from "@codespar/agent-core";
 import { checkStrings, defaultKit, loadAgent, type Agent } from "@codespar/agent-runtime";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENTS = resolve(import.meta.dirname, "../agents");
 const names = readdirSync(AGENTS).sort();
@@ -57,7 +68,7 @@ describe("every agent's strings exist in every locale", () => {
 
 describe("a WhatsApp registry declares each template in the language of each locale", () => {
   const copy = (agent: string) => {
-    const dir = mkdtempSync(join(tmpdir(), "wa-locale-check-"));
+    const dir = tempDir(join(tmpdir(), "wa-locale-check-"));
     cpSync(join(AGENTS, agent), dir, { recursive: true, filter: (src) => !/node_modules|\/runs|\.codespar/.test(src) });
     return dir;
   };

@@ -18,6 +18,7 @@ import {
 } from "@codespar/agent-core";
 import { NoMandateError, defineAgent, describePayment, type AgentKit } from "@codespar/agent-runtime";
 import { loadLocalMandate, runEmbeddedConsent } from "./modules/embedded-consent.js";
+import { assertMandateBinding, integratedExample, integratedProofFrom } from "./modules/integrated-proof.js";
 import { STRINGS } from "./strings.js";
 import { codesparLedger, codesparPay, listBills } from "./modules/pix-out.js";
 
@@ -40,7 +41,7 @@ const kit: AgentKit = {
   npm start                                         interactive terminal
   npm start -- --input "pague a escola de outubro"  one turn (add --approve/--deny to decide, --json for machine output)
   npm start -- --scenario <name>                    run a scenario pack (${"see scenarios/"})
-options: --mode human|mandate  --provider anthropic|replay  --transcript <file>  --rail stub|api  --user <id>  --json
+options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript <file>  --rail stub|api  --user <id>  --json
          --now <ISO 8601>  pin the run to that instant (escalation hours, timestamps); env CODESPAR_AGENT_NOW is the same thing
          --locale pt-BR|en  the language of what the code prints (the model answers in the language you type either way)`,
 
@@ -50,6 +51,8 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
       const api = createCodeSparClient({ apiKey: ctx.env["CODESPAR_API_KEY"], baseUrl: ctx.env["CODESPAR_API_URL"], projectId: ctx.env["CODESPAR_PROJECT_ID"] });
       const mandate = ctx.mandate ?? loadLocalMandate(mandatePath(ctx.agentDir));
       if (!mandate) throw new NoMandateError();
+      const proof = integratedProofFrom(ctx.env);
+      if (proof) assertMandateBinding(mandate, proof, "local mandate");
       return {
         rail: new CodeSparRail(api, { canonical: mandate.canonical, signature: mandate.signature }),
         mandate,
@@ -101,14 +104,20 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
   ensureMandate: async (ctx) => {
     if (ctx.railKind !== "api") return true;
     const path = mandatePath(ctx.agentDir);
-    if (loadLocalMandate(path)) return true;
+    const proof = integratedProofFrom(process.env);
+    const local = loadLocalMandate(path);
+    if (local) {
+      if (proof) assertMandateBinding(local, proof, "local mandate");
+      return true;
+    }
     if (ctx.oneShot) {
       ctx.say(new NoMandateError().message);
       return false;
     }
     const api = createCodeSparClient({ apiKey: process.env["CODESPAR_API_KEY"], baseUrl: process.env["CODESPAR_API_URL"], projectId: process.env["CODESPAR_PROJECT_ID"] });
-    const example = loadMandate(resolve(ctx.agentDir, "mandate.example.json"));
-    await runEmbeddedConsent({ api, example, mandatePath: path, locale: ctx.locale, say: ctx.say, confirm: async (q: string) => /^(s|sim|y|yes)$/i.test((await ctx.ask(q)).trim()) });
+    const base = loadMandate(resolve(ctx.agentDir, "mandate.example.json"));
+    const example = proof ? integratedExample(base, proof) : base;
+    await runEmbeddedConsent({ api, example, mandatePath: path, locale: ctx.locale, say: ctx.say, confirm: async (q: string) => /^(s|sim|y|yes)$/i.test((await ctx.ask(q)).trim()), ...(proof ? { integrated: proof } : {}) });
     return true;
   },
 
@@ -119,7 +128,9 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
    */
   consent: async (ctx) => {
     const api = createCodeSparClient({ apiKey: process.env["CODESPAR_API_KEY"], baseUrl: process.env["CODESPAR_API_URL"], projectId: process.env["CODESPAR_PROJECT_ID"] });
-    const example = loadMandate(resolve(ctx.agentDir, "mandate.example.json"));
+    const proof = integratedProofFrom(process.env);
+    const base = loadMandate(resolve(ctx.agentDir, "mandate.example.json"));
+    const example = proof ? integratedExample(base, proof) : base;
     const yes = ctx.argv.includes("--yes") || process.env["npm_config_yes"] === "true";
     const confirm = async (question: string): Promise<boolean> => {
       if (yes) return true;
@@ -129,7 +140,7 @@ options: --mode human|mandate  --provider anthropic|replay  --transcript <file> 
       rl.close();
       return /^(s|sim|y|yes)$/i.test(answer);
     };
-    const mandate = await runEmbeddedConsent({ api, example, mandatePath: mandatePath(ctx.agentDir), locale: ctx.locale, say: ctx.say, confirm });
+    const mandate = await runEmbeddedConsent({ api, example, mandatePath: mandatePath(ctx.agentDir), locale: ctx.locale, say: ctx.say, confirm, ...(proof ? { integrated: proof } : {}) });
     ctx.say(STRINGS[ctx.locale].consentSaved(mandate.id));
     return 0;
   },

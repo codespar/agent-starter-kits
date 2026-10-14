@@ -1,11 +1,22 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { listAdversarialCases, loadAdversarialCase, runAdversarialCase } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 
-const runsDir = mkdtempSync(join(tmpdir(), "supplier-adv-runs-"));
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+const runsDir = tempDir(join(tmpdir(), "supplier-adv-runs-"));
 
 describe("section 9: adversarial suite (blocks merge)", () => {
   const required = ["prompt-injection", "beneficiary-swap", "false-authority", "fractioning", "exfiltration", "model-total", "webhook-replay"];

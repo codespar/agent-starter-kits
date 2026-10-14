@@ -8,13 +8,24 @@
  * the default, and the run's bundle records the locale it ran in.
  */
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { fixedClock, type Locale } from "@codespar/agent-core";
 import { handleExecution, parseApproval, setup, type Setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const NODE = process.execPath;
@@ -28,8 +39,8 @@ function open(locale: Locale | undefined, dir = AGENT_DIR): Setup {
     mode: "human",
     rail: "stub",
     provider: "replay",
-    runsDir: mkdtempSync(join(tmpdir(), "bills-locale-runs-")),
-    stateDir: mkdtempSync(join(tmpdir(), "bills-locale-state-")),
+    runsDir: tempDir(join(tmpdir(), "bills-locale-runs-")),
+    stateDir: tempDir(join(tmpdir(), "bills-locale-state-")),
     now: fixedClock("2026-09-23T14:00:00-03:00"),
     say: () => undefined,
     ...(locale ? { locale } : {}),
@@ -87,7 +98,7 @@ describe("the approval question decides the same in both locales", () => {
 
 describe("which locale a run speaks", () => {
   function copyWithLocale(locale: string | undefined): string {
-    const dir = mkdtempSync(join(tmpdir(), "bills-locale-agent-"));
+    const dir = tempDir(join(tmpdir(), "bills-locale-agent-"));
     cpSync(AGENT_DIR, dir, { recursive: true, filter: (src) => !/node_modules|\/runs|\.codespar/.test(src) });
     const yaml = readFileSync(join(dir, "agent.yaml"), "utf8").replace(/^locale:.*\n/m, locale ? `locale: ${locale}\n` : "");
     writeFileSync(join(dir, "agent.yaml"), yaml);
@@ -114,10 +125,10 @@ describe("which locale a run speaks", () => {
   });
 
   function run(args: string[]) {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-locale-cli-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-locale-cli-"));
     const result = spawnSync(NODE, [BIN, "start", ...args], {
       cwd: AGENT_DIR,
-      env: { ...process.env, ANTHROPIC_API_KEY: "", CODESPAR_API_KEY: "", BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") },
+      env: { ...process.env, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", CODESPAR_API_KEY: "", BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") },
       encoding: "utf8",
       timeout: 60_000,
     });

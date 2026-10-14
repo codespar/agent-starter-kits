@@ -6,7 +6,8 @@
 import { stderr } from "node:process";
 import { loadAgent, type Agent } from "./agent.js";
 import { NotATestKeyError } from "@codespar/agent-core";
-import { envFileOf, localeFlag, readDotEnv } from "./setup.js";
+import { readAgentEnv } from "./env.js";
+import { envFileOf, localeFlag, resolveRailKind } from "./setup.js";
 import { loadManifest, resolveLocale } from "@codespar/agent-core";
 import { join } from "node:path";
 import { check } from "./commands/check.js";
@@ -45,7 +46,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
   if (AGENTLESS.includes(command)) return verify(rest);
   const agent = await loadAgent(dir);
-  readDotEnv(agent.dir);
+  // The CLI's names for the deployment and the project are aliases of the kit's. Two that disagree stop a command that talks to the API; on the stub rail neither is read, and the run goes on.
+  const disagreement = readAgentEnv(agent.dir);
+  const railFlag = rest.includes("--rail") ? rest[rest.indexOf("--rail") + 1] : undefined;
+  if (disagreement && resolveRailKind(process.env, railFlag === "api" || railFlag === "stub" ? railFlag : undefined) === "api") {
+    stderr.write(disagreement.message + "\n");
+    return 1;
+  }
   try {
     return await run(agent, command, rest);
   } catch (err) {

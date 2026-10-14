@@ -3,11 +3,24 @@
  * else, the restart in `executing` followed by `resume`, and `rerun`.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { loadAdversarialCase, runAdversarialCase } from "@codespar/agent-runtime";
+import { agent } from "../src/kit.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const NODE = process.execPath;
@@ -16,7 +29,7 @@ const BIN = resolve(AGENT_DIR, "../../packages/agent-runtime/bin.mjs");
 function run(command: string, args: string[], env: Record<string, string>) {
   const result = spawnSync(NODE, [BIN, command, ...args], {
     cwd: AGENT_DIR,
-    env: { ...process.env, ANTHROPIC_API_KEY: "", CODESPAR_API_KEY: "", ...env },
+    env: { ...process.env, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", CODESPAR_API_KEY: "", ...env },
     encoding: "utf8",
     timeout: 60_000,
   });
@@ -25,7 +38,7 @@ function run(command: string, args: string[], env: Record<string, string>) {
 
 describe("npm start -- --input ... --json", () => {
   it("prints valid JSON on stdout and nothing else; people go to stderr", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-json-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-json-"));
     const out = run("start", ["--input", "pague a escola de outubro", "--approve", "--json"], { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") });
     expect(out.code).toBe(0);
     const lines = out.stdout.split("\n").filter(Boolean);
@@ -39,7 +52,7 @@ describe("npm start -- --input ... --json", () => {
   });
 
   it("replays when ANTHROPIC_API_KEY still holds the .env.example placeholder", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-placeholder-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-placeholder-"));
     const out = run("start", ["--input", "pague a escola de outubro", "--approve", "--json"], { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs"), ANTHROPIC_API_KEY: "sk-ant-your_key_here" });
     expect(out.code).toBe(0);
     expect(out.stderr).toContain("[replay] no ANTHROPIC_API_KEY");
@@ -48,7 +61,7 @@ describe("npm start -- --input ... --json", () => {
   });
 
   it("refuses a key outside csk_test_ before anything else", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-live-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-live-"));
     const out = run("start", ["--input", "pague a escola de outubro", "--json"], { BILLS_STATE_DIR: stateDir, CODESPAR_API_KEY: ["csk", "live", "0000000000"].join("_") });
     expect(out.code).toBe(1);
     expect(out.stdout).toBe("");
@@ -68,7 +81,7 @@ describe("a key the kit cannot use says which mistake it is", () => {
   ] as const;
   for (const [name, key, message] of cases) {
     it(`consent with ${name}: its own sentence, exit 1, no stack trace`, () => {
-      const stateDir = mkdtempSync(join(tmpdir(), "bills-key-"));
+      const stateDir = tempDir(join(tmpdir(), "bills-key-"));
       const out = run("consent", ["--yes"], { BILLS_STATE_DIR: stateDir, CODESPAR_API_KEY: key, INIT_CWD: REPO });
       expect(out.code).toBe(1);
       expect(out.stderr).toMatch(message);
@@ -78,7 +91,7 @@ describe("a key the kit cannot use says which mistake it is", () => {
   }
 
   it("start --rail api names the same file, and without INIT_CWD the path is relative to where the command ran", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-key-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-key-"));
     const fromRoot = run("start", ["--input", "pague a escola de outubro", "--rail", "api", "--json"], { BILLS_STATE_DIR: stateDir, CODESPAR_API_KEY: "", INIT_CWD: REPO });
     expect(fromRoot.code).toBe(1);
     expect(fromRoot.stderr).toContain("copy agents/bills-agent/.env.example to agents/bills-agent/.env");
@@ -92,7 +105,7 @@ describe("a key the kit cannot use says which mistake it is", () => {
 // state is seeded with one settled payment to the school first, in its own process, the way a real day would.
 describe("--now pins the clock the mandate-mode escalation reads", () => {
   function seedKnownPayee(label: string): Record<string, string> {
-    const stateDir = mkdtempSync(join(tmpdir(), `bills-now-${label}-`));
+    const stateDir = tempDir(join(tmpdir(), `bills-now-${label}-`));
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") };
     const seed = run("start", ["--mode", "mandate", "--input", "paga 400 reais pra escola (material)", "--transcript", "test/fixtures/material-400.transcript.jsonl", "--approve", "--json", "--now", "2026-09-23T14:00:00-03:00"], env);
     expect(seed.code).toBe(0);
@@ -124,7 +137,7 @@ describe("--now pins the clock the mandate-mode escalation reads", () => {
 
 describe("section 10: restart in executing, then resume", () => {
   it("one payment, one receipt, never two", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-restart-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-restart-"));
     const runsDir = join(stateDir, "runs");
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir };
 
@@ -161,7 +174,7 @@ describe("section 10: restart in executing, then resume", () => {
 
 describe("npm run rerun <run-id>", () => {
   it("reproduces a recorded run without network, with the same state sequence", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-rerun-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-rerun-"));
     const runsDir = join(stateDir, "runs");
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir };
     const first = run("start", ["--input", "pague a escola de outubro", "--approve", "--json"], env);
@@ -173,6 +186,94 @@ describe("npm run rerun <run-id>", () => {
     expect(payload.same_states).toBe(true);
     expect(payload.original).toEqual(["awaiting_approval", "approved", "executing", "settled"]);
     expect(readFileSync(join(runsDir, run_id, "transcript.jsonl"), "utf8")).toContain("assistant_step");
+  });
+});
+
+/**
+ * The kit reads `CODESPAR_API_URL` and `CODESPAR_PROJECT_ID`; the CodeSpar CLI
+ * reads `CODESPAR_BASE_URL` and `CODESPAR_PROJECT`. A command that talks to
+ * the API stops when the two disagree; the stub rail reads neither.
+ */
+describe("the two names for the deployment and the project", () => {
+  const STAGING = "https://api.staging.codespar.dev";
+  const DISAGREE = { CODESPAR_API_URL: "https://api.codespar.dev", CODESPAR_BASE_URL: STAGING };
+  const scratch = () => {
+    const stateDir = tempDir(join(tmpdir(), "bills-env-names-"));
+    return { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs"), CODESPAR_API_URL: "", CODESPAR_PROJECT_ID: "", CODESPAR_BASE_URL: "", CODESPAR_PROJECT: "" };
+  };
+  const ONE_SHOT = ["--input", "pague a escola de outubro", "--approve", "--json"];
+
+  it("with a key, two that disagree stop the command with both named, no stack, nothing run", () => {
+    // Not the placeholder; the underscore keeps it below the secret scan's key shape.
+    const out = run("start", ONE_SHOT, { ...scratch(), ...DISAGREE, CODESPAR_API_KEY: "csk_test_unit_0000" });
+    expect(out.code).toBe(1);
+    expect(out.stdout).toBe("");
+    expect(out.stderr).toContain("CODESPAR_API_URL=https://api.codespar.dev");
+    expect(out.stderr).toContain(`CODESPAR_BASE_URL=${STAGING}`);
+    expect(out.stderr).not.toMatch(/^\s+at /m);
+  });
+
+  it("on the stub rail the same disagreement is not read, and the run goes on", () => {
+    const out = run("start", ONE_SHOT, { ...scratch(), ...DISAGREE });
+    expect(out.code).toBe(0);
+    expect(out.stderr).not.toContain("disagree");
+  });
+
+  it("runs with only the CLI's names set", () => {
+    const out = run("start", ONE_SHOT, { ...scratch(), CODESPAR_BASE_URL: STAGING, CODESPAR_PROJECT: "prj_cli" });
+    expect(out.code).toBe(0);
+  });
+});
+
+/**
+ * `rerun` replays the model's side of a run. An adversarial case of
+ * `kind: events` has none: it drives rail deliveries and never asks the
+ * model, so its bundle holds no `transcript.jsonl`.
+ */
+describe("npm run rerun <run-id> on a run with no model turn", () => {
+  const NOTHING = "has no model turn in transcript.jsonl, so there is nothing to replay";
+
+  it("refuses the adversarial events case by name of what is missing, with no stack", async () => {
+    const runsDir = tempDir(join(tmpdir(), "bills-rerun-adv-"));
+    const env = { BILLS_STATE_DIR: join(runsDir, "state"), BILLS_RUNS_DIR: runsDir };
+    const original = await runAdversarialCase(agent, loadAdversarialCase(agent, "webhook-replay"), { runsDir });
+    expect(original.ok).toBe(true);
+    expect(existsSync(join(runsDir, original.run_id, "transcript.jsonl"))).toBe(false);
+
+    const out = run("rerun", [original.run_id], env);
+    expect(out.code).toBe(1);
+    expect(out.stdout).toBe("");
+    expect(out.stderr).toContain(`runs/${original.run_id} ${NOTHING}`);
+    expect(out.stderr).not.toContain("ENOENT");
+    expect(out.stderr).not.toMatch(/^\s+at /m);
+
+    // A script reading stdout gets the refusal as data, not an empty line.
+    const asJson = run("rerun", [original.run_id, "--json"], env);
+    expect(asJson.code).toBe(1);
+    expect(JSON.parse(asJson.stdout.trim())).toEqual({ run_id: original.run_id, error: `runs/${original.run_id} ${NOTHING}` });
+  });
+
+  it("refuses a transcript that is empty, or holds the person's turn and no step of the model", async () => {
+    const runsDir = tempDir(join(tmpdir(), "bills-rerun-adv-"));
+    const env = { BILLS_STATE_DIR: join(runsDir, "state"), BILLS_RUNS_DIR: runsDir };
+    const original = await runAdversarialCase(agent, loadAdversarialCase(agent, "webhook-replay"), { runsDir });
+    const transcript = join(runsDir, original.run_id, "transcript.jsonl");
+    for (const content of ["", JSON.stringify({ kind: "user", text: "pague a escola de outubro" }) + "\n"]) {
+      writeFileSync(transcript, content);
+      const out = run("rerun", [original.run_id], env);
+      expect(out.code).toBe(1);
+      expect(out.stderr).toContain(NOTHING);
+      expect(out.stderr).not.toContain("rerun ok");
+    }
+  });
+
+  it("still replays an adversarial case that did ask the model", async () => {
+    const runsDir = tempDir(join(tmpdir(), "bills-rerun-adv-"));
+    const original = await runAdversarialCase(agent, loadAdversarialCase(agent, "prompt-injection"), { runsDir });
+    expect(original.ok).toBe(true);
+    const out = run("rerun", [original.run_id], { BILLS_STATE_DIR: join(runsDir, "state"), BILLS_RUNS_DIR: runsDir });
+    expect(out.code).toBe(0);
+    expect(out.stderr).toContain("rerun ok");
   });
 });
 
@@ -188,7 +289,7 @@ describe("npm run check", () => {
 
 describe("npm run approve / deny <execution-id>", () => {
   it("decides an execution left awaiting, produces the artifact and runs it through the last gate", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-decide-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-decide-"));
     const runsDir = join(stateDir, "runs");
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir };
     const left = run("start", ["--input", "pague a escola de outubro", "--json"], env);
@@ -215,7 +316,7 @@ describe("npm run approve / deny <execution-id>", () => {
   });
 
   it("deny leaves a terminal denied execution and sends nothing", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-deny-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-deny-"));
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") };
     const left = run("start", ["--input", "pague a escola de outubro", "--json"], env);
     const id = (JSON.parse(left.stdout.trim()) as { executions: Array<{ id: string }> }).executions[0]!.id;
@@ -230,17 +331,20 @@ describe("npm run approve / deny <execution-id>", () => {
 
 describe("partial failure of a multi-item execution, and rerun reproducing it", () => {
   it("pays every bill the rail accepted, names the one it refused, and rerun replays the refusal", () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "bills-partial-"));
+    const stateDir = tempDir(join(tmpdir(), "bills-partial-"));
     const runsDir = join(stateDir, "runs");
     const env = { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir, BILLS_STUB_REFUSE: "+5511999990001" };
     const first = run("start", ["--input", "libera o lote do mes", "--transcript", "evals/adversarial/false-authority.transcript.jsonl", "--approve", "--json"], env);
-    expect(first.code).toBe(0);
+    // One attempt failed, so the execution is `failed` and the process says so.
+    expect(first.code).toBe(1);
     const payload = JSON.parse(first.stdout.trim()) as { run_id: string; executions: Array<{ state: string; receipt_ids: string[] }>; receipts: string[] };
     // Four bills, the SECOND refused by the rail. The execution closes `failed`
     // because one attempt failed, and the two bills after the refused one are
     // paid all the same: an attempt's outcome is that attempt's business.
     expect(payload.executions[0]?.state).toBe("failed");
     expect(payload.executions[0]?.receipt_ids).toHaveLength(3);
+    // Counted by payment, not by execution: three bills were paid and one failed, and the line says both.
+    expect((payload as unknown as { run_outcome: unknown }).run_outcome).toEqual({ settled: 3, failed: 1, declined: 0, already_paid: 0, open: 0 });
     // #50: the rail's own code and message, verbatim, next to the reason — on stdout for a script, on stderr for a person.
     const railError = (payload.executions[0] as unknown as { rail_error: unknown }).rail_error;
     expect(railError).toMatchObject({ outcome: "failed", code: "psp_dispatch_failed", message: "stub: provider refused payee +5511999990001" });

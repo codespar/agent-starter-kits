@@ -4,10 +4,10 @@
  * until the payer acts, and closes from a lookup (the poll) or from a
  * `commerce.charge.*` event (the webhook). Never twice, never on prose.
  */
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { CodeSparChargeRail, outcomeOf, type ChargeView } from "../src/api/charge-rail.js";
 import { createCodeSparClient } from "../src/api/client.js";
 import { hmacSigner } from "../src/approval.js";
@@ -20,11 +20,22 @@ import { LocalMandateStatusStub } from "../src/stubs/mandate-status.js";
 import { StubChargeRail, type StubChargeRailOptions } from "../src/stubs/charge-rail.js";
 import { testGuardrails, testManifest, testMandate } from "./helpers.js";
 
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 const DEBTOR = "11144477735";
 const OTHER = "22233344450";
 
 function receivables(options: { mode?: "human" | "mandate"; rail?: StubChargeRailOptions; policyExtension?: PolicyExtension; dir?: string; dispatchTo?: PaymentRail } = {}) {
-  const dir = options.dir ?? mkdtempSync(join(tmpdir(), "agent-core-recv-"));
+  const dir = options.dir ?? tempDir(join(tmpdir(), "agent-core-recv-"));
   let now = new Date("2026-09-23T18:00:00Z");
   const clock = () => now;
   const store = new StateStore(join(dir, "state.db"));

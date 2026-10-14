@@ -132,7 +132,11 @@ export function makeChargeHandlers(deps: OrderDeps): Record<string, ToolHandler>
 
     const claimed = typeof input.total_minor === "number" ? input.total_minor : undefined;
     const draft = await ctx.engine.draft(orderProposal(cart, customer, deps, claimed));
-    if (!draft.ok) return { status: "refused", reason: draft.reason, message: draft.message, issued: false, paid: false };
+    if (!draft.ok) {
+      // Refused before a draft: no execution will ever say so, and the run's count is taken from this.
+      ctx.onNotRun?.({ ref: cart.cart_id, why: "refused", detail: draft.reason });
+      return { status: "refused", reason: draft.reason, message: draft.message, issued: false, paid: false };
+    }
     claimOrder(ctx.engine, cart, draft.execution.id);
     const decided = await ctx.onExecution(draft.execution);
     return { ...describe(decided, cart), message: messageFor(decided, text()) };

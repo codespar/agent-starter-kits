@@ -4,4 +4,4 @@
 {"kind":"assistant_step","tool_calls":[{"id":"tc_3","name":"codespar_pay","input":{"action":"pix","items":[{"payee":"escola","amount_minor":185000,"description":"mensalidade outubro"}]}}]}
 {"kind":"assistant_step","reply":"Propus a mensalidade de outubro, R$ 1.850,00. Passa de R$ 1.500,00, então o mandato pediu sua aprovação."}
 {"kind":"assistant_step","tool_calls":[{"id":"tc_4","name":"codespar_pay","input":{"action":"pix","items":[{"payee":"escola","amount_minor":30000,"description":"excursão"}]}}]}
-{"kind":"assistant_step","reply":"Paguei R$ 300,00 para a Escola Aurora (excursão) dentro da alçada; o recibo está no terminal."}
+{"kind":"assistant_step","reply":"Propus R$ 300,00 para a Escola Aurora (excursão). O resultado está no terminal."}

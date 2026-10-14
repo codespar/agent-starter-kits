@@ -275,6 +275,21 @@ export class ExecutionEngine {
       };
     }
 
+    // Velocity ceiling: a count, not an amount, and a refusal in both modes. A person's yes does not lift it.
+    const velocity = guardrails.velocity;
+    if (velocity?.max_per_payee !== undefined) {
+      const maxPerPayee = velocity.max_per_payee;
+      const counts = this.executionsByPayee(now, execution.id);
+      const full = execution.items.find((i) => (counts.get(i.payee) ?? 0) + 1 > maxPerPayee);
+      if (full) {
+        return {
+          kind: "deny",
+          reason: "payee_velocity_exceeded",
+          detail: `${counts.get(full.payee) ?? 0} executions to ${full.beneficiary} already inside the last ${velocity.window_hours}h (settled, in flight and awaiting a decision); the ceiling is ${maxPerPayee}`,
+        };
+      }
+    }
+
     // The kit's envelope, at every gate: a person's yes does not widen it either.
     const outside = this.deps.policyExtension?.(execution, { gate, now, mode: this.deps.mode, mandate, guardrails });
     if (outside) return { kind: "deny", reason: outside.reason, detail: outside.detail };
@@ -689,7 +704,7 @@ export class ExecutionEngine {
         continue;
       }
       if (seen.status === "failed") {
-        replace({ index, attempt_id: payment.attempt_id, status: "failed", code: seen.code, error: `${seen.code}: ${seen.message}`, ...(seen.held ? { held: seen.held } : {}) });
+        replace({ index, attempt_id: payment.attempt_id, status: "failed", code: seen.code, message: seen.message, error: `${seen.code}: ${seen.message}`, ...(seen.held ? { held: seen.held } : {}) });
         continue;
       }
       // No `replayed` here, whatever the rail said. A lookup IS a second
@@ -1007,6 +1022,24 @@ export class ExecutionEngine {
     return out;
   }
 
+  /**
+   * Executions per payee inside the velocity window, in the states the window
+   * cap counts (settled, in flight and awaiting a decision), in either mode,
+   * excluding the execution being judged. An execution with several items to
+   * one payee counts once.
+   */
+  private executionsByPayee(now: Date, excludeId: string): Map<string, number> {
+    const out = new Map<string, number>();
+    const hours = this.deps.guardrails.velocity?.window_hours;
+    if (!hours) return out;
+    const since = now.getTime() - hours * 3_600_000;
+    for (const e of this.list({ state: WINDOW_STATES })) {
+      if (e.id === excludeId || new Date(e.created_at).getTime() < since) continue;
+      for (const payee of new Set(e.items.map((i) => i.payee))) out.set(payee, (out.get(payee) ?? 0) + 1);
+    }
+    return out;
+  }
+
   private storeApproval(artifact: ApprovalArtifact): void {
     this.deps.store.saveApproval(artifact);
     this.deps.bundle.approval(artifact);
@@ -1117,6 +1150,18 @@ export function railErrorOf(execution: Pick<Execution, "outcomes" | "uncertain_a
 export function isReplayedSettlement(execution: Pick<Execution, "state" | "outcomes">): boolean {
   const settled = execution.outcomes.filter((o) => o.status === "settled");
   return execution.state === "settled" && settled.length > 0 && settled.every((o) => o.replayed === true);
+}
+
+/**
+ * A reason, or a rail code, that closes a payment without anything having
+ * failed: nobody paid the charge in time, the charge was withdrawn, or the
+ * organization pressed the kill switch. It reads with `denied` and `expired`,
+ * not with a rail failure, in every count and report.
+ */
+const DECLINED_REASONS: readonly string[] = ["charge_expired", "charge_cancelled", "org_paused"];
+
+export function isDeclinedReason(reason: string | null | undefined): boolean {
+  return typeof reason === "string" && DECLINED_REASONS.includes(reason);
 }
 
 /** The approval link a receipt sealed is the one a spend sent: the same hashes, in either spelling of the `sha256:` prefix. */

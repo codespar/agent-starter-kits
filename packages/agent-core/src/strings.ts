@@ -91,6 +91,12 @@ const pt = {
   pollNoTemplateForOutcome: (outcome: string) => `a janela de 24h está fechada e o agente não declara template para ${outcome}, nem um template de reserva`,
   pollTemplateNotDeclared: (template: string) => `o kit pediu o template ${template}, que channels/whatsapp/templates.json não declara`,
   pollProviderRefused: "o provedor não aceitou a mensagem",
+
+  // What a run did, counted from its executions: printed after the reply, whatever the reply says.
+  runOutcome: (settled: number, failed: number, declined: number, alreadyPaid: number, open: number) =>
+    settled + failed + declined + alreadyPaid + open === 0
+      ? "resultado deste run: nenhuma execução; nada foi pago"
+      : `resultado deste run: ${settled} liquidada(s), ${failed} com falha ou recusada(s), ${declined} negada(s) ou expirada(s), ${alreadyPaid} pulada(s) por já paga(s), ${open} em aberto`,
 };
 
 export type CoreStrings = typeof pt;
@@ -159,6 +165,11 @@ const en: CoreStrings = {
   pollNoTemplateForOutcome: (outcome) => `the 24h window is shut and the agent declares no template for ${outcome}, nor a fallback template`,
   pollTemplateNotDeclared: (template) => `the kit asked for template ${template}, which channels/whatsapp/templates.json does not declare`,
   pollProviderRefused: "the provider did not accept the message",
+
+  runOutcome: (settled, failed, declined, alreadyPaid, open) =>
+    settled + failed + declined + alreadyPaid + open === 0
+      ? "result of this run: no execution; nothing was paid"
+      : `result of this run: ${settled} settled, ${failed} failed or refused, ${declined} denied or expired, ${alreadyPaid} skipped as already paid, ${open} open`,
 };
 
 export const CORE_STRINGS: LocaleTable<CoreStrings> = { "pt-BR": pt, en };

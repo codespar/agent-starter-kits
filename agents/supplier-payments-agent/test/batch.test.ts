@@ -4,10 +4,10 @@
  * itself: a batch that reports "already_settled" while quietly drafting a
  * second execution would pass a report check and fail this one.
  */
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { StateStore, batchAttemptId, batchHash, fixedClock, maskPayee, type Execution, type StubRail, type StubRailOptions, type ToolContext } from "@codespar/agent-core";
 import { REPLAY_NOTE, assembleTimeline, handleExecution, parseBatchGesture, presentBatch, renderHtml, renderText, setup, type BatchGestures, type Setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
@@ -15,8 +15,19 @@ import { runBatch, type BatchReport } from "../src/modules/batch-payout.js";
 import { codesparPay } from "../src/modules/pix-out.js";
 import { findBatch, type Batch } from "../src/payables.js";
 
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 const APPROVER = { id: "usr_demo_financeiro", channel: "terminal" };
-const runsDir = mkdtempSync(join(tmpdir(), "supplier-batch-runs-"));
+const runsDir = tempDir(join(tmpdir(), "supplier-batch-runs-"));
 
 /** What the terminal channel does to each execution, without the terminal. */
 function approveAndRun(s: Setup): ToolContext["onExecution"] {
@@ -63,7 +74,7 @@ function fourLines(ref = "quatro-linhas-2026-10"): Batch {
 
 describe("batch-payout: a batch is a loop of executions", () => {
   it("runs one execution per line, each with its own attempt and its own approval artifact", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-batch-a-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-batch-a-")));
     try {
       const report = await run(s, "folha-2026-10");
       expect(report.lines.map((l) => l.dispatch)).toEqual(["settled", "settled", "settled"]);
@@ -91,7 +102,7 @@ describe("batch-payout: a batch is a loop of executions", () => {
   });
 
   it("every line presents the quote of its OWN approved line, and its receipt carries the payee that quote sealed (OPEN_QUESTIONS §18)", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-batch-q-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-batch-q-")));
     try {
       await run(s, "folha-2026-10");
       const artifacts = s.bundle.readApprovals();
@@ -108,7 +119,7 @@ describe("batch-payout: a batch is a loop of executions", () => {
   });
 
   it("one refusal does not stop the others: the lines after the refused one still dispatch", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-batch-b-")), { refusePayees: ["contas@insumos-atlantico.example.com.br"] });
+    const s = open(tempDir(join(tmpdir(), "supplier-batch-b-")), { refusePayees: ["contas@insumos-atlantico.example.com.br"] });
     try {
       const report = await run(s, "fornecedores-2026-10");
       expect(report.lines.map((l) => l.dispatch)).toEqual(["settled", "refused", "settled"]);
@@ -125,7 +136,7 @@ describe("batch-payout: a batch is a loop of executions", () => {
   });
 
   it("repeating the batch pays nobody twice, and opens no second execution", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "supplier-batch-c-"));
+    const stateDir = tempDir(join(tmpdir(), "supplier-batch-c-"));
     const first = open(stateDir);
     let firstIds: string[];
     try {
@@ -152,7 +163,7 @@ describe("batch-payout: a batch is a loop of executions", () => {
   });
 
   it("a line whose execution ended without moving money is retried; one still open is not", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "supplier-batch-d-"));
+    const stateDir = tempDir(join(tmpdir(), "supplier-batch-d-"));
     // The rail refuses one supplier, so that line ends `failed`: money provably did not move.
     const first = open(stateDir, { refusePayees: ["contas@insumos-atlantico.example.com.br"] });
     try {
@@ -173,7 +184,7 @@ describe("batch-payout: a batch is a loop of executions", () => {
     }
 
     // A line left awaiting a decision is NOT retried: the dispatch may yet happen.
-    const third = open(mkdtempSync(join(tmpdir(), "supplier-batch-e-")));
+    const third = open(tempDir(join(tmpdir(), "supplier-batch-e-")));
     try {
       const batch = findBatch("comissoes-2026-10")!;
       await runBatch(batch, { engine: third.engine, onExecution: async (e) => e });
@@ -186,7 +197,7 @@ describe("batch-payout: a batch is a loop of executions", () => {
   });
 
   it("a channel that throws on one line does not cancel the lines after it", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-batch-g-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-batch-g-")));
     try {
       const run = approveAndRun(s);
       let seen = 0;
@@ -213,7 +224,7 @@ describe("batch-payout: a batch is a loop of executions", () => {
   });
 
   it("a line the core cannot read at all is one line's problem, not the batch's", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-batch-h-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-batch-h-")));
     try {
       const batch = findBatch("comissoes-2026-10")!;
       // `draft` throws on a non-positive amount, which is a bug in the payables
@@ -229,7 +240,7 @@ describe("batch-payout: a batch is a loop of executions", () => {
   });
 
   it("the lines of a batch come from the payables file, so a model cannot write them", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-batch-f-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-batch-f-")));
     try {
       const pay = s.handlers["codespar_pay"]!;
       const ctx: ToolContext = { engine: s.engine, onExecution: approveAndRun(s) };
@@ -255,7 +266,7 @@ describe("batch-payout: a batch is a loop of executions", () => {
  */
 describe("batch-payout: the approved list is bound as a set", () => {
   it("every artifact of a batch names the same list, and its own place in it", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-set-a-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-set-a-")));
     try {
       const batch = fourLines();
       const report = await runBatch(batch, { engine: s.engine, onExecution: approveAndRun(s) });
@@ -280,7 +291,7 @@ describe("batch-payout: the approved list is bound as a set", () => {
   });
 
   it("a line dropped after the list was approved refuses the whole run, and drafts nothing", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "supplier-set-b-"));
+    const stateDir = tempDir(join(tmpdir(), "supplier-set-b-"));
     const four = fourLines();
 
     const first = open(stateDir);
@@ -337,7 +348,7 @@ describe("batch-payout: the approved list is bound as a set", () => {
   });
 
   it("a line the human denied is named with its reason, and the counts still add to the four presented", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-set-c-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-set-c-")));
     try {
       const batch = fourLines();
       const decide = approveAndRun(s);
@@ -390,7 +401,7 @@ describe("batch-payout: the approved list is bound as a set", () => {
   });
 
   it("a batch that is not a batch is unchanged: a one-off payment carries no binding at all", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-set-d-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-set-d-")));
     try {
       const pay = s.handlers["codespar_pay"]!;
       await pay({ action: "pix", items: [{ payee: "grafica", amount_minor: 98000 }] }, { engine: s.engine, onExecution: approveAndRun(s) });
@@ -446,7 +457,7 @@ describe("batch-payout: one gesture approves the list, with a veto per line (§3
   });
 
   it("approve-all is one question, and still mints one artifact per line, each naming the list", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-gesture-a-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-gesture-a-")));
     try {
       const batch = fourLines();
       const channel = gestureChannel(s, ["todas"]);
@@ -472,7 +483,7 @@ describe("batch-payout: one gesture approves the list, with a veto per line (§3
   });
 
   it("approve-except denies exactly the vetoed lines, and the report says which", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-gesture-b-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-gesture-b-")));
     try {
       const batch = fourLines();
       const channel = gestureChannel(s, ["todas exceto 2,4"]);
@@ -503,7 +514,7 @@ describe("batch-payout: one gesture approves the list, with a veto per line (§3
   });
 
   it("a line that belongs to another list under the same ref is not approved by the gesture", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-gesture-c-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-gesture-c-")));
     try {
       const batch = fourLines();
       const gestures: BatchGestures = new Map();
@@ -527,7 +538,7 @@ describe("batch-payout: one gesture approves the list, with a veto per line (§3
   });
 
   it("an edited list after the gesture is refused before anything is drafted, and nobody is asked again", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "supplier-gesture-d-"));
+    const stateDir = tempDir(join(tmpdir(), "supplier-gesture-d-"));
     const four = fourLines();
     const first = open(stateDir);
     try {
@@ -553,7 +564,7 @@ describe("batch-payout: one gesture approves the list, with a veto per line (§3
   });
 
   it("without the hook nothing changes: each line is its own question, as the one-shot and the scenarios expect", async () => {
-    const s = open(mkdtempSync(join(tmpdir(), "supplier-gesture-e-")));
+    const s = open(tempDir(join(tmpdir(), "supplier-gesture-e-")));
     try {
       const batch = fourLines();
       const asked: string[] = [];
@@ -601,11 +612,11 @@ describe("batch-payout: a batch is idempotent across machines (§39c)", () => {
   }
 
   function newLedger(): StateStore {
-    return new StateStore(join(mkdtempSync(join(tmpdir(), "supplier-rail-ledger-")), "rail.db"));
+    return new StateStore(join(tempDir(join(tmpdir(), "supplier-rail-ledger-")), "rail.db"));
   }
 
   function machine(prefix: string, options: Parameters<typeof open>[1]): Setup {
-    return open(mkdtempSync(join(tmpdir(), `supplier-machine-${prefix}-`)), options);
+    return open(tempDir(join(tmpdir(), `supplier-machine-${prefix}-`)), options);
   }
 
   it("derives the attempt id from mandate, list, position and generation, and from nothing a run invents", () => {
@@ -820,7 +831,7 @@ describe("batch-payout: a batch is idempotent across machines (§39c)", () => {
   it("A pays at generation 2 after generation 1 failed; B, still at generation 1, is told it is spent, advances, and gets A's payment as a replay", async () => {
     const ledger = newLedger();
     // A: the provider refuses generation 0.
-    const a = mkdtempSync(join(tmpdir(), "supplier-machine-l-"));
+    const a = tempDir(join(tmpdir(), "supplier-machine-l-"));
     let s = open(a, { ledger, refusePayees: [INSUMOS] });
     try {
       await run(s, "fornecedores-2026-10");
@@ -828,7 +839,7 @@ describe("batch-payout: a batch is idempotent across machines (§39c)", () => {
       s.close();
     }
     // B: generation 0 is spent, so it presents generation 1, which the provider also refuses. B is left at generation 1.
-    const b = mkdtempSync(join(tmpdir(), "supplier-machine-m-"));
+    const b = tempDir(join(tmpdir(), "supplier-machine-m-"));
     s = open(b, { ledger, refusePayees: [INSUMOS] });
     let g1: string;
     try {

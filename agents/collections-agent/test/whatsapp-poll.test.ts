@@ -24,11 +24,22 @@
  * run everywhere.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const NODE = process.execPath;
@@ -78,7 +89,7 @@ interface PollPayload {
  * point; two cases never do.
  */
 function scratch(label: string) {
-  const stateDir = mkdtempSync(join(tmpdir(), `collections-wa-poll-${label}-`));
+  const stateDir = tempDir(join(tmpdir(), `collections-wa-poll-${label}-`));
   const phoneNumberId = `9${String(Math.floor(Math.random() * 1e11)).padStart(11, "0")}`;
   return { COLLECTIONS_STATE_DIR: stateDir, COLLECTIONS_RUNS_DIR: join(stateDir, "runs"), WHATSAPP_SIM_PHONE_NUMBER_ID: phoneNumberId };
 }
@@ -88,7 +99,7 @@ function agent(args: string[], env: Record<string, string>) {
     cwd: AGENT_DIR,
     env: {
       ...process.env,
-      ANTHROPIC_API_KEY: "",
+      ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "",
       CODESPAR_API_KEY: "",
       // A developer's own Meta credentials must not change what this suite does.
       WHATSAPP_PHONE_NUMBER_ID: "",

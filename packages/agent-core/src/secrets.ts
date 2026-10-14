@@ -35,11 +35,11 @@ export function testKeyMessage(problem: TestKeyProblem, envFile?: string): strin
   switch (problem) {
     case "missing":
       return (
-        `CODESPAR_API_KEY is not set: copy ${file}.example to ${file} and paste a ${TEST_KEY_PREFIX} key from https://dashboard.codespar.dev. ` +
+        `CODESPAR_API_KEY is not set: copy ${file}.example to ${file} and paste a ${TEST_KEY_PREFIX} key from https://codespar.dev/auth/signup. ` +
         `${file} is the file this agent reads; a .env anywhere else, the repository root included, is not read.`
       );
     case "placeholder":
-      return `CODESPAR_API_KEY is still the placeholder from .env.example (${CODESPAR_KEY_PLACEHOLDER}): replace it in ${file} with your own ${TEST_KEY_PREFIX} key from https://dashboard.codespar.dev.`;
+      return `CODESPAR_API_KEY is still the placeholder from .env.example (${CODESPAR_KEY_PLACEHOLDER}): replace it in ${file} with your own ${TEST_KEY_PREFIX} key from https://codespar.dev/auth/signup.`;
     case "not_test":
       return (
         `CODESPAR_API_KEY must be a test key (prefix "${TEST_KEY_PREFIX}"). ` +

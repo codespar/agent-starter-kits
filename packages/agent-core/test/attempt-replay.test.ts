@@ -6,7 +6,7 @@
  * stub rail is held to the same table, because a stub that answered a repeat
  * more kindly than the API would let a suite pass that the API fails.
  */
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +19,17 @@ import type { PaymentRail, RailOutcome, RailPayment } from "../src/rail.js";
 import { StubRail } from "../src/stubs/rail.js";
 import { StateStore } from "../src/state/store.js";
 import { ESCOLA, harness, MERCADO } from "./helpers.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const actor = { type: "agent" as const, agent: "bills-agent@0.1.0", on_behalf_of: "usr_demo" };
 
@@ -133,7 +144,7 @@ describe("CodeSparRail reads every answer to a repeated attempt_id (ent#1671)", 
 
 describe("the stub rail answers a repeat the way the API does", () => {
   function stub(options: ConstructorParameters<typeof StubRail>[1] = {}): StubRail {
-    return new StubRail(new StateStore(join(mkdtempSync(join(tmpdir(), "agent-core-replay-")), "state.db")), options);
+    return new StubRail(new StateStore(join(tempDir(join(tmpdir(), "agent-core-replay-")), "state.db")), options);
   }
 
   it("settled: the original outcome, marked replayed, and nothing paid again", async () => {
@@ -166,7 +177,7 @@ describe("the stub rail answers a repeat the way the API does", () => {
   });
 
   it("in flight: psp_attempt_in_flight on another presentation, on the shared books another machine reads too", async () => {
-    const ledger = new StateStore(join(mkdtempSync(join(tmpdir(), "agent-core-ledger-")), "rail.db"));
+    const ledger = new StateStore(join(tempDir(join(tmpdir(), "agent-core-ledger-")), "rail.db"));
     const a = stub({ ledger, uncertainPayees: [ESCOLA] });
     expect(await a.pay(payment())).toMatchObject({ status: "uncertain", code: "psp_dispatch_uncertain" });
     const b = stub({ ledger });

@@ -61,7 +61,8 @@ import {
   type ReceiptVerification,
 } from "@codespar/agent-core";
 import { findAgentDir } from "../agent.js";
-import { envFileOf, readDotEnv } from "../setup.js";
+import { readAgentEnv } from "../env.js";
+import { envFileOf } from "../setup.js";
 
 const USAGE =
   "usage: npm run verify <receipt-file> [--json] [--keys <key-set.json> | --url <https://.../.well-known/codespar-receipt-keys.json>] [--approval <approval.json> [--approval-id <apr_...>]] [--from-api]";
@@ -115,7 +116,7 @@ export async function verify(argv: string[]): Promise<number> {
       say(`the key set is public and needs no credential; its default is ${DEFAULT_RECEIPT_KEYS_URL}`);
       say("--keys reads a saved copy of that document instead, so the check runs with no network at all");
       say("the receipt file is the API's read (GET /v1/consumers/receipts/{id}), whose body is recomputed against the signed chain, or a run's copy, which proves the signature only");
-      say("--from-api reads a run's copy from the API with CODESPAR_API_KEY (in memory, nothing written), so its body and its approval are checked too; the key set then defaults to that deployment's. CODESPAR_API_KEY and CODESPAR_API_URL come from the environment, or else from the .env of the agent the copy sits in");
+      say("--from-api reads a run's copy from the API with CODESPAR_API_KEY (in memory, nothing written), so its body and its approval are checked too; the key set then defaults to that deployment's. CODESPAR_API_KEY and CODESPAR_API_URL come from the environment, or else from the .env of the agent the copy sits in; the CodeSpar CLI's name CODESPAR_BASE_URL is read too, and the two must agree");
       say("--approval holds a v4 receipt's sealed approval link against an approval artifact (a run's copy uses its own approval.json)");
       return 0;
     } else if (a.startsWith("-")) {
@@ -150,7 +151,14 @@ export async function verify(argv: string[]): Promise<number> {
   // to production with it is a 401 (#66). Only `--from-api` touches it; the
   // other paths are the verifier who holds nothing.
   const agentDir = args.fromApi ? findAgentDir(dirname(resolve(args.receiptFile))) : undefined;
-  if (agentDir) readDotEnv(agentDir);
+  // `--from-api` is also the one path that reads the deployment and the project, so it is the one that reconciles the CLI's names for them; a check against `--keys` or the default key set holds no opinion on either. Two names that disagree are a usage error (2), never 1: 1 means the receipt does not verify.
+  if (args.fromApi) {
+    const disagreement = readAgentEnv(agentDir);
+    if (disagreement) {
+      say(`${disagreement.message}\n${USAGE}`);
+      return 2;
+    }
+  }
 
   // The read and the key set must come from ONE deployment: the recipe that
   // binds the body is the key document's, and a staging read checked under

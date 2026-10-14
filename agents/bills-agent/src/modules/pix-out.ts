@@ -7,6 +7,7 @@
 import { daysUntil, isReplayedSettlement, type Execution, type ToolHandler } from "@codespar/agent-core";
 import { formatBRL } from "../bills.js";
 import { BILLS, MONTH } from "../bills.js";
+import { INTEGRATED_BILLS, integratedProofFrom } from "./integrated-proof.js";
 
 interface PayInput {
   action?: unknown;
@@ -21,7 +22,7 @@ export const listBills: ToolHandler = async (_input, ctx) => {
   return {
     month: MONTH,
     today,
-    bills: BILLS.map((b) => ({ ...b, amount: formatBRL(b.amount_minor), days_until_due: daysUntil(today, b.due), paid_this_window: paidAliases.has(b.alias) })),
+    bills: (integratedProofFrom(process.env) ? INTEGRATED_BILLS : BILLS).map((b) => ({ ...b, amount: formatBRL(b.amount_minor), days_until_due: daysUntil(today, b.due), paid_this_window: paidAliases.has(b.alias) })),
     payees: ctx.engine.mandate.beneficiaries.map((b) => ({ alias: b.alias, name: b.name })),
   };
 };
@@ -40,6 +41,8 @@ export const codesparPay: ToolHandler = async (raw, ctx) => {
 
   const draft = await ctx.engine.draft({ items, ...claimed });
   if (!draft.ok) {
+    // Refused before a draft: no execution will ever say so, and the run's count is taken from this.
+    ctx.onNotRun?.({ ref: items.map((item) => item.payee).join(", "), why: "refused", detail: draft.reason });
     return { status: "refused", reason: draft.reason, message: draft.message, paid: false };
   }
   const execution = await ctx.onExecution(draft.execution);

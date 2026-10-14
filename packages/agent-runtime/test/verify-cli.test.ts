@@ -9,7 +9,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync, sign as signDetached } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -17,13 +17,24 @@ import { join, resolve } from "node:path";
 import { canonicalize, itemsHash, maskPayee, type ExecutionItem } from "@codespar/agent-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 const BIN = resolve(import.meta.dirname, "../bin.mjs");
 const KID = "did:web:id.codespar.dev#1";
 const CHAIN = "9f2c4a1b6d0e8f3a5c7b9d1e2f4a6b8c0d2e4f6a8b0c2d4e6f8a0b2c4d6e8f01";
 const RECEIPT_ID = "rcpt_V1StGXR8Z5jdHi6BmyT0sw";
 
 function fixture(over: Record<string, unknown> = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "verify-cli-"));
+  const dir = tempDir(join(tmpdir(), "verify-cli-"));
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const x = Buffer.from(publicKey.export({ format: "der", type: "spki" }).subarray(-32)).toString("base64url");
   const signature = signDetached(null, Buffer.from(`codespar-receipt:v1:${RECEIPT_ID}:${CHAIN}`, "utf8"), privateKey).toString("base64url");
@@ -46,11 +57,11 @@ function fixture(over: Record<string, unknown> = {}) {
   return { dir, receiptPath, keysPath };
 }
 
-function run(args: string[], cwd: string) {
+function run(args: string[], cwd: string, env: Record<string, string> = {}) {
   const result = spawnSync(process.execPath, [BIN, "verify", ...args], {
     cwd,
     // No CodeSpar key, no model key: a verifier holds nothing.
-    env: { ...process.env, CODESPAR_API_KEY: "", ANTHROPIC_API_KEY: "" },
+    env: { ...process.env, CODESPAR_API_KEY: "", ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", ...env },
     encoding: "utf8",
     timeout: 60_000,
   });
@@ -64,6 +75,10 @@ describe("codespar-agent verify", () => {
     expect(out.code).toBe(7);
     expect(out.stdout).toContain("SIGNATURE_ONLY");
     expect(out.stdout).toContain(RECEIPT_ID);
+    // The offline check reads neither the deployment nor the project, so two names for them that disagree are none of its business.
+    const disagreeing = run([receiptPath, "--keys", keysPath], dir, { CODESPAR_API_URL: "https://api.codespar.dev", CODESPAR_BASE_URL: "https://api.staging.codespar.dev" });
+    expect(disagreeing.code).toBe(7);
+    expect(disagreeing.stderr).not.toContain("disagree");
     expect(out.stdout).toContain("read_required");
     expect(out.stderr).toContain("carries CodeSpar's signature");
     expect(out.stderr).toContain("--from-api");
@@ -143,7 +158,7 @@ const ITEMS: ExecutionItem[] = [{ alias: "escola", beneficiary: "Escola Aurora",
 const sha256 = (v: string) => createHash("sha256").update(v, "utf8").digest("hex");
 
 function v4Fixture(sealedItemsHash = itemsHash(ITEMS)) {
-  const dir = mkdtempSync(join(tmpdir(), "verify-cli-v4-"));
+  const dir = tempDir(join(tmpdir(), "verify-cli-v4-"));
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const x = Buffer.from(publicKey.export({ format: "der", type: "spki" }).subarray(-32)).toString("base64url");
   const mandate = { id: "cm_test_1", nonce: "nonce-1", scope: "contas do mes", currency: "BRL", sig_sha256: sha256("s".repeat(64)) };
@@ -273,7 +288,7 @@ describe("codespar-agent verify --from-api", () => {
       const child = spawn(process.execPath, [BIN, "verify", ...args], {
         cwd,
         // Not the placeholder, which the guard refuses (#50); the underscore keeps it below the secret scan's key shape.
-        env: env ?? { ...process.env, CODESPAR_API_KEY: "csk_test_unit_0000", CODESPAR_API_URL: baseUrl, ANTHROPIC_API_KEY: "" },
+        env: env ?? { ...process.env, CODESPAR_API_KEY: "csk_test_unit_0000", CODESPAR_API_URL: baseUrl, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "" },
       });
       let stdout = "";
       let stderr = "";
@@ -346,8 +361,8 @@ describe("codespar-agent verify --from-api", () => {
   }
 
   function bareEnv(over: Record<string, string> = {}): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...process.env, ANTHROPIC_API_KEY: "", ...over };
-    for (const name of ["CODESPAR_API_KEY", "CODESPAR_API_URL", "CODESPAR_PROJECT_ID"]) if (!(name in over)) delete env[name];
+    const env: NodeJS.ProcessEnv = { ...process.env, ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", ...over };
+    for (const name of ["CODESPAR_API_KEY", "CODESPAR_API_URL", "CODESPAR_PROJECT_ID", "CODESPAR_BASE_URL", "CODESPAR_PROJECT"]) if (!(name in over)) delete env[name];
     return env;
   }
 
@@ -371,6 +386,42 @@ describe("codespar-agent verify --from-api", () => {
     const out = await runAsync([f.paths.copy, "--from-api", "--json"], f.dir, bareEnv({ CODESPAR_API_URL: baseUrl }));
     expect(out.code).toBe(0);
     expect(asked).toEqual([`GET /.well-known/codespar-receipt-keys.json anon`, `GET /v1/consumers/receipts/${RECEIPT_ID} auth`]);
+  });
+
+  const BOTH_ASKED = () => [`GET /.well-known/codespar-receipt-keys.json anon`, `GET /v1/consumers/receipts/${RECEIPT_ID} auth`];
+
+  it("reads from the deployment the .env names under the CLI's name, CODESPAR_BASE_URL", async () => {
+    const f = v4Fixture();
+    inAgent(f.dir, { CODESPAR_API_KEY: "csk_test_unit_0000", CODESPAR_BASE_URL: baseUrl });
+    served = { read: f.read, keys: f.keys };
+    asked.length = 0;
+    const out = await runAsync([f.paths.copy, "--from-api", "--json"], f.dir, bareEnv());
+    expect(out.code).toBe(0);
+    expect(asked).toEqual(BOTH_ASKED());
+  });
+
+  it("keeps the shell's deployment over the .env's when each uses the other name, either way round", async () => {
+    for (const [shellName, fileName] of [["CODESPAR_BASE_URL", "CODESPAR_API_URL"], ["CODESPAR_API_URL", "CODESPAR_BASE_URL"]] as const) {
+      const f = v4Fixture();
+      inAgent(f.dir, { CODESPAR_API_KEY: "csk_test_unit_0000", [fileName]: "http://127.0.0.1:9" });
+      served = { read: f.read, keys: f.keys };
+      asked.length = 0;
+      const out = await runAsync([f.paths.copy, "--from-api", "--json"], f.dir, bareEnv({ [shellName]: baseUrl }));
+      expect(out.stderr).not.toContain("disagree");
+      expect(out.code).toBe(0);
+      expect(asked).toEqual(BOTH_ASKED());
+    }
+  });
+
+  it("refuses two names that disagree as a usage error (2), before any request, and never as a failed verification (1)", async () => {
+    const f = v4Fixture();
+    inAgent(f.dir, { CODESPAR_API_KEY: "csk_test_unit_0000", CODESPAR_API_URL: baseUrl, CODESPAR_BASE_URL: "http://127.0.0.1:9" });
+    asked.length = 0;
+    const out = await runAsync([f.paths.copy, "--from-api"], f.dir, bareEnv());
+    expect(out.code).toBe(2);
+    expect(out.stderr).toContain(`CODESPAR_API_URL=${baseUrl}`);
+    expect(out.stderr).toContain("CODESPAR_BASE_URL=http://127.0.0.1:9");
+    expect(asked).toEqual([]);
   });
 
   it("refuses a key set from another deployment than the read", async () => {

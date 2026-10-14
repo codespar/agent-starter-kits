@@ -11,7 +11,7 @@ escalate_above:
   # No `new_beneficiary`: a new customer is the normal case of a store, not a risk (checkout §3.2).
   # No `outside_hours`: service hours are a rule of the envelope, refused in BOTH modes, not an escalation.
 mcp: "@codespar/mcp@0.5.8"
-cli: "@codespar/cli@0.18.0"
+cli: "@codespar/cli@0.18.1"
 tools: ./tools.json
 guardrails: ./guardrails.json
 mandate_schema: ./mandate.example.json

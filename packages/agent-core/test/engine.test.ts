@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ESCOLA, FUNCIONARIA, harness, MERCADO } from "./helpers.js";
 import { isReplayedSettlement } from "../src/engine.js";
+import type { Execution } from "../src/state-machine.js";
 
 const approver = { id: "usr_demo", channel: "terminal" };
 
@@ -107,6 +108,129 @@ describe("mandate limits are the core's, in both modes", () => {
     const afterYes = hh.engine.approve(escalated.execution.id, approver);
     expect(afterYes.state).toBe("denied");
     expect(afterYes.reason).toBe("beneficiary_not_allowed");
+  });
+});
+
+describe("velocity.max_per_payee: a count ceiling per payee inside the window, in both modes", () => {
+  const ceiling = { velocity: { window_hours: 24, max_per_payee: 2 } };
+  const noEscalation = { manifest: { escalate_above: {} }, guardrails: { escalate_above: {}, ...ceiling } };
+
+  it("below the ceiling passes; the next one to that payee is denied, readable, and another payee is untouched", async () => {
+    for (const mode of ["human", "mandate"] as const) {
+      const h = harness({ mode, ...noEscalation });
+      for (let i = 0; i < 2; i += 1) {
+        const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+        if (!d.ok) throw new Error("refused");
+        expect(d.execution.state).not.toBe("denied");
+      }
+      const third = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+      if (!third.ok) throw new Error("refused");
+      expect(third.execution.state).toBe("denied");
+      expect(third.execution.reason).toBe("payee_velocity_exceeded");
+      expect(third.execution.detail).toContain("the ceiling is 2");
+      const other = await h.engine.draft({ items: [{ payee: "mercado", amount: 1000 }] });
+      if (!other.ok) throw new Error("refused");
+      expect(other.execution.state).not.toBe("denied");
+    }
+  });
+
+  it("an execution under the ceiling does not count itself at the later gates: it settles", async () => {
+    const human = harness({ mode: "human", guardrails: { velocity: { window_hours: 24, max_per_payee: 1 } } });
+    const d = await human.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!d.ok) throw new Error("refused");
+    expect(human.engine.approve(d.execution.id, approver).state).toBe("approved");
+    expect((await human.engine.execute(d.execution.id)).state).toBe("settled");
+
+    const mandate = harness({ mode: "mandate", ...noEscalation });
+    for (let i = 0; i < 2; i += 1) {
+      const m = await mandate.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+      if (!m.ok) throw new Error("refused");
+      expect((await mandate.engine.execute(m.execution.id)).state).toBe("settled");
+    }
+  });
+
+  it("an execution past the window no longer counts", async () => {
+    const h = harness({ mode: "mandate", ...noEscalation });
+    for (let i = 0; i < 2; i += 1) {
+      const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+      if (!d.ok) throw new Error("refused");
+      expect((await h.engine.execute(d.execution.id)).state).toBe("settled");
+    }
+    const full = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!full.ok) throw new Error("refused");
+    expect(full.execution.reason).toBe("payee_velocity_exceeded");
+    h.setNow(new Date(h.now.getTime() + 24 * 3_600_000 + 1));
+    const later = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!later.ok) throw new Error("refused");
+    expect(later.execution.state).toBe("approved");
+  });
+
+  it("only what is committed counts: a denied or failed execution does not take a slot", async () => {
+    const one = { velocity: { window_hours: 24, max_per_payee: 1 } };
+    const denied = harness({ mode: "human", guardrails: one });
+    const d = await denied.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!d.ok) throw new Error("refused");
+    expect(denied.engine.deny(d.execution.id, approver).state).toBe("denied");
+    const again = await denied.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!again.ok) throw new Error("refused");
+    expect(again.execution.state).toBe("awaiting_approval");
+
+    const failed = harness({ mode: "mandate", manifest: { escalate_above: {} }, guardrails: { escalate_above: {}, ...one }, rail: { refusePayees: [ESCOLA] } });
+    const f = await failed.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!f.ok) throw new Error("refused");
+    expect((await failed.engine.execute(f.execution.id)).state).toBe("failed");
+    const retry = await failed.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!retry.ok) throw new Error("refused");
+    expect(retry.execution.state).toBe("approved");
+  });
+
+  it("a batch is judged on every payee, and several items to one payee count as one execution", async () => {
+    const h = harness({ mode: "mandate", ...noEscalation });
+    const two = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }, { payee: "escola", amount: 2000 }] });
+    if (!two.ok) throw new Error("refused");
+    expect(two.execution.state).toBe("approved");
+    const second = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!second.ok) throw new Error("refused");
+    expect(second.execution.state).toBe("approved");
+    const batch = await h.engine.draft({ items: [{ payee: "mercado", amount: 1000 }, { payee: "escola", amount: 1000 }] });
+    if (!batch.ok) throw new Error("refused");
+    expect(batch.execution.reason).toBe("payee_velocity_exceeded");
+    expect(batch.execution.detail).toContain("Escola Aurora");
+  });
+
+  it("a person's yes does not lift it, and the last gate refuses what filled up after the yes", async () => {
+    const one = { velocity: { window_hours: 24, max_per_payee: 1 } };
+    // Another process settles one to the same payee meanwhile.
+    const foreign = (e: Execution) => ({ ...e, id: "exe_other_process", state: "settled", history: [] }) as never;
+
+    const atApprove = harness({ mode: "human", guardrails: one });
+    const d = await atApprove.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!d.ok) throw new Error("refused");
+    expect(d.execution.state).toBe("awaiting_approval");
+    atApprove.store.saveExecution(foreign(d.execution));
+    const refused = atApprove.engine.approve(d.execution.id, approver);
+    expect(refused.state).toBe("denied");
+    expect(refused.reason).toBe("payee_velocity_exceeded");
+
+    const atExecute = harness({ mode: "human", guardrails: one });
+    const e = await atExecute.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!e.ok) throw new Error("refused");
+    const approved = atExecute.engine.approve(e.execution.id, approver);
+    expect(approved.state).toBe("approved");
+    atExecute.store.saveExecution(foreign(approved));
+    const last = await atExecute.engine.execute(approved.id);
+    expect(last.state).toBe("denied");
+    expect(last.reason).toBe("payee_velocity_exceeded");
+    expect(atExecute.store.listOutbox()).toHaveLength(0);
+  });
+
+  it("absent, there is no count ceiling (the harness's velocity carries only window_hours)", async () => {
+    const h = harness({ mode: "mandate", manifest: { escalate_above: {} }, guardrails: { escalate_above: {} } });
+    for (let i = 0; i < 5; i += 1) {
+      const d = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+      if (!d.ok) throw new Error("refused");
+      expect(d.execution.state).toBe("approved");
+    }
   });
 });
 
