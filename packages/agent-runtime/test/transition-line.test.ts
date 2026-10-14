@@ -24,6 +24,6 @@ describe("transitionLine", () => {
 
   it("nothing to add when nothing failed", () => {
     expect(transitionLine(execution({ state: "settled" }))).toBe("  -> settled");
-    expect(transitionLine(execution({ state: "denied", reason: "cap_exceeded" as Execution["reason"] }))).toBe("  -> denied (cap_exceeded)");
+    expect(transitionLine(execution({ state: "denied", reason: "cap_exceeded" as NonNullable<Execution["reason"]> }))).toBe("  -> denied (cap_exceeded)");
   });
 });
