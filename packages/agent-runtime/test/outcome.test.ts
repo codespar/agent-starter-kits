@@ -32,7 +32,7 @@ describe("runOutcome", () => {
   });
 
   it("reads charge_expired, charge_cancelled and org_paused as declined, and charge_issuer_error as failed", () => {
-    const declined = ["charge_expired", "charge_cancelled", "org_paused"].map((code) => execution("failed", { reason: code as Execution["reason"], outcomes: [outcome("failed", { code })] }));
+    const declined = ["charge_expired", "charge_cancelled", "org_paused"].map((code) => execution("failed", { reason: code as NonNullable<Execution["reason"]>, outcomes: [outcome("failed", { code })] }));
     expect(runOutcome(declined, [])).toEqual({ settled: 0, failed: 0, declined: 3, already_paid: 0, open: 0 });
     expect(runOutcome([execution("failed", { reason: "charge_issuer_error", outcomes: [outcome("failed", { code: "charge_issuer_error" })] })], [])).toMatchObject({ failed: 1, declined: 0 });
   });
