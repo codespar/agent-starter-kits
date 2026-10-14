@@ -275,6 +275,21 @@ export class ExecutionEngine {
       };
     }
 
+    // Velocity ceiling: a count, not an amount, and a refusal in both modes. A person's yes does not lift it.
+    const velocity = guardrails.velocity;
+    if (velocity?.max_per_payee !== undefined) {
+      const maxPerPayee = velocity.max_per_payee;
+      const counts = this.executionsByPayee(now, execution.id);
+      const full = execution.items.find((i) => (counts.get(i.payee) ?? 0) + 1 > maxPerPayee);
+      if (full) {
+        return {
+          kind: "deny",
+          reason: "payee_velocity_exceeded",
+          detail: `${counts.get(full.payee) ?? 0} executions to ${full.beneficiary} already inside the last ${velocity.window_hours}h (settled, in flight and awaiting a decision); the ceiling is ${maxPerPayee}`,
+        };
+      }
+    }
+
     // The kit's envelope, at every gate: a person's yes does not widen it either.
     const outside = this.deps.policyExtension?.(execution, { gate, now, mode: this.deps.mode, mandate, guardrails });
     if (outside) return { kind: "deny", reason: outside.reason, detail: outside.detail };
@@ -1003,6 +1018,24 @@ export class ExecutionEngine {
       if (e.id === excludeId || e.mode !== "mandate" || e.escalation !== undefined) continue;
       if (new Date(e.created_at).getTime() < since) continue;
       for (const i of e.items) out.set(i.payee, (out.get(i.payee) ?? 0) + i.amount);
+    }
+    return out;
+  }
+
+  /**
+   * Executions per payee inside the velocity window, in the states the window
+   * cap counts (settled, in flight and awaiting a decision), in either mode,
+   * excluding the execution being judged. An execution with several items to
+   * one payee counts once.
+   */
+  private executionsByPayee(now: Date, excludeId: string): Map<string, number> {
+    const out = new Map<string, number>();
+    const hours = this.deps.guardrails.velocity?.window_hours;
+    if (!hours) return out;
+    const since = now.getTime() - hours * 3_600_000;
+    for (const e of this.list({ state: WINDOW_STATES })) {
+      if (e.id === excludeId || new Date(e.created_at).getTime() < since) continue;
+      for (const payee of new Set(e.items.map((i) => i.payee))) out.set(payee, (out.get(payee) ?? 0) + 1);
     }
     return out;
   }

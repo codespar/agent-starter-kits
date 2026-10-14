@@ -15,7 +15,11 @@ export const GuardrailsSchema = z
     velocity: z
       .object({
         window_hours: z.number().int().positive(),
-        /** Optional hard ceiling on the number of executions to one payee in the window. */
+        /**
+         * Ceiling on the number of executions to one payee inside `window_hours`, counting settled, in flight
+         * and awaiting a decision. The next one past it is denied `payee_velocity_exceeded`, in both modes and at
+         * every gate. Absent: no ceiling.
+         */
         max_per_payee: z.number().int().positive().optional(),
       })
       .strict()
