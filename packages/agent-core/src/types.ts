@@ -104,6 +104,8 @@ export type ExecutionReason =
   | "beneficiary_not_allowed"
   | "per_tx_cap_exceeded"
   | "window_cap_exceeded"
+  /** `velocity.max_per_payee`: this payee already has that many executions inside `velocity.window_hours`. Refused in both modes. */
+  | "payee_velocity_exceeded"
   | "approval_expired"
   | "items_hash_mismatch"
   /** The quote a spend would present does not name the approved amount and payee; refused before the call. */
