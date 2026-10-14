@@ -4,10 +4,10 @@
  * created; the mandate refuses above its R$ 10,00 caps; and the consent never
  * funds the account.
  */
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { ApiClient } from "@codespar/sdk";
 import {
   ExecutionEngine,
@@ -34,6 +34,17 @@ import {
   integratedProofFrom,
 } from "../src/modules/integrated-proof.js";
 import { listBills } from "../src/modules/pix-out.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const PROOF = { consumerId: "cst_prova_test", receiverKey: "00000000-0000-4000-8000-000000000001" };
@@ -88,7 +99,7 @@ const celcoinRow = (over: Record<string, unknown> = {}) => ({ id: CELCOIN_FS, co
 
 /** An engine over the kit's own manifest and guardrails, with the proof's mandate and the stub rail (no network). */
 function engineFor(mandate: Mandate, mode: ApprovalMode): ExecutionEngine {
-  const dir = mkdtempSync(join(tmpdir(), "bills-proof-engine-"));
+  const dir = tempDir(join(tmpdir(), "bills-proof-engine-"));
   const clock = () => new Date("2026-10-13T15:00:00Z"); // 12:00 in Sao Paulo, inside hours
   const store = new StateStore(join(dir, "state.db"));
   const manifest = loadManifest(resolve(AGENT_DIR, "agent.yaml"));
@@ -113,7 +124,7 @@ function example(): Mandate {
 }
 
 async function consent(fake: Fake) {
-  const mandatePath = join(mkdtempSync(join(tmpdir(), "bills-proof-")), "mandate.json");
+  const mandatePath = join(tempDir(join(tmpdir(), "bills-proof-")), "mandate.json");
   const said: string[] = [];
   const run = runEmbeddedConsent({ api: fake.api, example: example(), mandatePath, say: (l) => said.push(l), confirm: async () => true, integrated: PROOF });
   return { run, mandatePath, said };

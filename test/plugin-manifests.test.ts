@@ -6,11 +6,22 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { checkPlugin, ROOT } from "../scripts/check-plugin.mjs";
 
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 function copyPlugin(): string {
-  const dir = mkdtempSync(join(tmpdir(), "codespar-plugin-"));
+  const dir = tempDir(join(tmpdir(), "codespar-plugin-"));
   for (const entry of [".claude-plugin", ".cursor-plugin", ".agents", "plugin.json", "mcp.json", ".mcp.json", "rules", "skills", "AGENTS.md", "CLAUDE.md", "docs", "packages"]) cpSync(join(ROOT, entry), join(dir, entry), { recursive: true });
   // The skill names files of the anchor agent; the copy keeps them without the runner's node_modules.
   cpSync(join(ROOT, "agents", "bills-agent"), join(dir, "agents", "bills-agent"), { recursive: true, filter: (src) => !src.includes("node_modules") && !src.includes("/.codespar") && !src.includes("/runs") });

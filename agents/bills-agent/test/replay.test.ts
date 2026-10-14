@@ -5,14 +5,25 @@
  * answer the way the API answers a repeat, so the report is pinned before
  * anything makes that reachable.
  */
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { fixedClock, type Execution, type StubRail, type ToolContext } from "@codespar/agent-core";
 import { setup, type Setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 import { codesparPay } from "../src/modules/pix-out.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const APPROVER = { id: "usr_demo", channel: "terminal" };
 
@@ -21,8 +32,8 @@ function open(): Setup {
     mode: "human",
     rail: "stub",
     provider: "replay",
-    runsDir: mkdtempSync(join(tmpdir(), "bills-replay-runs-")),
-    stateDir: mkdtempSync(join(tmpdir(), "bills-replay-state-")),
+    runsDir: tempDir(join(tmpdir(), "bills-replay-runs-")),
+    stateDir: tempDir(join(tmpdir(), "bills-replay-state-")),
     now: fixedClock("2026-09-23T14:00:00-03:00"),
     say: () => undefined,
   });

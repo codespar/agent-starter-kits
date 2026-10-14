@@ -4,12 +4,23 @@
  * of section 11, so the fixture states that contract instead of inheriting
  * whatever the engine happens to write today.
  */
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { ProofBundle } from "@codespar/agent-core";
 import { assembleTimeline, redactorFor, renderHtml, renderText, REPLAY_NOTE, VERIFY_NOTE } from "../src/inspect.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const ESCOLA = "financeiro@escola-aurora.example.com.br";
 const MASKED = "fi***@escola-aurora.example.com.br";
@@ -22,7 +33,7 @@ const PERSON = { type: "human", id: "usr_demo_titular", channel: "terminal" };
  * rail refused. Every file the bundle promises except `verify.json`.
  */
 function fixtureBundle(): ProofBundle {
-  const dir = mkdtempSync(join(tmpdir(), "inspect-fixture-"));
+  const dir = tempDir(join(tmpdir(), "inspect-fixture-"));
   const bundle = new ProofBundle(dir, "run_fixture_human_abc123");
 
   bundle.meta({ run_id: "run_fixture_human_abc123", agent: "bills-agent@0.1.0", mode: "mandate", rail: "stub", mandate_id: "cm_fixture", mandate_version: 3, started_at: "2026-09-23T18:00:00.000Z" });
@@ -305,7 +316,7 @@ const BATCH_HASH = "sha256:" + "a1".repeat(32);
 
 /** A four-line payroll of which this bundle holds three: line 2 denied, line 3 never drafted. */
 function batchBundle(): ProofBundle {
-  const dir = mkdtempSync(join(tmpdir(), "inspect-batch-"));
+  const dir = tempDir(join(tmpdir(), "inspect-batch-"));
   const bundle = new ProofBundle(dir, "run_fixture_batch_def456");
   bundle.meta({ run_id: "run_fixture_batch_def456", agent: "supplier-payments-agent@0.1.0", mode: "human", rail: "stub", mandate_id: "cm_fixture", mandate_version: 1 });
 

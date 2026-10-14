@@ -1,13 +1,24 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { ProofBundle } from "@codespar/agent-core";
 import { assembleTimeline, checkScenario, listScenarios, loadScenario, renderText, runScenario, type ScenarioRun } from "@codespar/agent-runtime";
 import { CUSTOMERS } from "../src/catalog.js";
 import { agent } from "../src/kit.js";
 
-const runsDir = mkdtempSync(join(tmpdir(), "checkout-runs-"));
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+const runsDir = tempDir(join(tmpdir(), "checkout-runs-"));
 const DOCUMENTS = CUSTOMERS.map((c) => c.document);
 type Artifact = { execution_id: string; approver: { type: string }; items_hash: string; items: Array<{ amount: number; due_date?: string }>; composition?: { ref: string; composition_hash: string; line_count: number } };
 const approvals = (run: ScenarioRun): Artifact[] => {

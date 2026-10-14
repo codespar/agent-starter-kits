@@ -8,13 +8,24 @@
  * does not.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { pollWhatsApp, setup } from "@codespar/agent-runtime";
 import { agent as collections } from "../src/kit.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const NODE = process.execPath;
@@ -45,7 +56,7 @@ const emulatorUp = await (async () => {
 })();
 
 function scratch(label: string) {
-  const stateDir = mkdtempSync(join(tmpdir(), `collections-wa-sr-${label}-`));
+  const stateDir = tempDir(join(tmpdir(), `collections-wa-sr-${label}-`));
   return { COLLECTIONS_STATE_DIR: stateDir, COLLECTIONS_RUNS_DIR: join(stateDir, "runs"), WHATSAPP_SIM_PHONE_NUMBER_ID: `9${String(Math.floor(Math.random() * 1e11)).padStart(11, "0")}` };
 }
 

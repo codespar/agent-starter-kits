@@ -6,14 +6,25 @@
  * stub scripts both halves here: an issuer that ends in ERROR, and a charge
  * that is settled without ever becoming payable.
  */
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { checkScenario, loadScenario, runScenario } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 
-const runsDir = mkdtempSync(join(tmpdir(), "collections-payable-"));
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+const runsDir = tempDir(join(tmpdir(), "collections-payable-"));
 /** The buyer the happy path issues to. */
 const BUYER = "11144477735";
 

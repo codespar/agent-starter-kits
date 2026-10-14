@@ -2,21 +2,32 @@
  * What the kit says about a mandate after it was revoked: `inspect` on the
  * run that met the revocation, and the consent that replaces the mandate.
  */
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import type { ApiClient } from "@codespar/sdk";
 import { ProofBundle, loadMandate, type Mandate } from "@codespar/agent-core";
 import { assembleTimeline, loadScenario, renderText, runScenario } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 import { runEmbeddedConsent } from "../src/modules/embedded-consent.js";
 
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 
 describe("npm run inspect on the run that met a revocation", () => {
   it("the header says revoked, from the source that answered, and no longer says active", async () => {
-    const runsDir = mkdtempSync(join(tmpdir(), "bills-inspect-revoked-"));
+    const runsDir = tempDir(join(tmpdir(), "bills-inspect-revoked-"));
     const run = await runScenario(agent, loadScenario(agent, "mandate-revoked"), { mode: "human", runsDir });
     const text = renderText(assembleTimeline(ProofBundle.open(runsDir, run.run_id)!));
     const header = text.split("\n")[2]!;
@@ -28,7 +39,7 @@ describe("npm run inspect on the run that met a revocation", () => {
   });
 
   it("a run that met none still says active", async () => {
-    const runsDir = mkdtempSync(join(tmpdir(), "bills-inspect-active-"));
+    const runsDir = tempDir(join(tmpdir(), "bills-inspect-active-"));
     const run = await runScenario(agent, loadScenario(agent, "happy-path"), { mode: "human", runsDir });
     expect(renderText(assembleTimeline(ProofBundle.open(runsDir, run.run_id)!)).split("\n")[2]).toMatch(/^ {2}mandate active, expires /);
   });
@@ -63,7 +74,7 @@ describe("npm run consent", () => {
   const NOT_YET = "O mandato ainda não existe.";
 
   async function consent(options: { previous?: Mandate; status?: string | Error; locale?: "pt-BR" | "en" }) {
-    const dir = mkdtempSync(join(tmpdir(), "bills-consent-"));
+    const dir = tempDir(join(tmpdir(), "bills-consent-"));
     const mandatePath = join(dir, ".codespar", "mandate.json");
     if (options.previous) {
       mkdirSync(join(dir, ".codespar"));

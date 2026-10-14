@@ -23,10 +23,21 @@
  * scaffold's own `npm test`: `one-agent-scaffold.test.ts` runs one here, and
  * the CLI's opt-in e2e runs the real ones.
  */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -83,7 +94,7 @@ describe("a template reads nothing it does not carry", () => {
   });
 
   it("the check sees the two reads that turned every scaffold red, and not a path that stays home", () => {
-    const tree = mkdtempSync(join(tmpdir(), "kits-outside-reads-"));
+    const tree = tempDir(join(tmpdir(), "kits-outside-reads-"));
     const put = (path: string, body: string) => {
       mkdirSync(dirname(join(tree, path)), { recursive: true });
       writeFileSync(join(tree, path), body);

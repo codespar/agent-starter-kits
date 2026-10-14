@@ -9,12 +9,23 @@
  * template carries. What the scaffold keeps is the part that is true of any
  * tree: every recorded turn it does have reads as Portuguese.
  */
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { detectLanguage } from "../packages/agent-core/src/language.js";
 import { recordedTurns } from "../packages/agent-core/test/recorded-turns.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const ROOT = resolve(import.meta.dirname, "..");
 const RECORDED = ["scenarios", join("channels", "whatsapp")];
@@ -23,7 +34,7 @@ const readAsEnglish = (root: string) => recordedTurns(root).filter((text) => det
 
 /** The tree a scaffold of `agent` has under `agents/`: that agent's recordings, and no sibling. */
 function scaffoldOf(agent: string): string {
-  const tree = mkdtempSync(join(tmpdir(), `kits-scaffold-${agent}-`));
+  const tree = tempDir(join(tmpdir(), `kits-scaffold-${agent}-`));
   for (const dir of RECORDED) {
     const from = join(ROOT, "agents", agent, dir);
     if (existsSync(from)) cpSync(from, join(tree, "agents", agent, dir), { recursive: true });

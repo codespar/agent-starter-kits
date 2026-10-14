@@ -7,10 +7,21 @@
  * because the exit code is part of the contract.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const BIN = resolve(AGENT_DIR, "../../packages/agent-runtime/bin.mjs");
@@ -46,7 +57,7 @@ function converse(args: string[], env: Record<string, string>, answers: Array<{ 
 }
 
 function scratch(label: string): Record<string, string> {
-  const stateDir = mkdtempSync(join(tmpdir(), `supplier-outcome-${label}-`));
+  const stateDir = tempDir(join(tmpdir(), `supplier-outcome-${label}-`));
   return { SUPPLIER_PAYMENTS_STATE_DIR: stateDir, SUPPLIER_PAYMENTS_RUNS_DIR: join(stateDir, "runs") };
 }
 

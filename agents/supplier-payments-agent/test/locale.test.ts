@@ -4,15 +4,26 @@
  * for, in either language, the pt-BR run and the English run veto the same
  * lines, pay the same lines, and record the same gesture.
  */
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { fixedClock, type Locale } from "@codespar/agent-core";
 import { handleExecution, presentBatch, setup, type BatchGestures, type Setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 import { runBatch } from "../src/modules/batch-payout.js";
 import { findBatch } from "../src/payables.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const APPROVER = { id: "usr_demo_financeiro", channel: "terminal" };
 
@@ -21,8 +32,8 @@ function open(locale: Locale): Setup {
     mode: "human",
     rail: "stub",
     provider: "replay",
-    runsDir: mkdtempSync(join(tmpdir(), "supplier-locale-runs-")),
-    stateDir: mkdtempSync(join(tmpdir(), "supplier-locale-state-")),
+    runsDir: tempDir(join(tmpdir(), "supplier-locale-runs-")),
+    stateDir: tempDir(join(tmpdir(), "supplier-locale-state-")),
     now: fixedClock("2026-09-23T14:00:00-03:00"),
     say: () => undefined,
     locale,

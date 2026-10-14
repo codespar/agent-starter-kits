@@ -3,18 +3,29 @@
  * replays, and how long a scenario pack took.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { loadScenario } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const BIN = resolve(AGENT_DIR, "../../packages/agent-runtime/bin.mjs");
 
 function start(args: string[]) {
-  const stateDir = mkdtempSync(join(tmpdir(), "checkout-reach-"));
+  const stateDir = tempDir(join(tmpdir(), "checkout-reach-"));
   const result = spawnSync(process.execPath, [BIN, "start", ...args], {
     cwd: AGENT_DIR,
     // Pinned inside the service hours, as the other process tests of this agent are.

@@ -4,21 +4,32 @@
  * issuer refusal is terminal; anything else is `invoice_uncertain` and is
  * never sent again.
  */
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { StateStore, type ExecutionEngine } from "@codespar/agent-core";
 import { CodesparApiError } from "@codespar/sdk";
 import { checkScenario, loadScenario, runScenario, setup, type ScenarioRun } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 import { classifyExecuteAnswer, CodeSparInvoiceRail, InvoiceBook, resumeInvoices, type InvoiceRail, type InvoiceRecord, type NfseRequest } from "../src/modules/nfse-invoice.js";
 
-const runsDir = mkdtempSync(join(tmpdir(), "checkout-nfse-runs-"));
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+const runsDir = tempDir(join(tmpdir(), "checkout-nfse-runs-"));
 const events = (run: ScenarioRun) => readFileSync(join(run.bundle_dir, "events.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; execution_id?: string | null; actor?: unknown; payload?: Record<string, unknown> });
 
 async function scenario(name: string, mode: "human" | "mandate" = "human") {
-  const stateDir = mkdtempSync(join(tmpdir(), `checkout-nfse-${name}-`));
+  const stateDir = tempDir(join(tmpdir(), `checkout-nfse-${name}-`));
   const run = await runScenario(agent, loadScenario(agent, name), { mode, runsDir, stateDir });
   const store = new StateStore(join(stateDir, "state.db"));
   const invoices = new InvoiceBook(store).all();
@@ -36,7 +47,7 @@ describe("checkout §4: the paid order opens its service invoice, and the invoic
   it("codespar_invoice is not the model's: it is not in tools.json and no handler answers it (checkout §7.3, point 4)", () => {
     const tools = JSON.parse(readFileSync(join(agent.dir, "tools.json"), "utf8")) as { meta_tools: Array<{ name: string }>; local_tools: Array<{ name: string }> };
     expect([...tools.meta_tools, ...tools.local_tools].map((t) => t.name)).not.toContain("codespar_invoice");
-    const s = setup(agent, { rail: "stub", provider: "replay", transcript: "unused", stateDir: mkdtempSync(join(tmpdir(), "checkout-nfse-tools-")), runsDir, say: () => undefined });
+    const s = setup(agent, { rail: "stub", provider: "replay", transcript: "unused", stateDir: tempDir(join(tmpdir(), "checkout-nfse-tools-")), runsDir, say: () => undefined });
     try {
       expect(Object.keys(s.handlers)).not.toContain("codespar_invoice");
     } finally {
@@ -114,7 +125,7 @@ describe("checkout §4: the paid order opens its service invoice, and the invoic
   });
 
   it("a crash after the request left (the record says issuing) is reconciled as uncertain by resume, and nothing is sent", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "checkout-nfse-crash-"));
+    const stateDir = tempDir(join(tmpdir(), "checkout-nfse-crash-"));
     const s = setup(agent, { rail: "stub", provider: "replay", transcript: "unused", stateDir, runsDir, say: () => undefined });
     try {
       const record: InvoiceRecord = { id: "inv_crash", sale_execution_id: "exe_crash", cart_ref: "run/cart-1", charge_id: "chg_1", idempotency_key: "nfse_crash", state: "issuing", attempts: 1, history: [], created_at: "2026-09-23T18:00:00.000Z", updated_at: "2026-09-23T18:00:00.000Z" };

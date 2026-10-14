@@ -5,12 +5,23 @@
  * original denied and reported a run that DIFFERS. It refuses by name.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { loadScenario, runScenario } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const BIN = resolve(AGENT_DIR, "../../packages/agent-runtime/bin.mjs");
@@ -27,7 +38,7 @@ function rerun(runsDir: string, args: string[]) {
 
 describe("npm run rerun <run-id> on a run the world interfered with", () => {
   it.each(["human", "mandate"] as const)("mandate-revoked [%s]: names the revocation and the uncertain answer, and replays nothing", async (mode) => {
-    const runsDir = mkdtempSync(join(tmpdir(), "bills-rerun-world-"));
+    const runsDir = tempDir(join(tmpdir(), "bills-rerun-world-"));
     const original = await runScenario(agent, loadScenario(agent, "mandate-revoked"), { mode, rail: "stub", runsDir });
     expect(original.executions.map((e) => e.state)).toEqual(["settled", "settled", "denied"]);
     const NAMED = `runs/${original.run_id} cannot be compared with a rerun: it met an uncertain answer from the rail, and a mandate that was revoked, which a rerun does not replay`;
@@ -46,7 +57,7 @@ describe("npm run rerun <run-id> on a run the world interfered with", () => {
   });
 
   it("a run the world left alone is still replayed", async () => {
-    const runsDir = mkdtempSync(join(tmpdir(), "bills-rerun-world-"));
+    const runsDir = tempDir(join(tmpdir(), "bills-rerun-world-"));
     const original = await runScenario(agent, loadScenario(agent, "happy-path"), { mode: "human", rail: "stub", runsDir });
     const out = rerun(runsDir, [original.run_id]);
     expect(out.code).toBe(0);

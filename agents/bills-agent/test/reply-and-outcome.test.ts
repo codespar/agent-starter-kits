@@ -4,10 +4,21 @@
  * has, and no receipt, which only a settled one has.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+
+// Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
+const tempDirs: string[] = [];
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(prefix);
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const AGENT_DIR = resolve(import.meta.dirname, "..");
 const BIN = resolve(AGENT_DIR, "../../packages/agent-runtime/bin.mjs");
@@ -23,7 +34,7 @@ interface Payload {
 }
 
 function scratch(): Record<string, string> {
-  const stateDir = mkdtempSync(join(tmpdir(), "bills-reply-"));
+  const stateDir = tempDir(join(tmpdir(), "bills-reply-"));
   return { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: join(stateDir, "runs") };
 }
 
