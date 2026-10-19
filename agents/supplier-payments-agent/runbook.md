@@ -16,4 +16,4 @@ Then flip the key: `npm start -- --mode mandate`. Same code, same trail, same re
 
 ## Going to production
 
-Swap the stub for the production onboarding at https://dashboard.codespar.dev. What changes: the key, the approved `consumer_id`, the signed mandate, the webhook endpoint for `commerce.payment.*`. What does not change: the code, `agent.yaml`, the `approval` key.
+Swap the stub for the production onboarding at https://dashboard.codespar.dev. What changes: the key, the `consumer_id` onboarded in the production project, the signed mandate, the webhook endpoint for `commerce.payment.*`. What does not change: the code, `agent.yaml`, the `approval` key.

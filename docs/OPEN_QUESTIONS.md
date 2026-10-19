@@ -1457,3 +1457,21 @@ How the file exists today:
 So the file is placed by hand by whoever holds the organization's key. The agent's README says this and promises no command.
 
 **Open:** whether this becomes a command, in the kit or in the CLI, has not been decided by the API's owner. Until it is, the README describes the manual path and nothing else.
+
+## 66. The test consumer is onboarded by the project, before the consent (2026-10-19)
+
+Section 16 of the spec has every README say that a `consumer_id` with an approved account "não sai do cadastro" and that synthetic onboarding stops at document verification. A partner's integration exercise on 2026-10-16 showed both wrong in test, and the kit repeated them.
+
+What the API does:
+
+- `POST /v1/kyc/onboard` answers `200` (not `201`) with a `verification_id` and `hosted_url: null`. The document-verification link arrives on `GET /v1/kyc/onboard/{verification_id}/status`, read until `approved`. In test, synthetic data is approved: the sandbox approves both checks when the phone number ends in `1`, and the hosted step took a specimen document and a selfie. `birthDate` is `DD-MM-YYYY`; `financialDetails` is required in live only.
+- The account and its EVP key are created at `approved`. `POST /v1/consumers/{id}/pix-keys` is for an additional key; a second EVP is refused.
+- The consent binds the mandate to that account only if the onboarding is already `approved` in the key's project when it is submitted. Submitted before, it opens a `pix-consent` source, and a test payment on it is refused with `test_provider_call_refused`. That is the cause of the refusal the READMEs dated 2026-10-07 and explained as a test key being refused. The API accepting a consent that cannot pay, instead of refusing it with the reason, is open on the API side; the kit does not work around it.
+- Funding in test is `POST /v1/consumers/{id}/fund/sandbox` (the same operation as `POST /v1/test/fund`): `201`, `money_credited: true`. `fund/pix-in` issues a charge and credits nothing. The balance is `GET /v1/consumers/funding-sources?consumer_id=...&with_balance=1`; `GET /v1/consumers/{id}/wallet` is the caps' rollup.
+- Since 2026-10-17 a test payment out of that account, from a project not listed for the restricted integrated proof, is refused before anything is sent with `409 celcoin_outside_integrated_proof`, with no fallback to the simulator. So on an ordinary test project neither order reaches a receipt today: consent first ends in `test_provider_call_refused`, onboarding first in `celcoin_outside_integrated_proof`. A listed project pays under the proof's limits (`agents/bills-agent/src/modules/integrated-proof.ts`). The supported integrated access for ordinary test projects is planned on the API side.
+
+What the kit does now: the bills-agent README has "The test consumer" (onboard, poll, consent, fund, read the balance), the supplier README points to it, both say which refusal to expect, and the production sections name the `consumer_id` onboarded in the production project instead of an approved one handed out.
+
+**Open:** the kit has no command for the onboarding, and outside the proof the bills-agent's consent reads `consumer_id` from `mandate.example.json`. A command is worth writing once an ordinary test project can pay; before that it would produce a consumer whose payments are refused.
+
+**v5.3:** section 16 drops "não sai do cadastro ... Vem de nós" and says the `consumer_id` is the one the project onboards, before the consent.

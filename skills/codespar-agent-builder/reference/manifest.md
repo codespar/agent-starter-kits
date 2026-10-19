@@ -124,6 +124,12 @@ local tool that changes durable local state and moves no money (a cart in
 }
 ```
 
+`consumer_id` in the example is a placeholder. On the sandbox rail it must be
+a consumer onboarded in the same project as the key (`POST /v1/kyc/onboard`,
+then its status until `approved`), and the consent must come after that
+onboarding; there is no shared test consumer to ask for.
+`agents/bills-agent/README.md`, "The test consumer".
+
 Rules: `per_tx_cap_minor <= cap_minor`; `periodic_cap.cap_minor < cap_minor`
 (the API's `periodic_cap_never_binds`); every beneficiary `payee` is in
 `merchant_allowlist`; aliases `^[a-z0-9_-]+$`; `merchant_pin_kind` is
