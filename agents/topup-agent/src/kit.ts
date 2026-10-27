@@ -12,7 +12,7 @@
  */
 import { relative } from "node:path";
 import { CORE_STRINGS, formatBRL, loadMandate, railErrorOf, type Execution, type Mandate } from "@codespar/agent-core";
-import { defineAgent, type AgentKit, type SandboxPayer } from "@codespar/agent-runtime";
+import { defineAgent, toldKey, type AgentKit, type SandboxPayer } from "@codespar/agent-runtime";
 import { HttpSweepingApi } from "./iniciador.js";
 import { FixtureSweepingApi, SweepingPullRail, manualRiskSignals, sweepingLimits, type FixtureFate, type SweepingLimits } from "./modules/sweeping-pull.js";
 import { STRINGS } from "./strings.js";
@@ -191,13 +191,13 @@ whatsapp: --backend simulator|cloud-api  --conversation <name>  --scripted`,
     const words = STRINGS[setup.locale];
     // Stopped at a human: still open, told once, and the console line names the rail's code.
     if (execution.state === "executing" && execution.reason === "rail_needs_human") {
-      if (!setup.engine.markTold(execution.id, "needs_human")) return false;
+      if (!setup.engine.markTold(execution.id, toldKey(execution))) return false;
       tell(words.toldNeedsHuman);
       setup.engine.note("message.debtor", execution.id, { state: execution.state, reason: execution.reason, text: words.toldNeedsHuman });
       return true;
     }
     if (execution.state === "executing") return false;
-    if (!setup.engine.markTold(execution.id, execution.state)) return false;
+    if (!setup.engine.markTold(execution.id, toldKey(execution))) return false;
     let text: string;
     if (execution.state === "settled") text = words.toldSettled(endToEndOf(execution) ?? "?");
     else if (execution.reason === "charge_expired") text = words.toldExpired;

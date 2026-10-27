@@ -60,6 +60,16 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  * said no look resolves that one. Not an uncertain DISPATCH either (no
  * accepted outcome): that is `resume`'s and a human's, as before.
  */
+/**
+ * The once-only key (`engine.markTold`) for telling the person an outcome.
+ * An execution stopped at a human is still `executing`, so it has its own
+ * key; every path that tells it (the kit's text, the poll's template) takes
+ * the same one, or the person hears it twice.
+ */
+export function toldKey(execution: Execution): string {
+  return execution.state === "executing" && execution.reason === "rail_needs_human" ? "needs_human" : execution.state;
+}
+
 export function isAwaitingPayer(execution: Execution): boolean {
   if (execution.state !== "executing") return false;
   if (execution.reason === "awaiting_settlement") return true;
