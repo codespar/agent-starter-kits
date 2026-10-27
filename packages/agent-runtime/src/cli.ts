@@ -49,7 +49,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   // The CLI's names for the deployment and the project are aliases of the kit's. Two that disagree stop a command that talks to the API; on the stub rail neither is read, and the run goes on.
   const disagreement = readAgentEnv(agent.dir);
   const railFlag = rest.includes("--rail") ? rest[rest.indexOf("--rail") + 1] : undefined;
-  if (disagreement && resolveRailKind(process.env, railFlag === "api" || railFlag === "stub" ? railFlag : undefined) === "api") {
+  if (disagreement && agent.kit.apiRailKey !== "none" && resolveRailKind(process.env, railFlag === "api" || railFlag === "stub" ? railFlag : undefined, agent.kit) === "api") {
     stderr.write(disagreement.message + "\n");
     return 1;
   }

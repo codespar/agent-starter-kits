@@ -177,6 +177,13 @@ export interface AgentKit {
    * CodeSpar API, which reads and checks its own credentials in `buildRail`.
    */
   apiRailKey?: "codespar" | "none";
+  /**
+   * With `apiRailKey: "none"`: the variables whose presence makes `api` the
+   * rail when no `--rail` is given, the way a CodeSpar key does for the
+   * others. Every command that builds a rail without the flag (poll, resume,
+   * approve, reconcile, webhook) then looks at the same rail `start --rail api` used.
+   */
+  apiRailEnv?: readonly string[];
   labels: RuntimeLabels;
   /** The words the runner prints for this agent, per locale. */
   strings: LocaleTable<KitStrings>;

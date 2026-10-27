@@ -170,8 +170,10 @@ export function resolveProvider(env: NodeJS.ProcessEnv, requested: ProviderKind 
   return "replay";
 }
 
-export function resolveRailKind(env: NodeJS.ProcessEnv, requested: RailKind | undefined): RailKind {
+export function resolveRailKind(env: NodeJS.ProcessEnv, requested: RailKind | undefined, kit?: Pick<AgentKit, "apiRailKey" | "apiRailEnv">): RailKind {
   if (requested) return requested;
+  // An agent whose live rail is not the CodeSpar API is on it when its own variables are all there, and never because of a CodeSpar key.
+  if (kit?.apiRailKey === "none") return kit.apiRailEnv?.length && kit.apiRailEnv.every((name) => env[name]?.trim()) ? "api" : "stub";
   const key = env["CODESPAR_API_KEY"];
   if (!key || key === CODESPAR_KEY_PLACEHOLDER) return "stub";
   return "api";
@@ -197,7 +199,7 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
   const gate = new LocalMandateStatusStub(store, now);
   const signer = loadOrCreateLocalApprovalKey(stateDir);
 
-  const railKind = resolveRailKind(env, options.rail);
+  const railKind = resolveRailKind(env, options.rail, agent.kit);
   const built = buildRailOf(agent, {
     kind: railKind,
     env,

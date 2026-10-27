@@ -42,6 +42,8 @@ const kit: AgentKit = {
   scenarioRail: "stub",
   // The live rail is Iniciador's sandbox; buildRail requires its credentials and never calls the CodeSpar API.
   apiRailKey: "none",
+  // The same six buildRail requires: with all of them in the shell, a poll after `start --rail api` reads the bank, not the fixture.
+  apiRailEnv: API_ENV,
 
   labels: {
     defaultUser: "usr_operator",
