@@ -118,6 +118,19 @@ export interface HttpSweepingOptions {
 
 const TOKEN_TTL_MS = 55 * 60 * 1000;
 
+/** Why a base URL is not one the credentials may go to, or undefined when it is. The host is matched exactly, never by a substring. */
+export function notSandbox(baseUrl: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return "got something that is not a URL";
+  }
+  if (url.protocol === "https:" && (url.hostname === "sandbox.inic.dev" || url.hostname.endsWith(".sandbox.inic.dev")) && !url.port) return undefined;
+  if (url.protocol === "http:" && url.hostname === "127.0.0.1" && url.port) return undefined;
+  return `got ${url.protocol}//${url.host}`;
+}
+
 export class HttpSweepingApi implements SweepingApi {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
@@ -126,11 +139,11 @@ export class HttpSweepingApi implements SweepingApi {
   private token: { value: string; until: number } | undefined;
 
   constructor(private readonly options: HttpSweepingOptions) {
-    this.baseUrl = (options.baseUrl ?? SANDBOX_BASE_URL).replace(/\/+$/, "");
-    if (!/^https:\/\/[a-z0-9.-]*sandbox[a-z0-9.-]*\//.test(`${this.baseUrl}/`) && !/^http:\/\/127\.0\.0\.1:\d+\//.test(`${this.baseUrl}/`)) {
-      // Sandbox by construction: the kit drives the Iniciador sandbox or a local mock, never production.
-      throw new IniciadorError(0, "not_sandbox", `INICIADOR_BASE_URL must be the Iniciador sandbox or a local mock, got ${new URL(this.baseUrl).host}`);
-    }
+    // An empty INICIADOR_BASE_URL is an absent one.
+    this.baseUrl = (options.baseUrl?.trim() || SANDBOX_BASE_URL).replace(/\/+$/, "");
+    // Sandbox by construction: the client id and secret go to the Iniciador sandbox or a local mock, never anywhere else.
+    const refusal = notSandbox(this.baseUrl);
+    if (refusal) throw new IniciadorError(0, "not_sandbox", `INICIADOR_BASE_URL must be https://consumer.sandbox.inic.dev/v1 (or another *.sandbox.inic.dev) or http://127.0.0.1:<port>; ${refusal}`);
     this.fetchImpl = options.fetch ?? fetch;
     this.clock = options.clock ?? Date.now;
     this.timeoutMs = options.timeoutMs ?? 15000;

@@ -134,9 +134,20 @@ describe("the Iniciador client", () => {
     expect(scrub(`x ${TOKEN} ${CLIENT_SECRET} ${TAX_ID}`, [CLIENT_SECRET])).toBe("x <token> <secret> *******8909");
   });
 
-  it("refuses a base URL that is not the sandbox or a local mock", () => {
-    expect(() => new HttpSweepingApi({ baseUrl: "https://consumer.inic.dev/v1", credentials: { clientId: "a", clientSecret: "b" } })).toThrow(/sandbox/);
-    expect(() => new HttpSweepingApi({ credentials: { clientId: "a", clientSecret: "b" } })).not.toThrow();
+  it("refuses a base URL that is not the sandbox or a local mock, by exact host and never by a substring", () => {
+    const at = (baseUrl?: string) => () => new HttpSweepingApi({ ...(baseUrl === undefined ? {} : { baseUrl }), credentials: { clientId: "a", clientSecret: "b" } });
+    expect(at("https://consumer.inic.dev/v1")).toThrow(/not_sandbox|sandbox\.inic\.dev/);
+    // A host that merely contains "sandbox" would have received the client id and the secret.
+    for (const host of ["https://sandbox.attacker.tld/v1", "https://consumer.sandbox.inic.dev.attacker.tld/v1", "http://consumer.sandbox.inic.dev/v1", "http://localhost:4000/v1"]) {
+      expect(at(host), host).toThrow(IniciadorError);
+    }
+    expect(at("not a url")).toThrow(/not a URL/);
+    // Empty is absent: the default sandbox, not a TypeError from new URL("").
+    expect(at("")).not.toThrow();
+    expect(at("   ")).not.toThrow();
+    expect(at()).not.toThrow();
+    expect(at("https://consumer.sandbox.inic.dev/v1")).not.toThrow();
+    expect(at("http://127.0.0.1:18787/v1")).not.toThrow();
   });
 });
 
