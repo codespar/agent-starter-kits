@@ -33,6 +33,7 @@ import { ProofBundle, isLocale, type ChargeInstrument, type Execution, type Loca
 import type { Agent } from "../agent.js";
 import { runsDir, type Setup } from "../setup.js";
 import { followUp, waitForPayer } from "../terminal.js";
+import { isAwaitingPayer } from "../poll.js";
 import { resolveConversation } from "../channels/index.js";
 import { buildWhatsApp, simulatedCost, statusGraceMs, undeliveredCursor, type WhatsAppBackendName } from "../channels/whatsapp/open.js";
 import { EmulatorUnreachableError } from "../channels/whatsapp/emulator.js";
@@ -91,7 +92,7 @@ export async function pollWhatsApp(options: PollWhatsAppOptions): Promise<number
   // the channel already refuses other agreements by. A conversation that
   // declares no subject binds to nothing and says so, rather than taking
   // every open execution and hoping.
-  const open = s.engine.list({ state: "executing" }).filter((e) => e.reason === "awaiting_settlement");
+  const open = s.engine.list({ state: "executing" }).filter(isAwaitingPayer);
   const subject = script.subject;
   // EVERY item, not some: an execution that mixes this conversation's
   // agreement with another's belongs to neither, and confirming it here would

@@ -53,6 +53,19 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  * call again on the same execution (a restart): what was already shown is
  * remembered in the state.db cursor table, not in memory.
  */
+/**
+ * An open execution a poller keeps looking at: a receivable waiting for its
+ * payer, or one whose last look was uncertain (a 5xx, a dropped connection)
+ * and that the next clear look takes over. Not `rail_needs_human`: the rail
+ * said no look resolves that one. Not an uncertain DISPATCH either (no
+ * accepted outcome): that is `resume`'s and a human's, as before.
+ */
+export function isAwaitingPayer(execution: Execution): boolean {
+  if (execution.state !== "executing") return false;
+  if (execution.reason === "awaiting_settlement") return true;
+  return execution.reason === "rail_uncertain" && execution.outcomes.some((o) => o.status === "accepted");
+}
+
 export async function pollUntilClosed(engine: ExecutionEngine, executionId: string, options: PollOptions): Promise<PollResult> {
   const clock = options.clock ?? (() => new Date());
   const sleep = options.sleep ?? defaultSleep;

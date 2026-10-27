@@ -19,6 +19,7 @@ import { loadManifest, parseLocale, resolveFixedClock, type ChannelName, type Lo
 import type { Agent } from "../agent.js";
 import { inLocaleOf, setup } from "../setup.js";
 import { announceOutcome, followUp, waitForPayer } from "../terminal.js";
+import { isAwaitingPayer } from "../poll.js";
 import { pollWhatsApp } from "./poll-whatsapp.js";
 import type { WhatsAppBackendName } from "../channels/whatsapp/open.js";
 
@@ -133,7 +134,7 @@ export async function poll(agent: Agent, argv: string[]): Promise<number> {
     const tell = (l: string) => void (args.json ? stderr : stdout).write(l + "\n");
     const results = [];
     for (const open of s.engine.list({ state: "executing" })) {
-      if (open.reason !== "awaiting_settlement") continue;
+      if (!isAwaitingPayer(open)) continue;
       // The payer is told in the locale of the run that issued the charge, which is where they were spoken to.
       const told = inLocaleOf(s, open);
       const r = await waitForPayer(open.id, { setup: told, approver: { id: s.kit.labels.defaultUser, channel: "terminal" }, say, tell, waitSeconds: args.wait, simulatePayer: args.simulatePayer });
