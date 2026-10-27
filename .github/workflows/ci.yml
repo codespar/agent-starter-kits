@@ -44,6 +44,7 @@ jobs:
           npm run eval --workspace=agents/hello-agent
           npm run eval --workspace=agents/supplier-payments-agent
           npm run eval --workspace=agents/checkout-agent
+          npm run eval --workspace=agents/topup-agent
       # Section 12: one row per scenario per mode, every agent, discovered from
       # `agents/*/agent.yaml` rather than listed — a fourth agent is in the
       # matrix the day it lands. The gate is the FINAL STATE the scenario

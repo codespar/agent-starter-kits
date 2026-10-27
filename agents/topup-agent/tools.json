@@ -1,0 +1,53 @@
+{
+  "meta_tools": [
+    {
+      "name": "codespar_charge",
+      "effect": "charge",
+      "description": "Propose ONE pull from the person's own bank account into their own CodeSpar account (Open Finance sweeping). Call it only after the person said yes to the exact amount. This does NOT move money: it creates an execution in `drafted` that the code checks against the mandate (the only account money may go to, the per-pull and total caps) and, depending on the approval mode, asks a human or goes ahead. Going ahead means the code asks the bank for an authorization and sends the person the bank's consent link in the conversation; the person approves at the bank, and only then the code makes the pull, once. The result says `paid: true` with the Pix end-to-end id when the money landed, `expired: true` when the link was not approved in time. action=status reads back an execution of this run.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "status"
+            ],
+            "description": "create (the default) proposes the pull; status reads one back."
+          },
+          "account": {
+            "type": "string",
+            "description": "The account alias from account_status (minha-conta). Never a bank, an account number, a Pix key or a document typed in the chat."
+          },
+          "amount_minor": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "BRL cents, exactly the amount the person confirmed."
+          },
+          "total_minor": {
+            "type": "integer",
+            "description": "Optional. What you believe the amount is. The code uses its own and yours is only recorded."
+          },
+          "execution_id": {
+            "type": "string",
+            "description": "action=status: the execution to read."
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    }
+  ],
+  "local_tools": [
+    {
+      "name": "account_status",
+      "effect": "read",
+      "description": "The person's own account this agent tops up, with `today`: its alias and display name, the bank the money is pulled from (sandbox: Banco de Testes), the limit per pull and the total the mandate allows, what was already pulled, and whether a pull is waiting for the bank. Read-only. No document, no account number.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}

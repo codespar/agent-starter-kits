@@ -566,7 +566,7 @@ export class ExecutionEngine {
       execution_id: executionId,
       event_id: `instrument:${attemptId}:${instrument.status}:${instrument.payable ? "payable" : "not-payable"}`,
       type: "charge.instrument",
-      payload: { attempt_id: attemptId, charge_id: transactionId, status: instrument.status, payable: instrument.payable, has_pix: instrument.pix_copy_paste !== null, has_boleto: instrument.boleto_bank_line !== null, due_date: instrument.due_date },
+      payload: { attempt_id: attemptId, charge_id: transactionId, status: instrument.status, payable: instrument.payable, has_pix: instrument.pix_copy_paste !== null, has_boleto: instrument.boleto_bank_line !== null, has_consent_url: Boolean(instrument.consent_url), due_date: instrument.due_date },
       at: this.clock().toISOString(),
     });
     if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });

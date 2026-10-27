@@ -199,4 +199,11 @@ export interface ChargeInstrument {
   due_date: string | null;
   /** The issuer's normalized state as last read: PROCESSING, PENDING, CONFIRMED, EXPIRED, CANCELLED. */
   status: string;
+  /**
+   * A pull, not a charge the payer settles: the bank's consent page the payer
+   * opens to authorise it (Open Finance sweeping, `agents/topup-agent`). The
+   * payer approves there and the rail moves the money; nothing here is paid
+   * by hand. Absent on a bolepix.
+   */
+  consent_url?: string | null;
 }

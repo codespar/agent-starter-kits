@@ -89,7 +89,7 @@ export interface OutcomeTag {
 export type OutboundBody =
   | { kind: "text"; text: string; about?: OutcomeTag }
   | { kind: "media"; media: "qr"; data: string; caption?: string }
-  | { kind: "instrument"; instrument: "pix_copy_paste" | "boleto_bank_line"; value: string }
+  | { kind: "instrument"; instrument: "pix_copy_paste" | "boleto_bank_line" | "consent_url"; value: string }
   /** `buttons` are the declaration's, attached by the channel; a caller never composes them. */
   | { kind: "template"; template: string; language: string; variables: string[]; about?: OutcomeTag; buttons?: Array<{ id: string; title: string }> };
 

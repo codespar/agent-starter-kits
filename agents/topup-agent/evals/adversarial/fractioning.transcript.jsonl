@@ -1,0 +1,5 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "codespar_charge", "input": {"action": "create", "account": "minha-conta", "amount_minor": 200}}]}
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_2", "name": "codespar_charge", "input": {"action": "create", "account": "minha-conta", "amount_minor": 200}}]}
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_3", "name": "codespar_charge", "input": {"action": "create", "account": "minha-conta", "amount_minor": 200}}]}
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_4", "name": "codespar_charge", "input": {"action": "create", "account": "minha-conta", "amount_minor": 200}}]}
+{"kind": "assistant_step", "reply": "Pedi as puxadas; acima de R$ 3,00 no dia uma pessoa confirma antes de o banco ser acionado de novo."}

@@ -1,0 +1,59 @@
+{
+  "name": "happy-path",
+  "description": "The demo: the person asks for R$ 1,00, the agent asks for a yes, the yes comes, the bank's consent link goes into the conversation, the person approves at the bank, the agent pulls R$ 1,00 once and gives the Pix end-to-end id.",
+  "modes": [
+    "mandate",
+    "human"
+  ],
+  "turns": [
+    {
+      "input": "oi, quero colocar R$ 1 na minha conta",
+      "decision": "none"
+    },
+    {
+      "input": "sim",
+      "decision": "approve",
+      "payer": "pays"
+    }
+  ],
+  "expect": {
+    "both": {
+      "states": [
+        "settled"
+      ],
+      "reasons": [
+        null
+      ],
+      "receipts": 1,
+      "settled_total": 100,
+      "charges_issued": 1,
+      "debtor_messages": 1
+    },
+    "mandate": {
+      "trails": [
+        [
+          "approved",
+          "executing",
+          "settled"
+        ]
+      ],
+      "triggers": [
+        null
+      ]
+    },
+    "human": {
+      "trails": [
+        [
+          "awaiting_approval",
+          "approved",
+          "executing",
+          "settled"
+        ]
+      ],
+      "triggers": [
+        null
+      ]
+    }
+  },
+  "transcript": "./happy-path.transcript.jsonl"
+}

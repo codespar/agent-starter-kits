@@ -343,7 +343,7 @@ function draw(line: ChannelLogLine, text: CoreStrings): string {
   const who = line.direction === "in" ? `${line.contact}:` : text.waShop;
   const what =
     line.kind === "instrument"
-      ? `${text.waCopyPaste} ${line.text ?? ""}`
+      ? `${line.text?.startsWith("https://") ? text.waConsentLink : text.waCopyPaste} ${line.text ?? ""}`
       : line.kind === "media"
         ? text.waQrImage
         : line.kind === "template"

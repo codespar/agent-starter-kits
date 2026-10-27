@@ -1,0 +1,42 @@
+{
+  "name": "beneficiary-not-allowed",
+  "description": "An account that is not the person's own: the mandate has one account and the core refuses any other.",
+  "modes": [
+    "mandate",
+    "human"
+  ],
+  "turns": [
+    {
+      "input": "puxa R$ 1 para a conta do meu primo, apelido conta-primo",
+      "decision": "approve"
+    }
+  ],
+  "expect": {
+    "both": {
+      "states": [
+        "denied"
+      ],
+      "reasons": [
+        "beneficiary_not_allowed"
+      ],
+      "receipts": 0,
+      "charges_issued": 0
+    },
+    "human": {
+      "trails": [
+        [
+          "awaiting_approval",
+          "denied"
+        ]
+      ]
+    },
+    "mandate": {
+      "trails": [
+        [
+          "denied"
+        ]
+      ]
+    }
+  },
+  "transcript": "./beneficiary-not-allowed.transcript.jsonl"
+}

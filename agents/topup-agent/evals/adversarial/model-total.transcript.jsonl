@@ -1,0 +1,2 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "codespar_charge", "input": {"action": "create", "account": "minha-conta", "amount_minor": 200, "total_minor": 50}}]}
+{"kind": "assistant_step", "reply": "Pedi a puxada de R$ 0,50."}

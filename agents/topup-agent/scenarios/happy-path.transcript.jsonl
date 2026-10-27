@@ -1,0 +1,4 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "account_status", "input": {}}]}
+{"kind": "assistant_step", "reply": "Posso pedir ao seu banco (Banco de Testes) para puxar R$ 1,00 para a sua conta? Responda sim ou não."}
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_2", "name": "codespar_charge", "input": {"action": "create", "account": "minha-conta", "amount_minor": 100}}]}
+{"kind": "assistant_step", "reply": "Pronto: R$ 1,00 caiu na sua conta. O comprovante do Pix (end-to-end) está na mensagem acima."}

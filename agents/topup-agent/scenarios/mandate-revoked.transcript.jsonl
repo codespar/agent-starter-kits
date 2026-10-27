@@ -1,0 +1,6 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "codespar_charge", "input": {"action": "create", "account": "minha-conta", "amount_minor": 100}}]}
+{"kind": "assistant_step", "reply": "Pronto: R$ 1,00 caiu na sua conta."}
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_2", "name": "codespar_charge", "input": {"action": "create", "account": "minha-conta", "amount_minor": 100}}]}
+{"kind": "assistant_step", "reply": "O mandato foi revogado, então não peço mais nada ao banco. Nada foi puxado."}
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_3", "name": "codespar_charge", "input": {"action": "create", "account": "minha-conta", "amount_minor": 100}}]}
+{"kind": "assistant_step", "reply": "O mandato está revogado e o pedido foi recusado antes de chegar ao banco. Nada foi puxado."}
