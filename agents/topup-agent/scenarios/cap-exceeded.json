@@ -1,0 +1,27 @@
+{
+  "name": "cap-exceeded",
+  "description": "R$ 6,00 in one pull is above the R$ 5,00 per-pull limit: denied by the core before the bank is asked.",
+  "modes": [
+    "mandate",
+    "human"
+  ],
+  "turns": [
+    {
+      "input": "sim, pode puxar R$ 6 de uma vez",
+      "decision": "approve"
+    }
+  ],
+  "expect": {
+    "both": {
+      "states": [
+        "denied"
+      ],
+      "reasons": [
+        "per_tx_cap_exceeded"
+      ],
+      "receipts": 0,
+      "charges_issued": 0
+    }
+  },
+  "transcript": "./cap-exceeded.transcript.jsonl"
+}

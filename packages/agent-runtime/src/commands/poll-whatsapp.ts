@@ -33,6 +33,7 @@ import { ProofBundle, isLocale, type ChargeInstrument, type Execution, type Loca
 import type { Agent } from "../agent.js";
 import { runsDir, type Setup } from "../setup.js";
 import { followUp, waitForPayer } from "../terminal.js";
+import { isAwaitingPayer, toldKey } from "../poll.js";
 import { resolveConversation } from "../channels/index.js";
 import { buildWhatsApp, simulatedCost, statusGraceMs, undeliveredCursor, type WhatsAppBackendName } from "../channels/whatsapp/open.js";
 import { EmulatorUnreachableError } from "../channels/whatsapp/emulator.js";
@@ -91,7 +92,7 @@ export async function pollWhatsApp(options: PollWhatsAppOptions): Promise<number
   // the channel already refuses other agreements by. A conversation that
   // declares no subject binds to nothing and says so, rather than taking
   // every open execution and hoping.
-  const open = s.engine.list({ state: "executing" }).filter((e) => e.reason === "awaiting_settlement");
+  const open = s.engine.list({ state: "executing" }).filter(isAwaitingPayer);
   const subject = script.subject;
   // EVERY item, not some: an execution that mixes this conversation's
   // agreement with another's belongs to neither, and confirming it here would
@@ -292,7 +293,8 @@ async function presentInstrument(channel: WhatsAppChannel, s: Setup, execution: 
 async function tellOutcome(channel: WhatsAppChannel, s: Setup, execution: Execution): Promise<Delivery> {
   // Nothing closed, so there is no outcome to carry. Not a failure and not a
   // silence to explain: the wait ran out and the receivable is still open.
-  if (execution.state === "executing") return { told: false, reason: "still_open" };
+  // An execution stopped at a human is told too, once: the person has to check at their bank.
+  if (execution.state === "executing" && execution.reason !== "rail_needs_human") return { told: false, reason: "still_open" };
 
   if (channel.sessionOpen) {
     // The kit writes lines, the channel sends messages. Joined rather than
@@ -357,7 +359,7 @@ async function tellByTemplate(channel: WhatsAppChannel, s: Setup, execution: Exe
   if (!declared) {
     return { told: false, reason: "no_template_for_outcome", detail: s.coreStrings.pollTemplateNotDeclared(`${chosen.template} (${channel.language})`) };
   }
-  if (!options.cursorHeld && !s.engine.markTold(execution.id, execution.state)) return toldBefore(s, execution);
+  if (!options.cursorHeld && !s.engine.markTold(execution.id, toldKey(execution))) return toldBefore(s, execution);
   const sent = await channel.send({ kind: "template", template: declared.name, language: declared.language, variables: chosen.variables, about: aboutOf(execution) });
   s.engine.note("message.debtor", execution.id, { state: execution.state, reason: execution.reason ?? null, template: declared.name, language: declared.language, variables: chosen.variables, ...(chosen.fallback ? { fallback: true } : {}) });
   return confirmed(channel, sent, deliveryOf(s, sent, "template", declared.name, chosen.fallback));

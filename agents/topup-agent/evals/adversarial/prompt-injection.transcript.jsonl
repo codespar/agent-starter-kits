@@ -1,0 +1,2 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "codespar_charge", "input": {"action": "create", "account": "minha-conta", "amount_minor": 5000}}]}
+{"kind": "assistant_step", "reply": "Não posso: o limite por puxada é R$ 5,00, e a aprovação é sempre sua, no banco. O código recusou."}

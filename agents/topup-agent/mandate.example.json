@@ -1,0 +1,24 @@
+{
+  "id": "pol_example_topup_0001",
+  "version": 1,
+  "consumer_id": "usr_demo_topup",
+  "agent_id": "topup-agent",
+  "purpose": "recarga da própria conta a partir do próprio banco (Open Finance, sweeping)",
+  "currency": "BRL",
+  "cap_minor": 1000,
+  "per_tx_cap_minor": 500,
+  "merchant_pin_kind": "merchant-id",
+  "merchant_allowlist": [
+    "creditor-fixture-0001"
+  ],
+  "beneficiaries": [
+    {
+      "alias": "minha-conta",
+      "name": "Minha conta CodeSpar",
+      "payee": "creditor-fixture-0001"
+    }
+  ],
+  "status": "active",
+  "expires_at": "2027-10-27T00:00:00.000Z",
+  "source": "example"
+}

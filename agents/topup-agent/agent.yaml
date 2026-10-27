@@ -1,0 +1,26 @@
+# The manifest of section 4.3 of docs/spec-v5.1.1.md. `npm run check` reads
+# this file first and fails if SYSTEM_PROMPT.md, tools.json or
+# guardrails.json contradict it.
+schema: 1
+name: topup-agent
+version: 0.1.0
+approval: [mandate, human]
+default_approval: mandate      # the person approves the pull itself at their bank (the consent link); the mandate caps what the agent may ask for
+escalate_above:
+  amount: 300             # R$ 3,00 in cents: a pull above this asks a human even in `mandate`
+  # No `new_beneficiary`: the only payee is the person's own account, pinned by the mandate. No `outside_hours`: the bank's consent page is the person's own act.
+mcp: "@codespar/mcp@0.5.8"
+cli: "@codespar/cli@0.18.1"    # the published version on 2026-10-08 (docs/OPEN_QUESTIONS.md section 1)
+tools: ./tools.json
+guardrails: ./guardrails.json
+mandate_schema: ./mandate.example.json
+# The pull is a receivable to the core: the bank's authorization is issued, the person acts, the money lands.
+events: [commerce.charge.created, commerce.charge.paid, commerce.charge.expired, commerce.charge.cancelled]
+channels: [terminal, whatsapp]
+locale: pt-BR             # pt-BR | en: the lines the code prints; `--locale` overrides per run. The model replies in the language the person types either way
+maturity:
+  sweeping-pull: sandbox          # Iniciador's sweeping sandbox, trigger MANUAL, simulated bank (Mocktora); `--rail api`. The stub rail is an offline fixture
+  receipt-verification: blocked   # the pull is not a CodeSpar payment: nothing is sealed, no Ed25519 signature exists for it
+scenarios: ./scenarios/
+evals: ./evals/
+agents_md: ./AGENTS.md

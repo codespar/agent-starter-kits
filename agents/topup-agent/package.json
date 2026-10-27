@@ -1,0 +1,26 @@
+{
+  "name": "@codespar/topup-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The person's agent that tops up their own account from their own bank: asks over WhatsApp, sends the bank's consent link (Open Finance sweeping, Iniciador sandbox), waits for the approval, pulls the amount once and reports the Pix end-to-end id.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "codespar-agent start",
+    "check": "codespar-agent check",
+    "inspect": "codespar-agent inspect",
+    "eval": "codespar-agent eval",
+    "resume": "codespar-agent resume",
+    "rerun": "codespar-agent rerun",
+    "reconcile": "codespar-agent reconcile",
+    "poll": "codespar-agent poll",
+    "approve": "codespar-agent approve",
+    "deny": "codespar-agent deny",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --pool=forks --maxWorkers=1 --root ../.. agents/topup-agent"
+  },
+  "dependencies": {
+    "@codespar/agent-core": "0.1.0",
+    "@codespar/agent-runtime": "0.1.0"
+  }
+}

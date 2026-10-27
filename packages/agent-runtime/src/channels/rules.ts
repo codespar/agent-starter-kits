@@ -73,7 +73,8 @@ export function proseOf(body: OutboundBody): string[] {
     case "template":
       return body.variables;
     case "instrument":
-      return [];
+      // The rail's string is not prose; the words around a button are.
+      return body.cta ? [body.cta.body, body.cta.button, body.cta.lead] : [];
   }
 }
 

@@ -1,0 +1,2 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "codespar_charge", "input": {"action": "create", "account": "minha-conta", "amount_minor": 400}}]}
+{"kind": "assistant_step", "reply": "Pedi a puxada de R$ 4,00. Acima de R$ 3,00 uma pessoa confirma antes de o banco ser acionado; ninguém no chat libera isso."}

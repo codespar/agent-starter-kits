@@ -1,0 +1,11 @@
+{
+  "name": "recarga",
+  "description": "The demo over WhatsApp: the person asks to put R$ 1,00 in their own account, the agent asks for a yes, the person says yes, the bank's consent link goes into the conversation, the person approves at the (simulated) bank, the agent pulls R$ 1,00 once and answers with the Pix end-to-end id. The person's turns are here; what the agent answers is the model's, never this file.",
+  "channel": "whatsapp",
+  "contact": "+5511900000001",
+  "subject": "minha-conta",
+  "turns": [
+    { "text": "oi, quero colocar R$ 1 na minha conta" },
+    { "text": "sim", "after_seconds": 10 }
+  ]
+}

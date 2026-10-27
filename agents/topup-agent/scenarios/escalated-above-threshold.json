@@ -1,0 +1,37 @@
+{
+  "name": "escalated-above-threshold",
+  "description": "R$ 4,00 is inside the per-pull limit and above the R$ 3,00 escalation: in mandate mode a human decides before the bank is asked.",
+  "modes": [
+    "mandate"
+  ],
+  "turns": [
+    {
+      "input": "sim, R$ 4",
+      "decision": "approve",
+      "payer": "pays"
+    }
+  ],
+  "expect": {
+    "mandate": {
+      "states": [
+        "settled"
+      ],
+      "triggers": [
+        "amount"
+      ],
+      "trails": [
+        [
+          "awaiting_approval",
+          "approved",
+          "executing",
+          "settled"
+        ]
+      ],
+      "receipts": 1,
+      "charges_issued": 1,
+      "settled_total": 400,
+      "debtor_messages": 1
+    }
+  },
+  "transcript": "./escalated-above-threshold.transcript.jsonl"
+}

@@ -1,0 +1,81 @@
+{
+  "channel": "whatsapp",
+  "templates": [
+    {
+      "name": "recarga_concluida",
+      "language": "pt_BR",
+      "description": "The pull completed after the 24-hour window shut (a run left it to `npm run poll`). {{1}} is the amount, {{2}} the Pix end-to-end id.",
+      "body": "Oi! A recarga de {{1}} caiu na sua conta. Comprovante do Pix (end-to-end): {{2}}"
+    },
+    {
+      "name": "recarga_concluida",
+      "language": "en_US",
+      "description": "The English copy of recarga_concluida. Same variables.",
+      "body": "Hi! The top-up of {{1}} is in your account. Pix receipt (end-to-end): {{2}}"
+    },
+    {
+      "name": "recarga_link_expirado",
+      "language": "pt_BR",
+      "description": "The bank's consent link expired unapproved, told outside the 24-hour window. Nothing was pulled. {{1}} is the amount.",
+      "body": "Oi! O link do banco para a recarga de {{1}} expirou antes da aprovação. Nada foi puxado.",
+      "buttons": [
+        {
+          "id": "mandar_outro",
+          "title": "Mandar outro",
+          "intent": "quero que voce mande outro link para a mesma recarga"
+        },
+        {
+          "id": "agora_nao",
+          "title": "Agora não",
+          "intent": "agora nao quero outra recarga"
+        }
+      ]
+    },
+    {
+      "name": "recarga_link_expirado",
+      "language": "en_US",
+      "description": "The English copy of recarga_link_expirado. Same variables and the same buttons.",
+      "body": "Hi! The bank's link for the top-up of {{1}} expired before it was approved. Nothing was pulled.",
+      "buttons": [
+        {
+          "id": "mandar_outro",
+          "title": "Send another",
+          "intent": "I want you to send another link for the same top-up"
+        },
+        {
+          "id": "agora_nao",
+          "title": "Not now",
+          "intent": "not now, I do not want another top-up"
+        }
+      ]
+    },
+    {
+      "name": "recarga_atualizacao",
+      "language": "pt_BR",
+      "description": "The FALLBACK: sent by a poll, outside the 24-hour window, for an outcome with no template of its own (a pull the bank declined, a request denied). It states NOTHING about the outcome, so it can never be the wrong news; an answer reopens the window. Takes no variables.",
+      "body": "Oi! Temos uma atualização sobre a sua recarga. Responda esta mensagem para continuarmos por aqui.",
+      "fallback": true,
+      "buttons": [
+        {
+          "id": "falar_agora",
+          "title": "Falar agora",
+          "intent": "quero saber qual e a atualizacao da minha recarga"
+        }
+      ]
+    },
+    {
+      "name": "recarga_atualizacao",
+      "language": "en_US",
+      "description": "The English copy of recarga_atualizacao. Same buttons.",
+      "body": "Hi! There is an update on your top-up. Reply to this message to continue here.",
+      "fallback": true,
+      "buttons": [
+        {
+          "id": "falar_agora",
+          "title": "Talk now",
+          "intent": "I want to know what the update on my top-up is"
+        }
+      ]
+    }
+  ]
+}

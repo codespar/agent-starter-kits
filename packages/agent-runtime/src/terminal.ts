@@ -297,5 +297,7 @@ export async function interactive(options: TerminalOptions & { runtime: AgentRun
 export function transitionLine(execution: Execution): string {
   const failure = execution.state === "failed" || execution.state === "executing" ? railErrorOf(execution) : null;
   const answer = failure ? `: ${failure.code}${failure.message && failure.message !== failure.code ? ` — ${failure.message}` : ""}` : "";
-  return `  -> ${execution.state}${execution.reason ? ` (${execution.reason})` : ""}${answer}`;
+  // Stopped at a human: the rail's own words are the only account of what is unknown.
+  const human = execution.state === "executing" && execution.reason === "rail_needs_human" && execution.detail ? ` — ${execution.detail}` : "";
+  return `  -> ${execution.state}${execution.reason ? ` (${execution.reason})` : ""}${answer}${human}`;
 }

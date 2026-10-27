@@ -541,10 +541,17 @@ export class ExecutionEngine {
     return this.leaveUnresolved(updated, `${execution.outcomes.length} of ${attempts} attempt(s) have an outcome`);
   }
 
-  private leaveUnresolved(execution: Execution<"executing">, detail: string): Execution {
-    const kept: Execution<"executing"> = { ...execution, reason: "rail_uncertain", detail, updated_at: this.clock().toISOString() };
+  private leaveUnresolved(execution: Execution<"executing">, detail: string, options: { needsHuman?: boolean; once?: boolean } = {}): Execution {
+    const reason = options.needsHuman ? "rail_needs_human" : "rail_uncertain";
+    const kept: Execution<"executing"> = { ...execution, reason, detail, updated_at: this.clock().toISOString() };
     this.deps.store.saveExecution(kept);
-    this.record("execution.uncertain", execution.id, { detail });
+    if (!options.once) {
+      this.record("execution.uncertain", execution.id, { detail });
+      return kept;
+    }
+    // A poll that keeps looking at an attempt already out logs each distinct answer once, not once per look.
+    const stored = this.deps.store.appendEvent({ run_id: this.deps.runId, execution_id: execution.id, event_id: `uncertain:${execution.id}:${sha256Hex(detail).slice(0, 16)}`, type: "execution.uncertain", payload: { detail, ...(options.needsHuman ? { needs_human: true } : {}) }, at: kept.updated_at });
+    if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
     return kept;
   }
 
@@ -566,7 +573,7 @@ export class ExecutionEngine {
       execution_id: executionId,
       event_id: `instrument:${attemptId}:${instrument.status}:${instrument.payable ? "payable" : "not-payable"}`,
       type: "charge.instrument",
-      payload: { attempt_id: attemptId, charge_id: transactionId, status: instrument.status, payable: instrument.payable, has_pix: instrument.pix_copy_paste !== null, has_boleto: instrument.boleto_bank_line !== null, due_date: instrument.due_date },
+      payload: { attempt_id: attemptId, charge_id: transactionId, status: instrument.status, payable: instrument.payable, has_pix: instrument.pix_copy_paste !== null, has_boleto: instrument.boleto_bank_line !== null, has_consent_url: Boolean(instrument.consent_url), due_date: instrument.due_date },
       at: this.clock().toISOString(),
     });
     if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
@@ -668,6 +675,9 @@ export class ExecutionEngine {
     const outcomes: ItemOutcome[] = [...execution.outcomes];
     const sealMismatches: string[] = [];
     let unresolved: string | undefined;
+    // An attempt already out whose look answered uncertain: said, once per answer, instead of passed over.
+    let outUncertain: string | undefined;
+    let needsHuman = false;
     for (const [index, payment] of payments.entries()) {
       const prior = outcomes.find((o) => o.index === index);
       // Settled and failed are final. An accepted receivable is looked at again: its payer may have acted.
@@ -678,14 +688,21 @@ export class ExecutionEngine {
         run_id: this.deps.runId,
         execution_id: execution.id,
         // A poll that sees the same thing twice logs it once; a change in what it sees is a new line.
-        ...(prior ? { event_id: `reconcile:${payment.attempt_id}:${found}:${seen && seen.status === "accepted" ? `${seen.instrument.status}:${seen.instrument.payable}` : ""}` } : {}),
+        ...(prior ? { event_id: `reconcile:${payment.attempt_id}:${found}:${seen && seen.status === "accepted" ? `${seen.instrument.status}:${seen.instrument.payable}` : seen && seen.status === "uncertain" ? seen.code : ""}` } : {}),
         type: "rail.reconcile",
-        payload: { attempt_id: payment.attempt_id, found },
+        payload: { attempt_id: payment.attempt_id, found, ...(seen && seen.status === "uncertain" ? { code: seen.code, message: seen.message, ...(seen.needs_human ? { needs_human: true } : {}) } : {}) },
         at: this.clock().toISOString(),
       });
       if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
       if (!seen || seen.status === "uncertain" || seen.status === "in_flight") {
-        if (prior) continue; // the receivable is known to exist; the rail just did not answer this time
+        if (prior) {
+          // The receivable is known to exist. A silent answer is looked at again; an uncertain one is said, and nothing is re-sent.
+          if (seen?.status === "uncertain") {
+            outUncertain ??= `attempt ${payment.attempt_id}: ${seen.code}: ${seen.message}; nothing is re-sent`;
+            if (seen.needs_human) needsHuman = true;
+          }
+          continue;
+        }
         // One attempt the rail cannot answer for does not stop us learning
         // about the others. A lookup moves no money, so there is nothing to
         // be careful about here, and stopping would mean a later attempt's
@@ -717,7 +734,9 @@ export class ExecutionEngine {
       if (mismatch) sealMismatches.push(mismatch);
     }
     const updated: Execution<"executing"> = { ...(execution as Execution<"executing">), outcomes };
-    const reconciled = unresolved ? this.leaveUnresolved(updated, unresolved) : this.close(updated, payments.length);
+    let reconciled = unresolved ? this.leaveUnresolved(updated, unresolved) : this.close(updated, payments.length);
+    // Only an execution still open: a look that settled every other attempt is not held back by one that did not answer.
+    if (outUncertain && reconciled.state === "executing" && !unresolved) reconciled = this.leaveUnresolved(reconciled as Execution<"executing">, outUncertain, { needsHuman, once: true });
     if (sealMismatches.length > 0) throw new ReceiptSealMismatchError(execution.id, sealMismatches);
     return reconciled;
   }

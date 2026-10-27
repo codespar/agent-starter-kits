@@ -46,6 +46,9 @@ const pt = {
   chargeRef: (chargeId: string) => ` — cobrança ${chargeId}`,
   pixCopyPaste: "Pix copia e cola:",
   boletoLine: "Ou pelo boleto, linha digitável:",
+  consentLink: "Autorize no seu banco por este link (vale por cerca de 1 minuto):",
+  consentPrompt: "Autorize no seu banco. O link vale por cerca de 1 minuto.",
+  consentButton: "Autorizar no banco",
 
   // The collection-hours rule: the envelope refuses to draft outside it, the channel refuses to speak.
   outsideCollectionHours: (window: string, timezone: string, clock: string) => `fora do horário de cobrança (${window} ${timezone}); agora são ${clock}`,
@@ -61,6 +64,7 @@ const pt = {
   waTapIgnored: (rule: string, detail: string) => `  [whatsapp] toque ignorado (${rule}): ${detail}`,
   waRefused: (rule: string, detail: string) => `  [whatsapp] recusado (${rule}): ${detail}`,
   waRefusedByBackend: (rule: string, detail: string) => `  [whatsapp] recusado pelo backend (${rule}): ${detail}`,
+  waButtonFallback: (rule: string, detail: string) => `  [whatsapp] o botão do link foi recusado (${rule}): ${detail}; enviado como texto`,
   waDeliveryFailed: (messageId: string, codes: string, told: string | undefined) =>
     `  [operador] ENTREGA FALHOU da mensagem ${messageId} (${codes})${told ? ` — era o aviso de ${told}: a pessoa NÃO foi avisada` : ""}`,
   waShop: "loja:",
@@ -68,6 +72,7 @@ const pt = {
   waTapIgnoredMark: (rule: string) => ` (ignorado: ${rule})`,
   waNotSent: (rule: string) => `(não enviada: ${rule})`,
   waCopyPaste: "[copia e cola]",
+  waConsentLink: "[link do banco]",
   waQrImage: "[imagem: QR Pix]",
   waYou: "  │ você> ",
   waEmulatorOpen: "  ┌─ WhatsApp (dyvit-wa-sim, emulador local da Cloud API — sem rede externa, sem conta Meta)",
@@ -129,6 +134,9 @@ const en: CoreStrings = {
   chargeRef: (chargeId) => ` — charge ${chargeId}`,
   pixCopyPaste: "Pix copy and paste:",
   boletoLine: "Or pay the boleto with this line:",
+  consentLink: "Authorise it at your bank with this link (valid for about 1 minute):",
+  consentPrompt: "Authorise it at your bank. The link is valid for about 1 minute.",
+  consentButton: "Authorise at the bank",
 
   outsideCollectionHours: (window, timezone, clock) => `outside collection hours (${window} ${timezone}); it is ${clock} now`,
 
@@ -139,12 +147,14 @@ const en: CoreStrings = {
   waTapIgnored: (rule, detail) => `  [whatsapp] tap ignored (${rule}): ${detail}`,
   waRefused: (rule, detail) => `  [whatsapp] refused (${rule}): ${detail}`,
   waRefusedByBackend: (rule, detail) => `  [whatsapp] refused by the backend (${rule}): ${detail}`,
+  waButtonFallback: (rule, detail) => `  [whatsapp] the link button was refused (${rule}): ${detail}; sent as text`,
   waDeliveryFailed: (messageId, codes, told) => `  [operator] DELIVERY FAILED for message ${messageId} (${codes})${told ? ` — it told ${told}: the person was NOT told` : ""}`,
   waShop: "shop:",
   waTap: (title) => `[tap: ${title}]`,
   waTapIgnoredMark: (rule) => ` (ignored: ${rule})`,
   waNotSent: (rule) => `(not sent: ${rule})`,
   waCopyPaste: "[copy and paste]",
+  waConsentLink: "[bank link]",
   waQrImage: "[image: Pix QR]",
   waYou: "  │ you> ",
   waEmulatorOpen: "  ┌─ WhatsApp (dyvit-wa-sim, a local Cloud API emulator — no external network, no Meta account)",

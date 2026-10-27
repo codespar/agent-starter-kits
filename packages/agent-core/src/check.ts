@@ -76,9 +76,10 @@ export function checkAgent(agentDir: string): CheckReport {
       if (declaresPixOut && !hasPayment) error("tools_contradict_manifest", "agent.yaml declares pix-out maturity but tools.json has no payment meta-tool");
       if (!declaresPixOut && hasPayment) error("tools_contradict_manifest", "tools.json has a payment meta-tool but agent.yaml declares no pix-out maturity");
       const hasCharge = parsed.data.meta_tools.some((t) => t.effect === "charge");
-      const declaresReceivables = manifest.maturity["bolepix-receivables"] !== undefined;
-      if (declaresReceivables && !hasCharge) error("tools_contradict_manifest", "agent.yaml declares bolepix-receivables maturity but tools.json has no charge meta-tool");
-      if (!declaresReceivables && hasCharge) error("tools_contradict_manifest", "tools.json has a charge meta-tool but agent.yaml declares no bolepix-receivables maturity");
+      // Money IN has two modules: a bolepix the payer settles, or a sweeping pull the payer authorises at the bank.
+      const receivables = ["bolepix-receivables", "sweeping-pull"].filter((key) => manifest.maturity[key] !== undefined);
+      if (receivables.length > 0 && !hasCharge) error("tools_contradict_manifest", `agent.yaml declares ${receivables.join(" and ")} maturity but tools.json has no charge meta-tool`);
+      if (receivables.length === 0 && hasCharge) error("tools_contradict_manifest", "tools.json has a charge meta-tool but agent.yaml declares no bolepix-receivables or sweeping-pull maturity");
     }
   }
 

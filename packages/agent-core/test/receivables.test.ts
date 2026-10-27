@@ -13,7 +13,7 @@ import { createCodeSparClient } from "../src/api/client.js";
 import { hmacSigner } from "../src/approval.js";
 import { ProofBundle } from "../src/bundle.js";
 import { ExecutionEngine, type EngineDeps, type PolicyExtension } from "../src/engine.js";
-import type { PaymentRail, RailPayment } from "../src/rail.js";
+import type { PaymentRail, RailLookup, RailPayment } from "../src/rail.js";
 import { itemsHash } from "../src/hash.js";
 import { StateStore } from "../src/state/store.js";
 import { LocalMandateStatusStub } from "../src/stubs/mandate-status.js";
@@ -34,7 +34,7 @@ afterAll(() => {
 const DEBTOR = "11144477735";
 const OTHER = "22233344450";
 
-function receivables(options: { mode?: "human" | "mandate"; rail?: StubChargeRailOptions; policyExtension?: PolicyExtension; dir?: string; dispatchTo?: PaymentRail } = {}) {
+function receivables(options: { mode?: "human" | "mandate"; rail?: StubChargeRailOptions; policyExtension?: PolicyExtension; dir?: string; dispatchTo?: PaymentRail; wrap?: (rail: StubChargeRail) => PaymentRail } = {}) {
   const dir = options.dir ?? tempDir(join(tmpdir(), "agent-core-recv-"));
   let now = new Date("2026-09-23T18:00:00Z");
   const clock = () => now;
@@ -45,7 +45,7 @@ function receivables(options: { mode?: "human" | "mandate"; rail?: StubChargeRai
   const mode = options.mode ?? "mandate";
   const deps: EngineDeps = {
     store,
-    rail: options.dispatchTo ?? rail,
+    rail: options.dispatchTo ?? options.wrap?.(rail) ?? rail,
     status: gate,
     signer: hmacSigner("test", Buffer.alloc(32, 2)),
     manifest: testManifest({ name: "collections-agent", escalate_above: {}, maturity: { "bolepix-receivables": "sandbox" } }),
@@ -166,6 +166,49 @@ describe("a receivable is accepted, then settled by the payer", () => {
     const done = await h.engine.reconcile(issued.id);
     expect(done.state).toBe("settled");
     expect(h.bundle.listReceipts()).toHaveLength(3);
+  });
+});
+
+/** The stub, except that its next looks answer what the test scripts; an empty script is the stub again. */
+function scriptedLooks(inner: StubChargeRail, script: RailLookup[]): PaymentRail {
+  return {
+    name: inner.name,
+    pay: (p) => inner.pay(p),
+    lookup: (id, p) => (script.length > 0 ? Promise.resolve(script.shift()) : inner.lookup(id, p)),
+    receipt: (id, actor) => inner.receipt(id, actor),
+  };
+}
+
+describe("a receivable already out whose look answers uncertain", () => {
+  async function issued(script: RailLookup[]) {
+    const h = receivables({ wrap: (rail) => scriptedLooks(rail, script) });
+    const d = await h.engine.draft({ items: [{ payee: "acordo-1", amount: 108000, due_date: "2026-09-30", description: "acordo 1042" }] });
+    if (!d.ok) throw new Error("refused");
+    return { h, execution: await h.engine.execute(d.execution.id) };
+  }
+
+  it("is said, with the rail's code, and the next clear look takes over: nothing is re-sent", async () => {
+    const { h, execution } = await issued([{ status: "uncertain", code: "payment_unreadable", message: "503 from the bank" }]);
+    const looked = await h.engine.reconcile(execution.id);
+    expect(looked).toMatchObject({ state: "executing", reason: "rail_uncertain" });
+    expect(looked.detail).toContain("payment_unreadable");
+    const reconciled = h.bundle.readEvents().filter((e) => e["type"] === "rail.reconcile").map((e) => e["payload"]);
+    expect(reconciled.at(-1)).toMatchObject({ found: "uncertain", code: "payment_unreadable", message: "503 from the bank" });
+
+    const later = await h.engine.reconcile(execution.id);
+    expect(later).toMatchObject({ state: "executing", reason: "awaiting_settlement" });
+    expect(h.rail.issueCount).toBe(1);
+  });
+
+  it("with needs_human, stops at a human; looking again logs it once and sends nothing", async () => {
+    const lost: RailLookup = { status: "uncertain", code: "pull_dispatch_uncertain", message: "the answer was lost", needs_human: true };
+    const { h, execution } = await issued([lost, lost, lost]);
+    for (let i = 0; i < 3; i += 1) expect(await h.engine.reconcile(execution.id)).toMatchObject({ state: "executing", reason: "rail_needs_human" });
+    const events = h.bundle.readEvents();
+    expect(events.filter((e) => e["type"] === "execution.uncertain")).toHaveLength(1);
+    expect(events.filter((e) => e["type"] === "execution.uncertain")[0]?.["payload"]).toMatchObject({ needs_human: true });
+    expect(events.filter((e) => e["type"] === "rail.reconcile" && (e["payload"] as { found: string }).found === "uncertain")).toHaveLength(1);
+    expect(h.rail.issueCount).toBe(1);
   });
 });
 

@@ -26,13 +26,18 @@ export function instrumentBodies(execution: Execution, instalment: number, charg
         count > 1 ? text.instalmentOf(instalment, count) : "",
         item ? money.format(item.amount / 100) : "",
         instrument.due_date ? text.dueOn(formatDay(instrument.due_date, locale)) : "",
-        text.chargeRef(chargeId),
+        // A pull's id is the bank authorization's, which means nothing to the person; the link below is what they act on.
+        instrument.consent_url ? "" : text.chargeRef(chargeId),
       ].join(""),
     },
   ];
   if (instrument.pix_copy_paste) {
     bodies.push({ kind: "media", media: "qr", data: instrument.pix_copy_paste });
     bodies.push({ kind: "instrument", instrument: "pix_copy_paste", value: instrument.pix_copy_paste });
+  }
+  if (instrument.consent_url) {
+    // One message: the link is a button to tap, not a string to copy. The backend falls back to the lead line and the bare link.
+    bodies.push({ kind: "instrument", instrument: "consent_url", value: instrument.consent_url, cta: { body: text.consentPrompt, button: text.consentButton, lead: text.consentLink } });
   }
   if (instrument.boleto_bank_line) {
     bodies.push({ kind: "text", text: text.boletoLine });

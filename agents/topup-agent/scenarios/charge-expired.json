@@ -1,0 +1,33 @@
+{
+  "name": "charge-expired",
+  "description": "The person says yes and never approves at the bank: the consent link expires, nothing is pulled, the agent offers another link.",
+  "modes": [
+    "mandate",
+    "human"
+  ],
+  "turns": [
+    {
+      "input": "quero colocar R$ 1 na minha conta",
+      "decision": "none"
+    },
+    {
+      "input": "sim",
+      "decision": "approve",
+      "payer": "expires"
+    }
+  ],
+  "expect": {
+    "both": {
+      "states": [
+        "failed"
+      ],
+      "reasons": [
+        "charge_expired"
+      ],
+      "receipts": 0,
+      "charges_issued": 1,
+      "debtor_messages": 1
+    }
+  },
+  "transcript": "./charge-expired.transcript.jsonl"
+}

@@ -53,6 +53,29 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  * call again on the same execution (a restart): what was already shown is
  * remembered in the state.db cursor table, not in memory.
  */
+/**
+ * An open execution a poller keeps looking at: a receivable waiting for its
+ * payer, or one whose last look was uncertain (a 5xx, a dropped connection)
+ * and that the next clear look takes over. Not `rail_needs_human`: the rail
+ * said no look resolves that one. Not an uncertain DISPATCH either (no
+ * accepted outcome): that is `resume`'s and a human's, as before.
+ */
+/**
+ * The once-only key (`engine.markTold`) for telling the person an outcome.
+ * An execution stopped at a human is still `executing`, so it has its own
+ * key; every path that tells it (the kit's text, the poll's template) takes
+ * the same one, or the person hears it twice.
+ */
+export function toldKey(execution: Execution): string {
+  return execution.state === "executing" && execution.reason === "rail_needs_human" ? "needs_human" : execution.state;
+}
+
+export function isAwaitingPayer(execution: Execution): boolean {
+  if (execution.state !== "executing") return false;
+  if (execution.reason === "awaiting_settlement") return true;
+  return execution.reason === "rail_uncertain" && execution.outcomes.some((o) => o.status === "accepted");
+}
+
 export async function pollUntilClosed(engine: ExecutionEngine, executionId: string, options: PollOptions): Promise<PollResult> {
   const clock = options.clock ?? (() => new Date());
   const sleep = options.sleep ?? defaultSleep;
@@ -84,6 +107,8 @@ export async function pollUntilClosed(engine: ExecutionEngine, executionId: stri
     rounds += 1;
     execution = await engine.reconcile(execution.id);
     await present(execution);
+    // The rail said no later look can resolve it: looking again until the wait runs out would only hide that.
+    if (execution.state === "executing" && execution.reason === "rail_needs_human") break;
     // The sandbox payer plays once every receivable is payable, the QR shown first, as in the scene, and never before. It used to
     // play after a few looks whatever it found, because the API's test route settles a charge still registering; on staging on
     // 2026-09-27 that route settled a charge the issuer had ended in ERROR, with no QR at all, and the scenario called the order

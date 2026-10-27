@@ -1,0 +1,2 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "codespar_charge", "input": {"action": "create", "account": "conta-irmao-200000002", "amount_minor": 100}}]}
+{"kind": "assistant_step", "reply": "Só posso recarregar a sua própria conta. O código recusou outra; nada foi pedido ao banco."}
