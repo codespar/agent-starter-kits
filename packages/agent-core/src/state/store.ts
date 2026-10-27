@@ -106,7 +106,8 @@ export class StateStore {
   constructor(readonly path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
-    this.db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON;");
+    // busy_timeout: a second process (a poll beside the run, a webhook) that meets a write in progress waits for it, up to 5 s, instead of failing with SQLITE_BUSY.
+    this.db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON;");
     this.db.exec(SCHEMA);
   }
 
