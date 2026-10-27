@@ -91,9 +91,15 @@ export class IniciadorError extends Error {
     this.name = "IniciadorError";
   }
 
-  /** No answer, a 5xx or a 429: whether the call took effect is unknown. */
+  /**
+   * No answer (0) or a 5xx: whether the call took effect is unknown. Every
+   * 4xx is a certain refusal, 408 and 429 included: the server says it did
+   * not process the request (a timeout waiting for it, a rate limit), so
+   * nothing took effect. A 429 on the payment request used to leave a marker
+   * with no payment id behind, forever unresolvable.
+   */
   get uncertain(): boolean {
-    return this.status === 0 || this.status === 429 || this.status >= 500;
+    return this.status === 0 || this.status >= 500;
   }
 }
 

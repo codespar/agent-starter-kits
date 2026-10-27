@@ -61,7 +61,7 @@ interface Call {
 }
 
 /** A fake sweeping API behind `fetch`. `auth` decides what the bank does with each authorization when it is next read. */
-function fakeIniciador(options: { authStatus?: string[]; rejection?: string; paymentCreate?: "ok" | "lost" | "422"; expireTokenOnce?: boolean; authRead?: 404 | 503; paymentStatus?: 403; slowPaymentMs?: number } = {}) {
+function fakeIniciador(options: { authStatus?: string[]; rejection?: string; paymentCreate?: "ok" | "lost" | "422" | "429"; expireTokenOnce?: boolean; authRead?: 404 | 503; paymentStatus?: 403; slowPaymentMs?: number } = {}) {
   const calls: Call[] = [];
   const authStatus = [...(options.authStatus ?? ["AUTHORISED"])];
   let tokens = 0;
@@ -93,6 +93,7 @@ function fakeIniciador(options: { authStatus?: string[]; rejection?: string; pay
     if (init?.method === "POST" && path === "/sweeping/authorizations/urn%3AIniciador%3Aauth-1/payments") {
       if (options.paymentCreate === "lost") throw new TypeError("fetch failed");
       if (options.slowPaymentMs) await new Promise((done) => setTimeout(done, options.slowPaymentMs));
+      if (options.paymentCreate === "429") return json(429, { message: "too many requests" });
       if (options.paymentCreate === "422") return json(422, { errorCode: "VALIDATION_ERROR", message: [`user ${TAX_ID} over limit`] });
       return json(201, { id: "pay-1", status: "CONSENT_AUTHORIZED", endToEndId: "E44471172202610222049abcdef12345" });
     }
@@ -193,6 +194,19 @@ describe("the pull rail", () => {
     await rail.pay(payment());
     expect((await rail.lookup("att_1", payment()))?.status).toBe("uncertain");
     expect((await rail.lookup("att_1", payment()))).toMatchObject({ status: "uncertain", code: "pull_dispatch_uncertain", needs_human: true });
+    expect(fake.calls.filter((c) => c.method === "POST" && c.path.endsWith("/payments"))).toHaveLength(1);
+  });
+
+  it("a rate-limited payment request is a certain refusal: the attempt fails and no marker is left unresolved", async () => {
+    expect(new IniciadorError(429, "rate_limited", "x").uncertain).toBe(false);
+    expect(new IniciadorError(408, "timeout", "x").uncertain).toBe(false);
+    expect(new IniciadorError(503, "unavailable", "x").uncertain).toBe(true);
+    expect(new IniciadorError(0, "no_answer", "x").uncertain).toBe(true);
+    const fake = fakeIniciador({ paymentCreate: "429" });
+    const rail = new SweepingPullRail(store(), httpApi(fake), CONFIG, true);
+    await rail.pay(payment());
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "failed", code: "charge_issuer_error" });
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "failed" });
     expect(fake.calls.filter((c) => c.method === "POST" && c.path.endsWith("/payments"))).toHaveLength(1);
   });
 
