@@ -101,6 +101,17 @@ export class IniciadorError extends Error {
   get uncertain(): boolean {
     return this.status === 0 || this.status >= 500;
   }
+
+  /**
+   * For a READ only: an answer the next look may not repeat. Besides the
+   * uncertain ones, a 401 (the token refresh itself failed), a 408 and a
+   * 429 (the poll was rate limited) say nothing about the authorization or
+   * the payment, so a read that got one is looked at again. `uncertain`
+   * stays the rule for a request that could have taken effect.
+   */
+  get transientRead(): boolean {
+    return this.uncertain || this.status === 401 || this.status === 408 || this.status === 429;
+  }
 }
 
 const JWT = /eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/g;

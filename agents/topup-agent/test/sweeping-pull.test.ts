@@ -61,7 +61,7 @@ interface Call {
 }
 
 /** A fake sweeping API behind `fetch`. `auth` decides what the bank does with each authorization when it is next read. */
-function fakeIniciador(options: { authStatus?: string[]; rejection?: string; paymentCreate?: "ok" | "lost" | "422" | "429"; expireTokenOnce?: boolean; authRead?: 404 | 503; paymentStatus?: 403; slowPaymentMs?: number; authCreateLostOnce?: boolean } = {}) {
+function fakeIniciador(options: { authStatus?: string[]; rejection?: string; paymentCreate?: "ok" | "lost" | "422" | "429"; expireTokenOnce?: boolean; authRead?: 401 | 404 | 429 | 503; paymentStatus?: 403 | 429; slowPaymentMs?: number; authCreateLostOnce?: boolean } = {}) {
   const calls: Call[] = [];
   const authStatus = [...(options.authStatus ?? ["AUTHORISED"])];
   let tokens = 0;
@@ -240,6 +240,25 @@ describe("the pull rail", () => {
     const seen = await flaky.lookup("att_1", payment());
     expect(seen).toMatchObject({ status: "uncertain", code: "authorization_unreadable" });
     expect(seen && "needs_human" in seen).toBe(false);
+  });
+
+  it("a 429 or a 401 reading the authorization is looked at again, never final; a 429 reading the payment does not call a human", async () => {
+    for (const status of [429, 401] as const) {
+      const rail = new SweepingPullRail(store(), httpApi(fakeIniciador({ authRead: status })), CONFIG, true);
+      await rail.pay(payment());
+      const seen = await rail.lookup("att_1", payment());
+      expect(seen, String(status)).toMatchObject({ status: "uncertain", code: "authorization_unreadable" });
+      expect(seen && "needs_human" in seen, String(status)).toBe(false);
+      // Not recorded as final: the next look asks the bank again.
+      expect((await rail.lookup("att_1", payment()))?.status, String(status)).toBe("uncertain");
+    }
+    const fake = fakeIniciador({ paymentStatus: 429 });
+    const rail = new SweepingPullRail(store(), httpApi(fake), CONFIG, true);
+    await rail.pay(payment());
+    const seen = await rail.lookup("att_1", payment());
+    expect(seen).toMatchObject({ status: "uncertain", code: "payment_unreadable" });
+    expect(seen && "needs_human" in seen).toBe(false);
+    expect(fake.calls.filter((c) => c.method === "POST" && c.path.endsWith("/payments"))).toHaveLength(1);
   });
 
   it("a clear refusal to read a payment already requested stops at a human, never failed: the money may have moved", async () => {

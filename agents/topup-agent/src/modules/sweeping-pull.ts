@@ -193,7 +193,8 @@ export class SweepingPullRail implements PaymentRail {
         auth = await this.api.getAuthorization(record.authorization_id);
       } catch (e) {
         // A clear refusal (404, 403) will not change on the next look, and no payment was asked for yet: the attempt failed.
-        if (e instanceof IniciadorError && !e.uncertain) return this.finish(attemptId, record, { status: "failed", code: "authorization_unreadable", message: messageOf(e) });
+        // A 401, 408 or 429 says nothing about the authorization: looked at again, never final.
+        if (e instanceof IniciadorError && !e.transientRead) return this.finish(attemptId, record, { status: "failed", code: "authorization_unreadable", message: messageOf(e) });
         return { status: "uncertain", code: "authorization_unreadable", message: messageOf(e) };
       }
       if (!AUTHORIZATION_TERMINAL.has(auth.status)) return this.awaiting(record, auth.status);
@@ -240,8 +241,9 @@ export class SweepingPullRail implements PaymentRail {
     try {
       seen = await this.api.getPaymentStatus(record.authorization_id, paymentId);
     } catch (e) {
-      // A clear refusal will not change on the next look, but the payment was asked for and may have moved money: a human checks, it is not called failed.
-      if (e instanceof IniciadorError && !e.uncertain) return { status: "uncertain", code: "payment_unreadable", needs_human: true, message: `${messageOf(e)}; the payment was requested and may have completed: check the authorization at the bank` };
+      // A clear refusal (403, 404) will not change on the next look, but the payment was asked for and may have moved money: a human checks, it is not called failed.
+      // A 401, 408 or 429 is looked at again.
+      if (e instanceof IniciadorError && !e.transientRead) return { status: "uncertain", code: "payment_unreadable", needs_human: true, message: `${messageOf(e)}; the payment was requested and may have completed: check the authorization at the bank` };
       return { status: "uncertain", code: "payment_unreadable", message: messageOf(e) };
     }
     const endToEndId = seen.endToEndId ?? record.payment.end_to_end_id ?? null;
