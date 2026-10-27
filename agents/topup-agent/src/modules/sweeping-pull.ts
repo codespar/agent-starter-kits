@@ -138,6 +138,8 @@ export class SweepingPullRail implements PaymentRail {
       try {
         auth = await this.api.getAuthorization(record.authorization_id);
       } catch (e) {
+        // A clear refusal (404, 403) will not change on the next look, and no payment was asked for yet: the attempt failed.
+        if (e instanceof IniciadorError && !e.uncertain) return this.finish(attemptId, record, { status: "failed", code: "authorization_unreadable", message: messageOf(e) });
         return { status: "uncertain", code: "authorization_unreadable", message: messageOf(e) };
       }
       if (!AUTHORIZATION_TERMINAL.has(auth.status)) return this.awaiting(record, auth.status);
@@ -158,7 +160,7 @@ export class SweepingPullRail implements PaymentRail {
         created = await this.api.createPayment(record.authorization_id, request);
       } catch (e) {
         if (e instanceof IniciadorError && !e.uncertain) return this.finish(attemptId, record, { status: "failed", code: "charge_issuer_error", message: messageOf(e) });
-        return { status: "uncertain", code: "pull_dispatch_uncertain", message: `the payment request got no clear answer (${messageOf(e)}); it is NOT retried: check the authorization at the bank` };
+        return { status: "uncertain", code: "pull_dispatch_uncertain", needs_human: true, message: `the payment request got no clear answer (${messageOf(e)}); it is NOT retried: check the authorization at the bank` };
       }
       record.payment = { ...record.payment, id: created.id, end_to_end_id: created.endToEndId };
       this.save(attemptId, record);
@@ -166,12 +168,14 @@ export class SweepingPullRail implements PaymentRail {
 
     const paymentId = record.payment.id;
     if (!paymentId) {
-      return { status: "uncertain", code: "pull_dispatch_uncertain", message: "a payment request went out and its answer was lost; it is NOT retried: check the authorization at the bank" };
+      return { status: "uncertain", code: "pull_dispatch_uncertain", needs_human: true, message: "a payment request went out and its answer was lost; it is NOT retried: check the authorization at the bank" };
     }
     let seen: PaymentView;
     try {
       seen = await this.api.getPaymentStatus(record.authorization_id, paymentId);
     } catch (e) {
+      // A clear refusal will not change on the next look, but the payment was asked for and may have moved money: a human checks, it is not called failed.
+      if (e instanceof IniciadorError && !e.uncertain) return { status: "uncertain", code: "payment_unreadable", needs_human: true, message: `${messageOf(e)}; the payment was requested and may have completed: check the authorization at the bank` };
       return { status: "uncertain", code: "payment_unreadable", message: messageOf(e) };
     }
     const endToEndId = seen.endToEndId ?? record.payment.end_to_end_id ?? null;

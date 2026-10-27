@@ -27,6 +27,7 @@ const pt = {
   toldFailed: (reason: string | undefined) => `Não consegui fazer a puxada (${reason ?? "falha no banco"}). Nada foi puxado.`,
   toldDenied: (reason: string | undefined) => `Não posso pedir essa puxada (${reason ?? "recusado"}).`,
   toldUndecided: (state: string) => `O pedido expirou sem decisão (${state}). Nada foi puxado.`,
+  toldNeedsHuman: "Não consegui confirmar com o banco se a puxada foi feita. Confira no seu banco antes de pedir de novo; nada será reenviado daqui.",
 
   bankName: "Banco de Testes (sandbox do Iniciador)",
 };
@@ -54,6 +55,7 @@ export const STRINGS: LocaleTable<typeof pt & KitStrings> = {
     toldFailed: (reason) => `I could not make the pull (${reason ?? "bank failure"}). Nothing was pulled.`,
     toldDenied: (reason) => `I cannot ask for that pull (${reason ?? "refused"}).`,
     toldUndecided: (state) => `The request expired without a decision (${state}). Nothing was pulled.`,
+    toldNeedsHuman: "I could not confirm with the bank whether the pull was made. Check at your bank before asking again; nothing will be re-sent from here.",
 
     bankName: "Banco de Testes (Iniciador sandbox)",
   },

@@ -134,6 +134,12 @@ export type RailOutcome =
       status: "uncertain";
       code: string;
       message: string;
+      /**
+       * No later look can resolve it: a request went out and its answer is
+       * lost, and the rail will not send it again. Reconcile stops at a human
+       * instead of looking until the wait runs out.
+       */
+      needs_human?: true;
       raw?: unknown;
     };
 

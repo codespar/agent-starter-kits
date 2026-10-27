@@ -292,7 +292,8 @@ async function presentInstrument(channel: WhatsAppChannel, s: Setup, execution: 
 async function tellOutcome(channel: WhatsAppChannel, s: Setup, execution: Execution): Promise<Delivery> {
   // Nothing closed, so there is no outcome to carry. Not a failure and not a
   // silence to explain: the wait ran out and the receivable is still open.
-  if (execution.state === "executing") return { told: false, reason: "still_open" };
+  // An execution stopped at a human is told too, once: the person has to check at their bank.
+  if (execution.state === "executing" && execution.reason !== "rail_needs_human") return { told: false, reason: "still_open" };
 
   if (channel.sessionOpen) {
     // The kit writes lines, the channel sends messages. Joined rather than

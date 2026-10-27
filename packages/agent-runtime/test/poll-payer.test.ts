@@ -62,3 +62,19 @@ describe("the poll's sandbox payer pays only what is payable", () => {
     expect(result.payer_calls).toEqual(["paid"]);
   });
 });
+
+describe("the poll stops at a human", () => {
+  it("an execution the rail marked rail_needs_human is not looked at again until the wait runs out", async () => {
+    let looks = 0;
+    const engine = {
+      get: () => ({ id: "exe_1", state: "executing", reason: "awaiting_settlement", outcomes: [] }),
+      reconcile: async () => ((looks += 1), { id: "exe_1", state: "executing", reason: "rail_needs_human", detail: "pull_dispatch_uncertain", outcomes: [] }),
+      markShown: () => true,
+      note: () => undefined,
+    } as unknown as ExecutionEngine;
+    const result = await pollUntilClosed(engine, "exe_1", { intervalMs: 0, timeoutMs: 0, maxRounds: 12 });
+    expect(looks).toBe(1);
+    expect(result.execution.reason).toBe("rail_needs_human");
+    expect(result.timed_out).toBe(true);
+  });
+});

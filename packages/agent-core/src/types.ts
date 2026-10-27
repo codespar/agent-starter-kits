@@ -114,6 +114,12 @@ export type ExecutionReason =
   | "denied_by_approver"
   | "rail_failed"
   | "rail_uncertain"
+  /**
+   * An attempt already out answered `uncertain` with `needs_human`: the rail
+   * cannot tell what happened and will not ask again. Still `executing`;
+   * nothing is re-sent, the operator and the person are told once, a human checks.
+   */
+  | "rail_needs_human"
   | "tool_not_allowed"
   | "model_total_mismatch"
   | "outside_hours"

@@ -84,6 +84,8 @@ export async function pollUntilClosed(engine: ExecutionEngine, executionId: stri
     rounds += 1;
     execution = await engine.reconcile(execution.id);
     await present(execution);
+    // The rail said no later look can resolve it: looking again until the wait runs out would only hide that.
+    if (execution.state === "executing" && execution.reason === "rail_needs_human") break;
     // The sandbox payer plays once every receivable is payable, the QR shown first, as in the scene, and never before. It used to
     // play after a few looks whatever it found, because the API's test route settles a charge still registering; on staging on
     // 2026-09-27 that route settled a charge the issuer had ended in ERROR, with no QR at all, and the scenario called the order

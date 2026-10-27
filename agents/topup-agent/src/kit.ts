@@ -186,9 +186,16 @@ whatsapp: --backend simulator|cloud-api  --conversation <name>  --scripted`,
   },
 
   announceOutcome: (execution, setup, tell) => {
+    const words = STRINGS[setup.locale];
+    // Stopped at a human: still open, told once, and the console line names the rail's code.
+    if (execution.state === "executing" && execution.reason === "rail_needs_human") {
+      if (!setup.engine.markTold(execution.id, "needs_human")) return false;
+      tell(words.toldNeedsHuman);
+      setup.engine.note("message.debtor", execution.id, { state: execution.state, reason: execution.reason, text: words.toldNeedsHuman });
+      return true;
+    }
     if (execution.state === "executing") return false;
     if (!setup.engine.markTold(execution.id, execution.state)) return false;
-    const words = STRINGS[setup.locale];
     let text: string;
     if (execution.state === "settled") text = words.toldSettled(endToEndOf(execution) ?? "?");
     else if (execution.reason === "charge_expired") text = words.toldExpired;
