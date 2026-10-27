@@ -61,11 +61,12 @@ interface Call {
 }
 
 /** A fake sweeping API behind `fetch`. `auth` decides what the bank does with each authorization when it is next read. */
-function fakeIniciador(options: { authStatus?: string[]; rejection?: string; paymentCreate?: "ok" | "lost" | "422" | "429"; expireTokenOnce?: boolean; authRead?: 404 | 503; paymentStatus?: 403; slowPaymentMs?: number } = {}) {
+function fakeIniciador(options: { authStatus?: string[]; rejection?: string; paymentCreate?: "ok" | "lost" | "422" | "429"; expireTokenOnce?: boolean; authRead?: 404 | 503; paymentStatus?: 403; slowPaymentMs?: number; authCreateLostOnce?: boolean } = {}) {
   const calls: Call[] = [];
   const authStatus = [...(options.authStatus ?? ["AUTHORISED"])];
   let tokens = 0;
   let expireOnce = options.expireTokenOnce ?? false;
+  let loseAuthCreate = options.authCreateLostOnce ?? false;
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
     const u = new URL(String(url));
@@ -83,6 +84,10 @@ function fakeIniciador(options: { authStatus?: string[]; rejection?: string; pay
       return json(401, { message: "token expired" });
     }
     if (init?.method === "POST" && path === "/sweeping/authorizations") {
+      if (loseAuthCreate) {
+        loseAuthCreate = false;
+        throw new TypeError("fetch failed");
+      }
       return json(201, { id: "a1", authorizationId: "urn:Iniciador:auth-1", status: "AWAITING_AUTHORISATION", authUrl: "https://bank.example/consent?request_uri=urn:x", user: { taxId: body?.["user"] } });
     }
     if (init?.method === "GET" && path === "/sweeping/authorizations/urn%3AIniciador%3Aauth-1") {
@@ -208,6 +213,21 @@ describe("the pull rail", () => {
     expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "failed", code: "charge_issuer_error" });
     expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "failed" });
     expect(fake.calls.filter((c) => c.method === "POST" && c.path.endsWith("/payments"))).toHaveLength(1);
+  });
+
+  it("an authorization request with no answer leaves a record, and the next look makes it again under the same externalId", async () => {
+    const fake = fakeIniciador({ authCreateLostOnce: true });
+    const rail = new SweepingPullRail(store(), httpApi(fake), CONFIG, true);
+    expect(await rail.pay(payment())).toMatchObject({ status: "uncertain", code: "authorization_unconfirmed" });
+    // Not "unknown to the rail": the attempt is on record, and a look re-issues it.
+    const looked = await rail.lookup("att_1", payment());
+    expect(looked).toMatchObject({ status: "accepted", transaction_id: "urn:Iniciador:auth-1", instrument: { consent_url: "https://bank.example/consent?request_uri=urn:x" } });
+    const creates = fake.calls.filter((c) => c.method === "POST" && c.path === "/sweeping/authorizations");
+    expect(creates).toHaveLength(2);
+    expect(creates.map((c) => c.body?.["externalId"])).toEqual(["att_1", "att_1"]);
+    // Issued once it answered: later looks read it, they do not make another.
+    await rail.lookup("att_1", payment());
+    expect(fake.calls.filter((c) => c.method === "POST" && c.path === "/sweeping/authorizations")).toHaveLength(2);
   });
 
   it("a clear refusal to read the authorization fails the attempt; a 5xx stays uncertain and is looked at again", async () => {

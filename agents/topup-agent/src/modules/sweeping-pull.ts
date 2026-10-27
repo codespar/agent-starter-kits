@@ -64,7 +64,14 @@ export interface SweepingRailConfig {
 
 /** What the rail remembers per attempt, in state.db. Ids and statuses only. */
 interface PullRecord {
-  authorization_id: string;
+  /** Null while the authorization request has gone out and no answer came back with an id. */
+  authorization_id: string | null;
+  /**
+   * Every authorization request made for this attempt, written BEFORE it goes out. An unanswered one is
+   * made again under the same externalId by a later look: an authorization moves no money, and the link
+   * of one nobody saw expires on its own.
+   */
+  authorization_requests?: Array<{ at: string; answered: "id" | "refused" | "no_answer" | null }>;
   auth_url: string | null;
   amount_minor: number;
   payee: string;
@@ -99,15 +106,40 @@ export class SweepingPullRail implements PaymentRail {
 
   async pay(payment: RailPayment): Promise<RailOutcome> {
     const existing = this.load(payment.attempt_id);
-    if (existing) return existing.final ?? this.awaiting(existing, existing.payment ? "PAYMENT_PENDING" : "AWAITING_AUTHORISATION");
+    if (existing?.final) return existing.final;
+    if (existing && !existing.authorization_id) {
+      const seen = await this.lookup(payment.attempt_id, payment);
+      return seen && seen.status !== "in_flight" ? seen : { status: "uncertain", code: "authorization_unconfirmed", message: "an authorization request for this attempt is still on its way" };
+    }
+    if (existing) return this.awaiting(existing, existing.payment ? "PAYMENT_PENDING" : "AWAITING_AUTHORISATION");
     if (payment.payee !== this.config.creditorId) {
       return { status: "failed", code: "creditor_mismatch", message: "the payee is not the creditor this agent is configured for; nothing was sent" };
     }
     if (payment.amount_minor > this.config.limits.per_tx_minor) {
       return { status: "failed", code: "above_transaction_limit", message: `amount above the authorization's transaction limit (${this.config.limits.per_tx_minor}); nothing was sent` };
     }
+    const pending: PullRecord = {
+      authorization_id: null,
+      auth_url: null,
+      amount_minor: payment.amount_minor,
+      payee: payment.payee,
+      mandate_id: payment.mandate_id,
+      created_at: this.clock().toISOString(),
+      authorization_requests: [{ at: this.clock().toISOString(), answered: null }],
+    };
+    this.save(payment.attempt_id, pending);
+    return this.requestAuthorization(payment.attempt_id, pending);
+  }
+
+  /**
+   * The authorization request whose entry is the last of `record.authorization_requests`, already on
+   * disk with `answered: null` before this is called; what came back is written after.
+   */
+  private async requestAuthorization(attemptId: string, record: PullRecord): Promise<RailOutcome> {
+    const requests = record.authorization_requests ?? [];
+    const answered = (answer: "id" | "refused" | "no_answer") => requests.map((r, i) => (i === requests.length - 1 ? { ...r, answered: answer } : r));
     const request: AuthorizationRequest = {
-      externalId: payment.attempt_id,
+      externalId: attemptId,
       taxId: this.config.taxId,
       participantId: this.config.participantId,
       creditorId: this.config.creditorId,
@@ -120,24 +152,40 @@ export class SweepingPullRail implements PaymentRail {
     try {
       auth = await this.api.createAuthorization(request);
     } catch (e) {
-      return failure(e, "authorization");
+      const outcome = failure(e, "authorization");
+      const kept = { ...record, authorization_requests: answered(outcome.status === "failed" ? "refused" : "no_answer") };
+      if (outcome.status === "failed") return this.finish(attemptId, kept, outcome);
+      this.save(attemptId, kept);
+      return outcome;
     }
-    const record: PullRecord = {
-      authorization_id: auth.authorizationId,
-      auth_url: auth.authUrl,
-      amount_minor: payment.amount_minor,
-      payee: payment.payee,
-      mandate_id: payment.mandate_id,
-      created_at: this.clock().toISOString(),
-    };
-    this.save(payment.attempt_id, record);
-    return this.awaiting(record, auth.status);
+    const issued: PullRecord = { ...record, authorization_id: auth.authorizationId, auth_url: auth.authUrl, authorization_requests: answered("id") };
+    this.save(attemptId, issued);
+    return this.awaiting(issued, auth.status);
   }
 
   async lookup(attemptId: string, payment: RailPayment): Promise<RailLookup> {
     const record = this.load(attemptId);
     if (!record) return undefined;
     if (record.final) return record.final;
+
+    if (!record.authorization_id) {
+      // The authorization request got no answer with an id. A request still on its way (another reader's) is waited for;
+      // otherwise it is made again under the same externalId, claimed in one write transaction so two readers make one.
+      const claimed = this.store.transaction(() => {
+        const fresh = this.load(attemptId);
+        if (!fresh || fresh.authorization_id || fresh.final) return undefined;
+        const last = fresh.authorization_requests?.at(-1);
+        if (last && last.answered === null && this.clock().getTime() - new Date(last.at).getTime() < IN_FLIGHT_MS) return undefined;
+        const next: PullRecord = { ...fresh, authorization_requests: [...(fresh.authorization_requests ?? []), { at: this.clock().toISOString(), answered: null }] };
+        this.save(attemptId, next);
+        return next;
+      });
+      if (!claimed) {
+        const now = this.load(attemptId);
+        return now?.authorization_id || now?.final ? this.lookup(attemptId, payment) : { status: "in_flight" };
+      }
+      return this.requestAuthorization(attemptId, claimed);
+    }
 
     if (!record.payment) {
       let auth: AuthorizationView;
@@ -238,6 +286,7 @@ export class SweepingPullRail implements PaymentRail {
   }
 
   private awaiting(record: PullRecord, status: string): Extract<RailOutcome, { status: "accepted" }> {
+    if (!record.authorization_id) throw new Error("awaiting() is only reached once the bank answered with an authorization id");
     const instrument: ChargeInstrument = {
       payable: true,
       status,
