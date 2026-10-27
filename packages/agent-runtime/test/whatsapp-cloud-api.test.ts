@@ -232,6 +232,56 @@ describe("deliver, with the network replaced by an assertion", () => {
   });
 });
 
+describe("a bank's consent link goes as a URL button, and as text when the button is refused", () => {
+  const CTA = { body: "Autorize no seu banco.", button: "Autorizar no banco", lead: "Autorize por este link:" };
+  const LINK = { kind: "instrument" as const, instrument: "consent_url" as const, value: "https://bank.example/consent?request_uri=urn%3Ax", cta: CTA };
+
+  it("builds an interactive cta_url whose button carries the link", () => {
+    const request = buildSendRequest(CONFIG, "+5511987654321", LINK);
+    if ("unsupported" in request) throw new Error("expected a request");
+    const sent = JSON.parse(request.body);
+    expect(sent.type).toBe("interactive");
+    expect(sent.interactive).toEqual({ type: "cta_url", body: { text: CTA.body }, action: { name: "cta_url", parameters: { display_text: CTA.button, url: LINK.value } } });
+  });
+
+  it("sends the lead line and the bare link when the provider refuses the button, and says it did", async () => {
+    const bodies: string[] = [];
+    const backend = new WhatsAppCloudApi({
+      config: CONFIG,
+      conversation: { contact: "+5511987654321" },
+      say: () => undefined,
+      fetchImpl: async (_url, init) => {
+        const body = String(init?.body);
+        bodies.push(body);
+        return JSON.parse(body).type === "interactive"
+          ? new Response(JSON.stringify({ error: { message: "Invalid parameter" } }), { status: 400 })
+          : new Response(JSON.stringify({ messages: [{ id: "wamid.TEXT" }] }), { status: 200 });
+      },
+    });
+    const sent = await backend.deliver("+5511987654321", LINK);
+    expect(sent).toMatchObject({ id: "wamid.TEXT", state: "sent", fallback: { from: "cta_url", rule: "provider_refused" } });
+    expect(bodies).toHaveLength(2);
+    expect(JSON.parse(bodies[1]!).text.body).toBe(`${CTA.lead}\n${LINK.value}`);
+  });
+
+  it("does not fall back when the window is shut: the text would be refused for the same reason", async () => {
+    let calls = 0;
+    const backend = new WhatsAppCloudApi({
+      config: CONFIG,
+      conversation: { contact: "+5511987654321" },
+      say: () => undefined,
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ error: { code: 131047, message: "(#131047) Message failed to send" } }), { status: 400 });
+      },
+    });
+    const sent = await backend.deliver("+5511987654321", LINK);
+    expect(sent.refused?.rule).toBe("session_window_closed");
+    expect(sent.fallback).toBeUndefined();
+    expect(calls).toBe(1);
+  });
+});
+
 describe("what Meta's error body says, read rather than collapsed into a status", () => {
   const body = (error: unknown) => JSON.stringify({ error });
 

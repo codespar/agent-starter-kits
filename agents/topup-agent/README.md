@@ -12,11 +12,16 @@ você:  oi, quero colocar R$ 1 na minha conta
 agent: Posso pedir ao seu banco (Banco de Testes) para puxar R$ 1,00 para a sua conta? Responda sim ou não.
 você:  sim
 agent: R$ 1,00
-agent: Autorize no seu banco por este link (vale por cerca de 1 minuto):
-agent: https://...                                  <- the bank's consent page (Mocktora in the sandbox)
+agent: Autorize no seu banco. O link vale por cerca de 1 minuto.
+       [Autorizar no banco]                         <- a URL button to the bank's consent page (Mocktora in the sandbox)
        ... the person picks the account and taps Autorizar ...
 agent: Pronto, o dinheiro caiu na sua conta. Comprovante do Pix (end-to-end): E4447...
 ```
+
+The link goes as a WhatsApp URL button (Cloud API `interactive`, `cta_url`).
+If the provider refuses the button, the same link goes as text under the line
+"Autorize no seu banco por este link", and the console and the conversation
+log say so (`fallback` in `channel.jsonl`).
 
 ## What it proves
 

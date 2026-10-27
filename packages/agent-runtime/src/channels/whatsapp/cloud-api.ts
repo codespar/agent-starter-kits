@@ -254,6 +254,16 @@ export function buildSendRequest(config: CloudApiConfig, to: string, body: Outbo
     case "text":
       return { ...base, body: JSON.stringify({ ...recipient, type: "text", text: { preview_url: false, body: body.text } }) };
     case "instrument":
+      if (body.cta) {
+        return {
+          ...base,
+          body: JSON.stringify({
+            ...recipient,
+            type: "interactive",
+            interactive: { type: "cta_url", body: { text: body.cta.body }, action: { name: "cta_url", parameters: { display_text: body.cta.button, url: body.value } } },
+          }),
+        };
+      }
       return { ...base, body: JSON.stringify({ ...recipient, type: "text", text: { preview_url: false, body: body.value } }) };
     case "template":
       return {
@@ -438,7 +448,17 @@ export class WhatsAppCloudApi implements ChannelBackend {
     const doFetch = this.options.fetchImpl ?? fetch;
     const response = await doFetch(request.url, { method: request.method, headers: request.headers, body: request.body });
     const text = await response.text();
-    if (!response.ok) return { id: "", state: "failed", refused: providerRefusal(response.status, text) };
+    if (!response.ok) {
+      const refused = providerRefusal(response.status, text);
+      // A refused URL button is sent again as the lead line and the bare link, said on the console and in the log.
+      // A shut window is not the button's fault: the text would be refused for the same reason.
+      if (body.kind === "instrument" && body.cta && refused.rule !== "session_window_closed") {
+        const { cta: _cta, ...plain } = body;
+        const sent = await this.deliver(to, { ...plain, value: `${body.cta.lead}\n${body.value}` });
+        return { ...sent, fallback: { from: "cta_url", rule: refused.rule, detail: refused.detail } };
+      }
+      return { id: "", state: "failed", refused };
+    }
     let id = "";
     try {
       id = String((JSON.parse(text) as { messages?: Array<{ id?: string }> }).messages?.[0]?.id ?? "");

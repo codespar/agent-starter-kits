@@ -271,6 +271,7 @@ export class WhatsAppChannel implements Channel {
     const buttons = body.kind === "template" ? this.session.declared(body.template, body.language)?.buttons : undefined;
     const outgoing: OutboundBody = body.kind === "template" && buttons?.length ? { ...body, buttons: buttons.map((b) => ({ id: b.id, title: b.title })) } : body;
     const sent = await this.options.backend.deliver(to, outgoing);
+    if (sent.fallback) this.options.say?.(this.text.waButtonFallback(sent.fallback.rule, sent.fallback.detail));
     if (sent.refused) this.options.say?.(this.text.waRefusedByBackend(sent.refused.rule, sent.refused.detail));
     if (sent.refused?.rule === "session_window_closed") this.session.observeProviderShut();
     this.logOutbound(outgoing, sent);
@@ -306,6 +307,7 @@ export class WhatsAppChannel implements Channel {
       state: sent.state,
       ...(textOf(body) !== undefined ? { text: textOf(body)! } : {}),
       ...(sent.refused ? { refused: sent.refused } : {}),
+      ...(sent.fallback ? { fallback: sent.fallback } : {}),
       ...((body.kind === "text" || body.kind === "template") && body.about ? { about: body.about } : {}),
       ...(body.kind === "template" && body.buttons?.length ? { offered: body.buttons.map((b) => b.id) } : {}),
     });

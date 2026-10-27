@@ -36,8 +36,8 @@ export function instrumentBodies(execution: Execution, instalment: number, charg
     bodies.push({ kind: "instrument", instrument: "pix_copy_paste", value: instrument.pix_copy_paste });
   }
   if (instrument.consent_url) {
-    bodies.push({ kind: "text", text: text.consentLink });
-    bodies.push({ kind: "instrument", instrument: "consent_url", value: instrument.consent_url });
+    // One message: the link is a button to tap, not a string to copy. The backend falls back to the lead line and the bare link.
+    bodies.push({ kind: "instrument", instrument: "consent_url", value: instrument.consent_url, cta: { body: text.consentPrompt, button: text.consentButton, lead: text.consentLink } });
   }
   if (instrument.boleto_bank_line) {
     bodies.push({ kind: "text", text: text.boletoLine });

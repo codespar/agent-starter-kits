@@ -89,7 +89,13 @@ export interface OutcomeTag {
 export type OutboundBody =
   | { kind: "text"; text: string; about?: OutcomeTag }
   | { kind: "media"; media: "qr"; data: string; caption?: string }
-  | { kind: "instrument"; instrument: "pix_copy_paste" | "boleto_bank_line" | "consent_url"; value: string }
+  /**
+   * `cta`, on a consent link only: the link goes as a URL button (Cloud API
+   * `interactive` `cta_url`) with `body` above it and `button` on it. `lead`
+   * is the line put above the bare link when the button is refused and the
+   * link goes as text instead.
+   */
+  | { kind: "instrument"; instrument: "pix_copy_paste" | "boleto_bank_line" | "consent_url"; value: string; cta?: { body: string; button: string; lead: string } }
   /** `buttons` are the declaration's, attached by the channel; a caller never composes them. */
   | { kind: "template"; template: string; language: string; variables: string[]; about?: OutcomeTag; buttons?: Array<{ id: string; title: string }> };
 
@@ -103,6 +109,8 @@ export interface SentMessage {
    * been sent. `rule` is the stable name a test and a log both key on.
    */
   refused?: { rule: string; detail: string };
+  /** Set when the provider refused the message's interactive form and its text form went instead; `rule` is the provider's refusal. */
+  fallback?: { from: "cta_url"; rule: string; detail: string };
 }
 
 /** What the person on the other side is called, and what the conversation may be about. */
@@ -163,6 +171,7 @@ export interface ChannelLogLine {
    */
   provider_timestamp?: number;
   refused?: { rule: string; detail: string };
+  fallback?: { from: "cta_url"; rule: string; detail: string };
   /** Outbound: the execution whose outcome this message tells. Status: the same, looked up by message id. */
   about?: OutcomeTag;
   /** Outbound template: the reply ids it offered. Inbound tap: the reply tapped. */
