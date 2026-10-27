@@ -70,12 +70,18 @@ interface PullRecord {
   payee: string;
   mandate_id: string;
   created_at: string;
-  /** Written BEFORE the payment request goes out; `id` once it answered. */
-  payment?: { requested_at: string; id?: string; end_to_end_id?: string | null };
+  /** Written BEFORE the payment request goes out; `id` once it answered; `lost_at` when it got no clear answer. */
+  payment?: { requested_at: string; id?: string; end_to_end_id?: string | null; lost_at?: string };
   final?: RailOutcome;
 }
 
 const RECORD = (attemptId: string) => `sweeping:${attemptId}`;
+/**
+ * How long a marker with no payment id is read as another reader's request
+ * still waiting for its answer (the client times out at 15 s) before it is
+ * read as an answer that will not come.
+ */
+const IN_FLIGHT_MS = 60_000;
 const RECEIPT = (paymentId: string) => `sweeping-receipt:${paymentId}`;
 
 export class SweepingPullRail implements PaymentRail {
@@ -144,9 +150,18 @@ export class SweepingPullRail implements PaymentRail {
       }
       if (!AUTHORIZATION_TERMINAL.has(auth.status)) return this.awaiting(record, auth.status);
       if (auth.status !== "AUTHORISED") return this.finish(attemptId, record, authorizationFailure(auth));
-      // The person approved at the bank. The marker goes to disk before the request does.
-      record.payment = { requested_at: this.clock().toISOString() };
-      this.save(attemptId, record);
+      // The person approved at the bank. The marker goes to disk before the request does, claimed inside
+      // one write transaction on the record as it is NOW: another reader (the run's poll, `npm run poll`,
+      // a webhook) may have claimed it while this one waited for the bank, and then this one sends nothing.
+      const claimed = this.store.transaction(() => {
+        const fresh = this.load(attemptId);
+        if (!fresh || fresh.payment || fresh.final) return undefined;
+        const marked: PullRecord = { ...fresh, payment: { requested_at: this.clock().toISOString() } };
+        this.save(attemptId, marked);
+        return marked;
+      });
+      if (!claimed) return this.lookup(attemptId, payment);
+      record.payment = claimed.payment!;
       const request: PaymentRequest = {
         externalId: `${attemptId}-pull`,
         creditorId: this.config.creditorId,
@@ -160,6 +175,7 @@ export class SweepingPullRail implements PaymentRail {
         created = await this.api.createPayment(record.authorization_id, request);
       } catch (e) {
         if (e instanceof IniciadorError && !e.uncertain) return this.finish(attemptId, record, { status: "failed", code: "charge_issuer_error", message: messageOf(e) });
+        this.save(attemptId, { ...record, payment: { ...record.payment, lost_at: this.clock().toISOString() } });
         return { status: "uncertain", code: "pull_dispatch_uncertain", needs_human: true, message: `the payment request got no clear answer (${messageOf(e)}); it is NOT retried: check the authorization at the bank` };
       }
       record.payment = { ...record.payment, id: created.id, end_to_end_id: created.endToEndId };
@@ -168,6 +184,8 @@ export class SweepingPullRail implements PaymentRail {
 
     const paymentId = record.payment.id;
     if (!paymentId) {
+      // Another reader's request, recent and unanswered: still on its way, looked at again.
+      if (!record.payment.lost_at && this.clock().getTime() - new Date(record.payment.requested_at).getTime() < IN_FLIGHT_MS) return { status: "in_flight" };
       return { status: "uncertain", code: "pull_dispatch_uncertain", needs_human: true, message: "a payment request went out and its answer was lost; it is NOT retried: check the authorization at the bank" };
     }
     let seen: PaymentView;

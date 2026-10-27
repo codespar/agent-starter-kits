@@ -14,7 +14,8 @@ import { HttpSweepingApi, IniciadorError, scrub } from "../src/iniciador.js";
 import { FixtureSweepingApi, SweepingPullRail, sweepingLimits, type SweepingRailConfig } from "../src/modules/sweeping-pull.js";
 
 const tempDirs: string[] = [];
-function store(): StateStore {
+function store(path?: string): StateStore {
+  if (path) return new StateStore(path);
   const dir = mkdtempSync(join(tmpdir(), "topup-rail-"));
   tempDirs.push(dir);
   return new StateStore(join(dir, "state.db"));
@@ -60,7 +61,7 @@ interface Call {
 }
 
 /** A fake sweeping API behind `fetch`. `auth` decides what the bank does with each authorization when it is next read. */
-function fakeIniciador(options: { authStatus?: string[]; rejection?: string; paymentCreate?: "ok" | "lost" | "422"; expireTokenOnce?: boolean; authRead?: 404 | 503; paymentStatus?: 403 } = {}) {
+function fakeIniciador(options: { authStatus?: string[]; rejection?: string; paymentCreate?: "ok" | "lost" | "422"; expireTokenOnce?: boolean; authRead?: 404 | 503; paymentStatus?: 403; slowPaymentMs?: number } = {}) {
   const calls: Call[] = [];
   const authStatus = [...(options.authStatus ?? ["AUTHORISED"])];
   let tokens = 0;
@@ -91,6 +92,7 @@ function fakeIniciador(options: { authStatus?: string[]; rejection?: string; pay
     }
     if (init?.method === "POST" && path === "/sweeping/authorizations/urn%3AIniciador%3Aauth-1/payments") {
       if (options.paymentCreate === "lost") throw new TypeError("fetch failed");
+      if (options.slowPaymentMs) await new Promise((done) => setTimeout(done, options.slowPaymentMs));
       if (options.paymentCreate === "422") return json(422, { errorCode: "VALIDATION_ERROR", message: [`user ${TAX_ID} over limit`] });
       return json(201, { id: "pay-1", status: "CONSENT_AUTHORIZED", endToEndId: "E44471172202610222049abcdef12345" });
     }
@@ -201,6 +203,21 @@ describe("the pull rail", () => {
     await rail.pay(payment());
     expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "uncertain", code: "payment_unreadable", needs_human: true });
     expect(fake.calls.filter((c) => c.method === "POST" && c.path.endsWith("/payments"))).toHaveLength(1);
+  });
+
+  it("two readers that both see AUTHORISED send one payment request: the marker is claimed once, the other reads it in flight", async () => {
+    const fake = fakeIniciador({ slowPaymentMs: 50 });
+    const first = store();
+    // Two handles on the same state.db, as two processes would have.
+    const shared = store(first.path);
+    const a = new SweepingPullRail(first, httpApi(fake), CONFIG, true);
+    const b = new SweepingPullRail(shared, httpApi(fake), CONFIG, true);
+    await a.pay(payment());
+    const [seenA, seenB] = await Promise.all([a.lookup("att_1", payment()), b.lookup("att_1", payment())]);
+    expect(fake.calls.filter((c) => c.method === "POST" && c.path.endsWith("/payments"))).toHaveLength(1);
+    expect([seenA?.status, seenB?.status].sort()).toEqual(["in_flight", "settled"]);
+    // Once the first answer is on disk, the other reader sees the same payment settle.
+    expect(await b.lookup("att_1", payment())).toMatchObject({ status: "settled" });
   });
 
   it("an expired link fails as charge_expired, a rejected one as charge_cancelled", async () => {
