@@ -171,6 +171,12 @@ export interface AgentKit {
    * `requested`; one whose packs are offline fixtures wants `stub`.
    */
   scenarioRail?: "stub" | "requested";
+  /**
+   * Whose key `--rail api` needs. `codespar` (the default) refuses to start
+   * without a `csk_test_` key; `none` is an agent whose live rail is not the
+   * CodeSpar API, which reads and checks its own credentials in `buildRail`.
+   */
+  apiRailKey?: "codespar" | "none";
   labels: RuntimeLabels;
   /** The words the runner prints for this agent, per locale. */
   strings: LocaleTable<KitStrings>;

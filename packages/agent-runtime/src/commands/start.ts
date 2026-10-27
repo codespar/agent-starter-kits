@@ -141,7 +141,7 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
 
   // Sandbox by construction: a live key dies here, before anything else runs.
   const railKind = resolveRailKind(process.env, args.rail);
-  const keyProblem = railKind === "api" ? testKeyProblem(process.env["CODESPAR_API_KEY"]) : undefined;
+  const keyProblem = railKind === "api" && agent.kit.apiRailKey !== "none" ? testKeyProblem(process.env["CODESPAR_API_KEY"]) : undefined;
   if (keyProblem) {
     say(new NotATestKeyError(keyProblem, envFileOf(agent.dir)).message);
     return 1;

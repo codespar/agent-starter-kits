@@ -40,6 +40,8 @@ function mandateFor(base: Mandate, limits: SweepingLimits, creditorId?: string):
 const kit: AgentKit = {
   settlement: "await-payer",
   scenarioRail: "stub",
+  // The live rail is Iniciador's sandbox; buildRail requires its credentials and never calls the CodeSpar API.
+  apiRailKey: "none",
 
   labels: {
     defaultUser: "usr_operator",
