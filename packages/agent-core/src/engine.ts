@@ -847,10 +847,12 @@ export class ExecutionEngine {
   /**
    * Once-only presentation: true the first time a given attempt's instrument
    * is marked shown, false afterwards, across restarts (it is a cursor in
-   * state.db, not memory). The debtor sees each QR once.
+   * state.db, not memory). The debtor sees each QR once. A `consent_step`
+   * (ChargeInstrument) is a page of its own within the attempt, shown once
+   * each; without one the key is the attempt's alone, as it always was.
    */
-  markShown(executionId: string, attemptId: string): boolean {
-    const key = `shown:${executionId}:${attemptId}`;
+  markShown(executionId: string, attemptId: string, consentStep?: string): boolean {
+    const key = `shown:${executionId}:${attemptId}${consentStep ? `:${consentStep}` : ""}`;
     if (this.deps.store.getCursor(key)) return false;
     this.deps.store.setCursor(key, this.clock().toISOString());
     return true;
