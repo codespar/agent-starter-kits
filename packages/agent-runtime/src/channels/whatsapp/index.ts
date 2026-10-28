@@ -359,11 +359,21 @@ function textOf(body: OutboundBody): string | undefined {
     case "text":
       return body.text;
     case "instrument":
-      return body.value;
+      // A consent link's query is its credential (a PAR request_uri, a signing page's JWT): the log keeps where it pointed, not the key.
+      return body.instrument === "consent_url" ? withoutQuery(body.value) : body.value;
     case "media":
       return body.caption;
     case "template":
       return `[template ${body.template}] ${body.variables.join(" | ")}${body.buttons?.length ? ` [${body.buttons.map((b) => b.title).join("] [")}]` : ""}`;
+  }
+}
+
+function withoutQuery(link: string): string {
+  try {
+    const url = new URL(link);
+    return `${url.origin}${url.pathname}${url.search || url.hash ? "?<redacted>" : ""}`;
+  } catch {
+    return "<link>";
   }
 }
 

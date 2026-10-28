@@ -6,7 +6,9 @@
  */
 import { describe, expect, it } from "vitest";
 import { CORE_STRINGS, type ChargeInstrument, type Execution, type ExecutionEngine } from "@codespar/agent-core";
+import { WhatsAppChannel } from "../src/channels/whatsapp/index.js";
 import { consentCta, instrumentBodies } from "../src/channels/whatsapp/present.js";
+import type { ChannelBackend, InboundMessage, OutboundBody, SentMessage } from "../src/channels/types.js";
 import { pollUntilClosed } from "../src/poll.js";
 
 function consent(url: string, step?: ChargeInstrument["consent_step"]): ChargeInstrument {
@@ -71,5 +73,30 @@ describe("two consent pages in one attempt", () => {
       { url: "https://app.example/pay/1", step: "sign" },
     ]);
     expect(result.execution.state).toBe("settled");
+  });
+});
+
+describe("a consent link in the channel log", () => {
+  it("the person gets the whole link; channel.jsonl keeps where it pointed, never its query", async () => {
+    const delivered: OutboundBody[] = [];
+    const inbox: InboundMessage[] = [{ id: "wamid.in.1", from: "+5511900000001", text: "sim", timestamp: Date.parse("2026-10-28T15:00:00Z") / 1000 }];
+    const backend: ChannelBackend = {
+      name: "scripted",
+      live: false,
+      open: async () => undefined,
+      next: async () => inbox.shift(),
+      deliver: async (_to: string, body: OutboundBody): Promise<SentMessage> => (delivered.push(body), { id: `wamid.out.${delivered.length}`, state: "sent" }),
+      onStatus: () => undefined,
+      close: async () => undefined,
+    };
+    const channel = new WhatsAppChannel({ backend, conversation: { contact: "+5511900000001" }, now: () => new Date("2026-10-28T15:00:05Z"), templates: [] });
+    await channel.next();
+    const link = "https://app.example/agentic/pay/abc?token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl";
+    await channel.send({ kind: "instrument", instrument: "consent_url", value: link, cta: consentCta("sign") });
+    expect(delivered.at(-1)).toMatchObject({ value: link });
+    const logged = JSON.stringify(channel.log());
+    expect(logged).toContain("https://app.example/agentic/pay/abc?<redacted>");
+    expect(logged).not.toContain("token=");
+    expect(logged).not.toContain("eyJ");
   });
 });
