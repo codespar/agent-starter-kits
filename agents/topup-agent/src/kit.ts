@@ -14,12 +14,19 @@ import { relative } from "node:path";
 import { CORE_STRINGS, formatBRL, loadMandate, railErrorOf, type Execution, type Mandate } from "@codespar/agent-core";
 import { defineAgent, toldKey, type AgentKit, type SandboxPayer } from "@codespar/agent-runtime";
 import { HttpSweepingApi } from "./iniciador.js";
+import { HttpJsrApi } from "./iniciador-mcp.js";
+import { DEVICE_CONTEXT, FixtureJsrApi, JsrPullRail, creditorPayeeId } from "./modules/jsr-pull.js";
 import { FixtureSweepingApi, SweepingPullRail, manualRiskSignals, sweepingLimits, type FixtureFate, type SweepingLimits } from "./modules/sweeping-pull.js";
 import { STRINGS } from "./strings.js";
 import { endToEndOf, makeHandlers } from "./topup.js";
 
 /** The variables `--rail api` needs, by name only. The values live in the agent's `.env` or the shell, never in a tracked file. */
 const API_ENV = ["INICIADOR_CLIENT_ID", "INICIADOR_CLIENT_SECRET", "INICIADOR_TEST_TAX_ID", "INICIADOR_CREDITOR_ID", "INICIADOR_TRIGGER_ID", "INICIADOR_PARTICIPANT_ID"] as const;
+/**
+ * `--rail api` with `INICIADOR_RAIL=jsr`: Pix with a passkey through the agentic MCP. The creditor goes inline
+ * (the person's own account at the receiving bank), so there is no creditor id and no trigger.
+ */
+const JSR_ENV = ["INICIADOR_CLIENT_ID", "INICIADOR_CLIENT_SECRET", "INICIADOR_TEST_TAX_ID", "INICIADOR_PARTICIPANT_ID", "INICIADOR_CREDITOR_NAME", "INICIADOR_CREDITOR_ISPB", "INICIADOR_CREDITOR_ISSUER", "INICIADOR_CREDITOR_NUMBER", "INICIADOR_CREDITOR_ACCOUNT_TYPE"] as const;
 
 /**
  * The mandate with the two limits the bank authorization also carries, and,
@@ -71,6 +78,32 @@ whatsapp: --backend simulator|cloud-api  --conversation <name>  --scripted`,
   buildRail: (ctx) => {
     const limits = sweepingLimits(ctx.env);
     const base = ctx.mandate ?? loadMandate(ctx.manifest.resolvePath(ctx.manifest.manifest.mandate_schema));
+    if (ctx.kind === "api" && ctx.env["INICIADOR_RAIL"]?.trim() === "jsr") {
+      const missing = JSR_ENV.filter((name) => !ctx.env[name]?.trim());
+      if (missing.length > 0) throw new Error(`--rail api with INICIADOR_RAIL=jsr needs ${missing.join(", ")} (see the README; the values never go in a tracked file)`);
+      const env = (name: (typeof JSR_ENV)[number]) => ctx.env[name]!.trim();
+      // The person's own account: the same CPF on both sides unless INICIADOR_CREDITOR_TAX_ID says otherwise.
+      const creditor = { name: env("INICIADOR_CREDITOR_NAME"), taxId: ctx.env["INICIADOR_CREDITOR_TAX_ID"]?.trim() || env("INICIADOR_TEST_TAX_ID"), ispb: env("INICIADOR_CREDITOR_ISPB"), issuer: env("INICIADOR_CREDITOR_ISSUER"), number: env("INICIADOR_CREDITOR_NUMBER"), accountType: env("INICIADOR_CREDITOR_ACCOUNT_TYPE") };
+      const payee = creditorPayeeId(creditor);
+      const api = new HttpJsrApi({ baseUrl: ctx.env["INICIADOR_BASE_URL"], credentials: { clientId: env("INICIADOR_CLIENT_ID"), clientSecret: env("INICIADOR_CLIENT_SECRET") } });
+      const rail = new JsrPullRail(
+        ctx.store,
+        api,
+        { payee, creditor, participantId: env("INICIADOR_PARTICIPANT_ID"), taxId: env("INICIADOR_TEST_TAX_ID"), userName: ctx.env["INICIADOR_TEST_USER_NAME"]?.trim() || "CodeSpar Sandbox", limits, deviceContext: DEVICE_CONTEXT, alwaysEnroll: ctx.env["INICIADOR_JSR_ENROLL"]?.trim() === "always", ...(ctx.now ? { clock: ctx.now } : {}) },
+        true,
+      );
+      const payer: SandboxPayer = {
+        kind: "api",
+        async pay() {
+          return { ok: false, detail: "the person registers the passkey and signs on Iniciador's hosted pages; the JSR sandbox has no payer route" };
+        },
+        behave() {
+          /* a person, not a fixture */
+        },
+      };
+      // The MCP answers in about a second; a look every 3 s is what the 2026-10-27 exercise used.
+      return { rail, mandate: mandateFor(base, limits, payee), pollIntervalMs: 3000, payer };
+    }
     if (ctx.kind === "api") {
       const missing = API_ENV.filter((name) => !ctx.env[name]?.trim());
       if (missing.length > 0) throw new Error(`--rail api needs ${missing.join(", ")} (see the README; the values never go in a tracked file)`);
@@ -102,6 +135,26 @@ whatsapp: --backend simulator|cloud-api  --conversation <name>  --scripted`,
         },
       };
       return { rail, mandate: mandateFor(base, limits, creditorId), pollIntervalMs: 2000, payer };
+    }
+    if (ctx.env["INICIADOR_RAIL"]?.trim() === "jsr") {
+      // The JSR rail on its offline fixture: the person registers the passkey and signs at the first look, or lets the payment expire.
+      const fixture = new FixtureJsrApi(ctx.store, ctx.envVar("STUB_PAYER") === "expires" ? "lets-expire" : "signs");
+      const creditor = { name: "Minha conta (fixture)", taxId: "00000000000", ispb: "00000000", issuer: "0001", number: "1", accountType: "TRAN" };
+      const payee = creditorPayeeId(creditor);
+      const rail = new JsrPullRail(ctx.store, fixture, { payee, creditor, participantId: "participant-fixture", taxId: "00000000000", userName: "Fixture", limits, deviceContext: DEVICE_CONTEXT, ...(ctx.now ? { clock: ctx.now } : {}) }, true);
+      return {
+        rail,
+        mandate: mandateFor(base, limits, payee),
+        pollIntervalMs: 0,
+        payer: {
+          kind: "stub",
+          async pay() {
+            return { ok: true, detail: "fixture: the person registers the passkey and signs" };
+          },
+          behave: (b) => fixture.setFate(b === "expires" ? "lets-expire" : "signs"),
+          decideFor: (_attemptId, b) => fixture.setFate(b === "expires" ? "lets-expire" : "signs"),
+        },
+      };
     }
     // TOPUP_STUB_PAYER=pays|expires|never: what the fixture person does at the bank, from a test process.
     const fates: Record<string, FixtureFate> = { pays: "approves", expires: "expires", never: "never" };
@@ -180,9 +233,10 @@ whatsapp: --backend simulator|cloud-api  --conversation <name>  --scripted`,
   /** The terminal's copy of what the WhatsApp channel sends: the amount, then the bank's link on a line of its own. */
   presentInstrument: (execution, _instalment, _authorizationId, instrument, tell, locale) => {
     if (!instrument.consent_url) return;
+    const words = CORE_STRINGS[locale];
     tell("");
     tell(formatBRL(execution.total, locale));
-    tell(CORE_STRINGS[locale].consentLink);
+    tell(instrument.consent_step === "enroll" ? words.enrollLink : instrument.consent_step === "sign" ? words.signLink : words.consentLink);
     tell(instrument.consent_url);
     tell("");
   },
