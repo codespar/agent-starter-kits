@@ -37,12 +37,20 @@ export function instrumentBodies(execution: Execution, instalment: number, charg
   }
   if (instrument.consent_url) {
     // One message: the link is a button to tap, not a string to copy. The backend falls back to the lead line and the bare link.
-    bodies.push({ kind: "instrument", instrument: "consent_url", value: instrument.consent_url, cta: { body: text.consentPrompt, button: text.consentButton, lead: text.consentLink } });
+    bodies.push({ kind: "instrument", instrument: "consent_url", value: instrument.consent_url, cta: consentCta(instrument.consent_step, locale) });
   }
   if (instrument.boleto_bank_line) {
     bodies.push({ kind: "text", text: text.boletoLine });
     bodies.push({ kind: "instrument", instrument: "boleto_bank_line", value: instrument.boleto_bank_line });
   }
   return bodies;
+}
+
+/** The words on a consent link's button: the bank's one page, or which of a JSR pull's two it is. */
+export function consentCta(step: ChargeInstrument["consent_step"], locale: Locale = "pt-BR"): { body: string; button: string; lead: string } {
+  const text = CORE_STRINGS[locale];
+  if (step === "enroll") return { body: text.enrollPrompt, button: text.enrollButton, lead: text.enrollLink };
+  if (step === "sign") return { body: text.signPrompt, button: text.signButton, lead: text.signLink };
+  return { body: text.consentPrompt, button: text.consentButton, lead: text.consentLink };
 }
 
