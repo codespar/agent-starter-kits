@@ -212,4 +212,13 @@ export interface ChargeInstrument {
    * by hand. Absent on a bolepix.
    */
   consent_url?: string | null;
+  /**
+   * Which of a pull's consent pages `consent_url` is, when a rail hands the
+   * payer more than one in one attempt: `enroll` registers a passkey at the
+   * bank, `sign` approves this one payment with it (Iniciador JSR). It picks
+   * the words the payer reads and keys the once-only presentation, so the
+   * second page is shown after the first. Absent on a single consent page
+   * (sweeping), which reads and presents as it always has.
+   */
+  consent_step?: "enroll" | "sign";
 }

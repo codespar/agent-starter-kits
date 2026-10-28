@@ -49,6 +49,13 @@ const pt = {
   consentLink: "Autorize no seu banco por este link (vale por cerca de 1 minuto):",
   consentPrompt: "Autorize no seu banco. O link vale por cerca de 1 minuto.",
   consentButton: "Autorizar no banco",
+  // The same, for a pull with two consent pages (ChargeInstrument.consent_step): the passkey first, then each payment.
+  enrollLink: "Cadastre sua biometria no banco por este link (vale por cerca de 1 minuto):",
+  enrollPrompt: "Cadastre sua biometria no banco. O link vale por cerca de 1 minuto.",
+  enrollButton: "Cadastrar biometria",
+  signLink: "Confirme com a biometria do seu celular por este link (vale por cerca de 10 minutos):",
+  signPrompt: "Confirme com a biometria do seu celular. O link vale por cerca de 10 minutos.",
+  signButton: "Confirmar biometria",
 
   // The collection-hours rule: the envelope refuses to draft outside it, the channel refuses to speak.
   outsideCollectionHours: (window: string, timezone: string, clock: string) => `fora do horário de cobrança (${window} ${timezone}); agora são ${clock}`,
@@ -137,6 +144,12 @@ const en: CoreStrings = {
   consentLink: "Authorise it at your bank with this link (valid for about 1 minute):",
   consentPrompt: "Authorise it at your bank. The link is valid for about 1 minute.",
   consentButton: "Authorise at the bank",
+  enrollLink: "Register your biometrics at the bank with this link (valid for about 1 minute):",
+  enrollPrompt: "Register your biometrics at the bank. The link is valid for about 1 minute.",
+  enrollButton: "Register biometrics",
+  signLink: "Confirm with your phone's biometrics with this link (valid for about 10 minutes):",
+  signPrompt: "Confirm with your phone's biometrics. The link is valid for about 10 minutes.",
+  signButton: "Confirm biometrics",
 
   outsideCollectionHours: (window, timezone, clock) => `outside collection hours (${window} ${timezone}); it is ${clock} now`,
 
