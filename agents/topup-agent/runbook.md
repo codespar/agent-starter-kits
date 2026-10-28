@@ -21,3 +21,13 @@ What to say and do while the demo runs, against Iniciador's sweeping sandbox.
 If the link expires (step 5 took too long): the conversation says so and offers another. Type `sim` again; a new execution, a new link.
 
 If the run stops looking before the pull completes: `npm run poll -- --channel whatsapp --conversation recarga`.
+
+## On a phone
+
+The same demo with the conversation on a phone, over the local network, instead of on the computer's screen. The agent, the emulator and the channel's receiver stay on the computer; the phone only shows the simulator's page and opens the links.
+
+1. **The emulator on every interface.** `npm run whatsapp:emulator -- --host 0.0.0.0`. It answers every origin (CORS `*`) with a development app secret, so anybody on the network can read and post into the simulated conversations: only on a network you trust, and stop it when the demo ends. The webhook stays on `127.0.0.1:4399`; nothing else changes on the agent's side, which still talks to `http://127.0.0.1:4290`.
+2. **The simulator's page on every interface.** In a checkout of [`whatsapp-simulator`](https://github.com/fabianocruz/whatsapp-simulator), start its web app with `next dev -H 0.0.0.0` (port 3000).
+3. **The computer's address.** `hostname -I | awk '{print $1}'` (Linux) or `ipconfig getifaddr en0` (macOS). If a firewall is on, it has to let ports 3000 and 4290 in from the local network.
+4. **On the phone**, on the same Wi-Fi: open `http://<address>:3000`, turn on live mode and change the emulator URL from `http://127.0.0.1:4290` to `http://<address>:4290`. To check from the phone that it reaches the emulator, the page's live status turns connected; from the computer, `curl -si -H "Origin: http://<address>:3000" http://<address>:4290/_sim/events --max-time 2 | grep -i access-control-allow-origin` prints `*`.
+5. Then steps 1 to 6 above, typing on the phone. The bank's link opens in the phone's own browser.
