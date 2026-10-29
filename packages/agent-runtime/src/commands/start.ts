@@ -30,6 +30,11 @@ function isFile(path: string): boolean {
   return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
 }
 
+/** Each recorded scenario of the agent by name, with the first thing the person says in it: what a run with no model can replay. */
+function recordedFirstTurns(agent: Agent): Array<{ name: string; input: string }> {
+  return listScenarios(agent).map((name) => ({ name, input: loadScenario(agent, name).turns[0].input }));
+}
+
 interface Args {
   input?: string;
   scenario?: string;
@@ -169,6 +174,13 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     return 2;
   }
 
+  // An interactive terminal with no model has nothing to answer the person with, and a replay is never picked for it silently (#112).
+  if (args.channel !== "whatsapp" && args.input === undefined && !args.transcript && resolveProvider(process.env, args.provider) === "replay") {
+    const scenarios = recordedFirstTurns(agent).map((t) => `${t.name} ("${t.input}")`);
+    say(`no ANTHROPIC_API_KEY or GEMINI_API_KEY and no transcript: the interactive terminal needs a model. Set the key, pass --transcript <file>, or replay a recorded run with --scenario <name>${scenarios.length ? `: ${scenarios.join(", ")}` : ""}`);
+    return 1;
+  }
+
   if (agent.kit.ensureMandate) {
     const ok = await agent.kit.ensureMandate({ agentDir: agent.dir, argv, locale, say, railKind, oneShot: args.input !== undefined, ask: defaultAsk });
     if (!ok) return 1;
@@ -193,7 +205,7 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     const match = listScenarios(agent).map((n) => loadScenario(agent, n)).find((s) => s.turns[0].input === firstInput);
     if (match) transcript = resolve(scenariosDir(agent), match.transcript);
     else {
-      say(`no ANTHROPIC_API_KEY or GEMINI_API_KEY and no recorded transcript for that input. Set the key, pass --transcript, or use one of: ${listScenarios(agent).map((n) => `"${loadScenario(agent, n).turns[0].input}"`).join(", ")}`);
+      say(`no ANTHROPIC_API_KEY or GEMINI_API_KEY and no recorded transcript for that input. Set the key, pass --transcript, or use one of: ${recordedFirstTurns(agent).map((t) => `"${t.input}"`).join(", ")}`);
       return 1;
     }
   }
