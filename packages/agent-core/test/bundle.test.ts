@@ -8,7 +8,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { maskPayee } from "../src/bundle.js";
-import { ESCOLA, harness } from "./helpers.js";
+import { ESCOLA, harness, MERCADO } from "./helpers.js";
 
 const approver = { id: "usr_demo", channel: "terminal" };
 
@@ -93,8 +93,8 @@ function filesUnder(dir: string): string[] {
 
 describe("the proof bundle holds no full payee key (#116)", () => {
   it("no file of a run that escalated, settled and was refused names a mandate payee in the clear", async () => {
-    // Above the escalation amount and refused by the rail: the escalation detail and the refusal message both name the payee.
-    const h = harness({ mode: "human", rail: { refusePayees: [ESCOLA] } });
+    // In mandate mode the first payment to mercado escalates with a detail that names its key, and the rail's refusal of escola names escola's.
+    const h = harness({ mode: "mandate", rail: { refusePayees: [ESCOLA] } });
     h.bundle.mandateSnapshot(h.engine.mandate);
     const big = await h.engine.draft({ items: [{ payee: "escola", amount: 185000 }] });
     const small = await h.engine.draft({ items: [{ payee: "mercado", amount: 1000 }] });
@@ -104,7 +104,9 @@ describe("the proof bundle holds no full payee key (#116)", () => {
 
     const payees = [...h.engine.mandate.beneficiaries.map((b) => b.payee), ...h.engine.mandate.merchant_allowlist].filter((p) => p !== "*");
     // The free text is there, with the key masked inside it.
-    expect(readFileSync(join(h.bundle.dir, "events.jsonl"), "utf8")).toContain(`(${maskPayee(ESCOLA)})`);
+    const log = readFileSync(join(h.bundle.dir, "events.jsonl"), "utf8");
+    expect(log).toContain(`(${maskPayee(MERCADO)}) under this mandate`);
+    expect(log).toContain(`refused payee ${maskPayee(ESCOLA)}`);
     const files = filesUnder(h.bundle.dir);
     expect(files.map((f) => f.slice(h.bundle.dir.length + 1))).toEqual(expect.arrayContaining(["events.jsonl", "approval.json", "mandate.snapshot.json"]));
     for (const file of files) {
