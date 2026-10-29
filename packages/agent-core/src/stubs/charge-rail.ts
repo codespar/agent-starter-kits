@@ -12,6 +12,7 @@
  * nothing yet. With a real key the scenario runner calls the sandbox pay
  * route instead; this file never talks to the network.
  */
+import { maskPayee } from "../bundle.js";
 import { sha256Hex } from "../hash.js";
 import type { PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt } from "../rail.js";
 import type { StateStore } from "../state/store.js";
@@ -86,7 +87,7 @@ export class StubChargeRail implements PaymentRail {
 
     const at = this.clock().toISOString();
     if (this.options.refusePayees?.includes(payment.payee)) {
-      const outcome: RailOutcome = { status: "failed", code: "issuer_refused", message: `stub: issuer refused a charge to ${payment.payee}` };
+      const outcome: RailOutcome = { status: "failed", code: "issuer_refused", message: `stub: issuer refused a charge to ${maskPayee(payment.payee)}` };
       const { actor: _actor, ...request } = payment;
       this.store.stubRailPut(payment.attempt_id, request, outcome, at);
       this.options.afterDispatch?.(payment.attempt_id);

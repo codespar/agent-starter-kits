@@ -4,11 +4,11 @@
  * request and its answer per attempt, and a receipt path that travels with
  * the bundle instead of naming the machine that wrote it.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { maskPayee } from "../src/bundle.js";
-import { harness } from "./helpers.js";
+import { ESCOLA, harness } from "./helpers.js";
 
 const approver = { id: "usr_demo", channel: "terminal" };
 
@@ -81,5 +81,55 @@ describe("the proof bundle records the rail call and its answer", () => {
     for (const raw of ["escola@exemplo.com.br", "+5511999990001", "12345678909", "*"]) {
       expect(maskPayee(maskPayee(raw))).toBe(maskPayee(raw));
     }
+  });
+});
+
+function filesUnder(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    return statSync(path).isDirectory() ? filesUnder(path) : [path];
+  });
+}
+
+describe("the proof bundle holds no full payee key (#116)", () => {
+  it("no file of a run that escalated, settled and was refused names a mandate payee in the clear", async () => {
+    // Above the escalation amount and refused by the rail: the escalation detail and the refusal message both name the payee.
+    const h = harness({ mode: "human", rail: { refusePayees: [ESCOLA] } });
+    h.bundle.mandateSnapshot(h.engine.mandate);
+    const big = await h.engine.draft({ items: [{ payee: "escola", amount: 185000 }] });
+    const small = await h.engine.draft({ items: [{ payee: "mercado", amount: 1000 }] });
+    if (!big.ok || !small.ok) throw new Error("refused");
+    await h.engine.execute(h.engine.approve(big.execution.id, approver).id);
+    await h.engine.execute(h.engine.approve(small.execution.id, approver).id);
+
+    const payees = [...h.engine.mandate.beneficiaries.map((b) => b.payee), ...h.engine.mandate.merchant_allowlist].filter((p) => p !== "*");
+    // The free text is there, with the key masked inside it.
+    expect(readFileSync(join(h.bundle.dir, "events.jsonl"), "utf8")).toContain(`(${maskPayee(ESCOLA)})`);
+    const files = filesUnder(h.bundle.dir);
+    expect(files.map((f) => f.slice(h.bundle.dir.length + 1))).toEqual(expect.arrayContaining(["events.jsonl", "approval.json", "mandate.snapshot.json"]));
+    for (const file of files) {
+      const text = readFileSync(file, "utf8");
+      for (const payee of payees) expect(text.includes(payee), `${payee} in ${file}`).toBe(false);
+    }
+  });
+
+  it("approval.json is the artifact with its payees masked, its hash and signature untouched, and the full one stays in state.db", async () => {
+    const { h } = await settledRun();
+    const [copy] = h.bundle.readApprovals();
+    const full = h.store.getApproval(copy!.approval_id)!;
+    expect(copy!.payee_masked).toBe(true);
+    expect(copy!.items.map((i) => i.payee)).toEqual([maskPayee(ESCOLA)]);
+    expect(copy!.items_hash).toBe(full.items_hash);
+    expect(copy!.signature).toEqual(full.signature);
+    expect(full.items.map((i) => i.payee)).toEqual([ESCOLA]);
+    expect(full.payee_masked).toBeUndefined();
+  });
+
+  it("the stub rail refuses a payee scripted by its masked key, which is what rerun reads from a bundle", async () => {
+    const h = harness({ mode: "human", rail: { refusePayees: [maskPayee(ESCOLA)] } });
+    const draft = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });
+    if (!draft.ok) throw new Error("refused");
+    const out = await h.engine.execute(h.engine.approve(draft.execution.id, approver).id);
+    expect(out.state).toBe("failed");
   });
 });

@@ -347,11 +347,13 @@ describe("partial failure of a multi-item execution, and rerun reproducing it", 
     expect((payload as unknown as { run_outcome: unknown }).run_outcome).toEqual({ settled: 3, failed: 1, declined: 0, already_paid: 0, open: 0 });
     // #50: the rail's own code and message, verbatim, next to the reason — on stdout for a script, on stderr for a person.
     const railError = (payload.executions[0] as unknown as { rail_error: unknown }).rail_error;
-    expect(railError).toMatchObject({ outcome: "failed", code: "psp_dispatch_failed", message: "stub: provider refused payee +5511999990001" });
-    expect(first.stderr).toContain("-> failed (rail_failed): psp_dispatch_failed — stub: provider refused payee +5511999990001");
+    expect(railError).toMatchObject({ outcome: "failed", code: "psp_dispatch_failed", message: "stub: provider refused payee +551***0001" });
+    expect(first.stderr).toContain("-> failed (rail_failed): psp_dispatch_failed — stub: provider refused payee +551***0001");
     expect(payload.receipts).toHaveLength(3);
     const events = readFileSync(join(runsDir, payload.run_id, "events.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; payload: { status?: string } });
     expect(events.filter((e) => e.type === "rail.outcome").map((e) => e.payload.status)).toEqual(["settled", "failed", "settled", "settled"]);
+    // #116: the refused key is masked in the bundle, and the rerun below reads it from there.
+    for (const file of ["events.jsonl", "approval.json"]) expect(readFileSync(join(runsDir, payload.run_id, file), "utf8")).not.toContain("+5511999990001");
 
     const rerun = run("rerun", [payload.run_id, "--json"], { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir });
     expect(rerun.code).toBe(0);

@@ -18,6 +18,8 @@ export interface TranscriptLine {
 
 export class ProofBundle {
   readonly dir: string;
+  /** Every payee key this bundle has been handed, so free text that names one (an escalation detail) is masked too. */
+  private readonly payees = new Set<string>();
 
   constructor(
     runsDir: string,
@@ -44,8 +46,22 @@ export class ProofBundle {
       .map((l) => JSON.parse(l) as TranscriptLine);
   }
 
+  /** Payee keys are masked on the way in (#116), in their fields and in any text that names one: the full key stays in state.db, which never travels. */
   event(event: Record<string, unknown>): void {
-    appendFileSync(join(this.dir, "events.jsonl"), JSON.stringify(event) + "\n");
+    appendFileSync(join(this.dir, "events.jsonl"), JSON.stringify(this.masked(event)) + "\n");
+  }
+
+  /** `value` with every `payee` field masked and every payee key this bundle knows masked inside any other string. */
+  private masked<T>(value: T): T {
+    collectPayees(value, this.payees);
+    const pairs = [...this.payees].sort((a, b) => b.length - a.length).map((raw) => [raw, maskPayee(raw)] as const).filter(([raw, mask]) => raw !== mask);
+    const walk = (v: unknown, key?: string): unknown => {
+      if (typeof v === "string") return key === "payee" ? maskPayee(v) : pairs.reduce((out, [raw, mask]) => out.split(raw).join(mask), v);
+      if (Array.isArray(v)) return v.map((x) => walk(x));
+      if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));
+      return v;
+    };
+    return walk(value) as T;
   }
 
   /**
@@ -80,11 +96,15 @@ export class ProofBundle {
       .map((l) => JSON.parse(l) as Record<string, unknown>);
   }
 
-  /** `approval.json` is the list of artifacts of this run, in approval order. */
+  /**
+   * `approval.json` is the list of artifacts of this run, in approval order. Each is the artifact with its items' payees masked and
+   * `payee_masked: true` (#116): `items_hash` and the signature are the original's, computed over the full items, so the copy's items
+   * no longer hash to it. The full artifact is in state.db, where the engine reads it.
+   */
   approval(artifact: ApprovalArtifact): void {
     const path = join(this.dir, "approval.json");
     const current: ApprovalArtifact[] = existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as ApprovalArtifact[]) : [];
-    if (!current.some((a) => a.approval_id === artifact.approval_id)) current.push(artifact);
+    if (!current.some((a) => a.approval_id === artifact.approval_id)) current.push({ ...this.masked(artifact), payee_masked: true });
     writeFileSync(path, JSON.stringify(current, null, 2) + "\n");
   }
 
@@ -94,6 +114,7 @@ export class ProofBundle {
   }
 
   mandateSnapshot(mandate: Mandate): void {
+    for (const payee of [...mandate.beneficiaries.map((b) => b.payee), ...mandate.merchant_allowlist]) if (payee && payee !== "*") this.payees.add(payee);
     const { signature: _signature, canonical: _canonical, ...safe } = mandate;
     writeFileSync(join(this.dir, "mandate.snapshot.json"), JSON.stringify({ ...safe, beneficiaries: safe.beneficiaries.map((b) => ({ ...b, payee: maskPayee(b.payee) })), merchant_allowlist: safe.merchant_allowlist.map(maskPayee) }, null, 2) + "\n");
   }
@@ -181,6 +202,17 @@ export function copyDisagreesWithRead(copy: Record<string, unknown>, read: Recor
   // Written onto the copy since every spend carries the actor (§2); the read calls it `actor`, the copy `sealed_actor` beside its own stamp.
   if ("sealed_actor" in copy) expected.push(["sealed_actor", canonicalJson(copy["sealed_actor"] ?? null), canonicalJson(read["actor"] ?? null)]);
   return expected.filter(([, a, b]) => a !== b).map(([name]) => name);
+}
+
+/** Adds every string under a `payee` key, at any depth, to `into`. */
+function collectPayees(value: unknown, into: Set<string>): void {
+  if (Array.isArray(value)) for (const v of value) collectPayees(v, into);
+  else if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      if (k === "payee" && typeof v === "string" && v.length > 0 && v !== "*" && !v.includes("***")) into.add(v);
+      else collectPayees(v, into);
+    }
+  }
 }
 
 /** `escola@exemplo.com.br` -> `es***@exemplo.com.br`; `+5511999998888` -> `+55***8888`; a UUID keeps its first and last 4. */

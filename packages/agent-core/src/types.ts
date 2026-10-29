@@ -168,6 +168,8 @@ export interface ApprovalArtifact {
   escalation?: { trigger: EscalationTrigger; detail: string };
   actor: Actor;
   signature: { alg: "HMAC-SHA256"; key_id: string; value: string };
+  /** Set on the proof bundle's copy only: its items' payees are masked, so `items_hash` is not the hash of the items it lists. */
+  payee_masked?: true;
 }
 
 export interface ItemOutcome {

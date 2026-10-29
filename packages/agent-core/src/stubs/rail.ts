@@ -10,15 +10,21 @@
  * whatever it held would let a suite pass that the API fails. Receipts here are HMAC-shaped only in
  * form; nothing about them is verifiable by anyone.
  */
+import { maskPayee } from "../bundle.js";
 import { canonicalJson, sha256Hex } from "../hash.js";
 import { checkQuote } from "../quote.js";
 import { checkSpendApproval, wireActorOf, type PaymentRail, type RailLookup, type RailOutcome, type RailPayment, type RailReceipt, type WireActor } from "../rail.js";
 import type { StateStore } from "../state/store.js";
 import type { Actor } from "../types.js";
 
+/** A scripted payee list names this payee, by its key or by the key as a bundle masks it. */
+function listsPayee(list: string[] | undefined, payee: string): boolean {
+  return list !== undefined && (list.includes(payee) || list.includes(maskPayee(payee)));
+}
+
 export interface StubRailOptions {
   clock?: () => Date;
-  /** Payees the stub refuses, to script a `failed` outcome. */
+  /** Payees the stub refuses, to script a `failed` outcome. A masked key matches too: `rerun` reads it from a bundle, which masks it. */
   refusePayees?: string[];
   /** Attempt ids the stub answers `uncertain` for, once. */
   uncertainOnce?: string[];
@@ -104,7 +110,7 @@ export class StubRail implements PaymentRail {
     const existing = this.store.stubRailGet(payment.attempt_id);
     if (existing) return this.repeat(payment.attempt_id, existing.request as Omit<RailPayment, "actor">, existing.outcome as Recorded, asked);
 
-    const uncertainPayee = this.options.uncertainPayees?.includes(payment.payee) === true && !this.uncertainAnswered.has(payment.attempt_id);
+    const uncertainPayee = listsPayee(this.options.uncertainPayees, payment.payee) && !this.uncertainAnswered.has(payment.attempt_id);
     if (this.uncertainArmed || this.uncertainPending.has(payment.attempt_id) || uncertainPayee) {
       // Armed and payee-scripted attempts were TAKEN by the provider, so they are on its books as in flight; `uncertainOnce` never reached it.
       if (this.uncertainArmed || uncertainPayee) this.store.stubRailPut(payment.attempt_id, request, IN_FLIGHT, this.clock().toISOString());
@@ -115,8 +121,8 @@ export class StubRail implements PaymentRail {
     }
 
     const at = this.clock().toISOString();
-    const outcome: RailOutcome = this.options.refusePayees?.includes(payment.payee)
-      ? { status: "failed", code: "psp_dispatch_failed", message: `stub: provider refused payee ${payment.payee}` }
+    const outcome: RailOutcome = listsPayee(this.options.refusePayees, payment.payee)
+      ? { status: "failed", code: "psp_dispatch_failed", message: `stub: provider refused payee ${maskPayee(payment.payee)}` }
       : settledOutcome(payment.attempt_id, { stub: true, attempt_id: payment.attempt_id, at });
     this.payCount += 1;
     this.store.stubRailPut(payment.attempt_id, request, outcome, at);

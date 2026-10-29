@@ -97,7 +97,7 @@ receipts/               the receipts the rail returned, each stamped with the ac
 run.json                mode, rail, mandate id
 ```
 
-No API key and no secret is written there. The payee's Pix key is masked in `mandate.snapshot.json` and in `receipts/`, and written in the clear in `events.jsonl` and `approval.json`: `rerun` reads it from the event log and `items_hash` is computed over it ([`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §37). `npm run inspect` masks it on the way out. Treat the folder as holding payee keys before handing it over.
+No API key and no secret is written there, and no payee's Pix key in the clear: it is masked in every file, in its `payee` fields and in any text that names it (an escalation detail, a rail's refusal message). Each artifact in `approval.json` carries `payee_masked: true`: its items list the masked keys, while `items_hash` and the signature are the original's, computed over the full keys, so the copy's items no longer hash to it. The full artifact stays in `.codespar/state.db`, which never travels. `rerun` reads the masked key from the event log and the stub rail matches it; `verify --approval` skips the items of a masked copy and still holds the sealed hash against its `items_hash`. A bundle written before this change has no `payee_masked`, keeps its keys in the clear in `events.jsonl` and `approval.json`, and verifies as it always did: treat such a folder as holding payee keys ([`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §37).
 
 The receipt copies carry both of the API's seals. `receipt_sig` is the HMAC, which proves the payment to whoever runs this agent; `receipt_sig_ed25519` and `receipt_sig_kid` are the asymmetric half, which proves it to anybody:
 

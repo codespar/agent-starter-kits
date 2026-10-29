@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ESCOLA, FUNCIONARIA, harness, MERCADO } from "./helpers.js";
+import { maskPayee } from "../src/bundle.js";
 import { isReplayedSettlement } from "../src/engine.js";
 import type { Execution } from "../src/state-machine.js";
 
@@ -664,7 +665,10 @@ describe("multi-item partial failure is named item by item", () => {
       expect.objectContaining({ index: 1, status: "failed", error: expect.stringContaining("psp_dispatch_failed") }),
     ]);
     expect(readdirSync(join(h.bundle.dir, "receipts"))).toHaveLength(1);
-    expect(h.bundle.readApprovals()[0]?.items.map((i) => i.payee)).toEqual([ESCOLA, MERCADO]);
+    // The bundle's copy masks the keys (#116); the artifact the engine holds is the full one.
+    const copy = h.bundle.readApprovals()[0];
+    expect(copy?.items.map((i) => i.payee)).toEqual([maskPayee(ESCOLA), maskPayee(MERCADO)]);
+    expect(h.store.getApproval(copy!.approval_id)?.items.map((i) => i.payee)).toEqual([ESCOLA, MERCADO]);
     expect(h.store.getOutbox(out.idempotency_key)?.status).toBe("failed");
     expect(h.store.getOutbox(out.idempotency_key)?.response).toEqual(out.outcomes);
   });
