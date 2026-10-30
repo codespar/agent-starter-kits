@@ -15,6 +15,7 @@ import {
   isReplayedSettlement,
   type Execution,
   railErrorOf,
+  refusedDispatchesOf,
 } from "@codespar/agent-core";
 import { NoMandateError, defineAgent, describePayment, type AgentKit } from "@codespar/agent-runtime";
 import { loadLocalMandate, runEmbeddedConsent } from "./modules/embedded-consent.js";
@@ -176,15 +177,8 @@ options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript 
     s.engine.ingestExternalEvent({ event_id: "evt_paid_2", type: "commerce.payment.succeeded", attempt_id: attempt });
   },
 
-  // The rail's answers are part of the recording: a payee the rail refused in the original run is refused in the rerun.
-  rerunPlan: (events) => {
-    const dispatched = new Map(events.filter((e) => e["type"] === "rail.dispatch").map((e) => [(e["payload"] as { attempt_id: string }).attempt_id, (e["payload"] as { payee: string }).payee]));
-    const refusePayees = events
-      .filter((e) => e["type"] === "rail.outcome" && (e["payload"] as { status: string }).status === "failed")
-      .map((e) => dispatched.get((e["payload"] as { attempt_id: string }).attempt_id))
-      .filter((p): p is string => typeof p === "string");
-    return { stubRail: { refusePayees } };
-  },
+  // The rail's answers are part of the recording: a dispatch the rail refused in the original run is refused in the rerun, by its position, since the bundle holds the payee masked.
+  rerunPlan: (events) => ({ stubRail: { refuseDispatches: refusedDispatchesOf(events) } }),
   rerunComparesOutcomes: true,
 };
 

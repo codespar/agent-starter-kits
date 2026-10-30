@@ -297,8 +297,9 @@ function pickArtifact(input: unknown, id: string | undefined): ApprovalClaim | u
   return {
     approval_id: chosen["approval_id"] as string,
     items_hash: chosen["items_hash"] as string,
-    // A bundle's copy masks its items' payees, so they no longer hash to `items_hash`: the sealed hash is still held against it, and the verdict says the items were not.
-    ...(chosen["payee_masked"] === true ? { payee_masked: true as const } : Array.isArray(chosen["items"]) ? { items: chosen["items"] as ExecutionItem[] } : {}),
+    ...(Array.isArray(chosen["items"]) ? { items: chosen["items"] as ExecutionItem[] } : {}),
+    // A bundle's copy masks its items' payees, so they no longer hash to `items_hash`: they are recomputed against `items_hash_masked`, and the verdict says the keys were not checked.
+    ...(chosen["payee_masked"] === true ? { payee_masked: true as const, ...(typeof chosen["items_hash_masked"] === "string" ? { items_hash_masked: chosen["items_hash_masked"] } : {}) } : {}),
     ...(isRecord(batch) && typeof batch["batch_hash"] === "string" ? { batch: { batch_hash: batch["batch_hash"] } } : {}),
   };
 }

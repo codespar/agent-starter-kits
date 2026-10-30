@@ -17,15 +17,30 @@ import { checkSpendApproval, wireActorOf, type PaymentRail, type RailLookup, typ
 import type { StateStore } from "../state/store.js";
 import type { Actor } from "../types.js";
 
-/** A scripted payee list names this payee, by its key or by the key as a bundle masks it. Both stub rails match with it. */
-export function listsPayee(list: string[] | undefined, payee: string): boolean {
-  return list !== undefined && (list.includes(payee) || list.includes(maskPayee(payee)));
+/**
+ * The dispatches of a recorded run the rail refused, by their position among its `rail.dispatch` events: what `rerun` scripts
+ * `refuseDispatches` with. By position and never by payee, because a bundle holds the payee masked and a mask names more than
+ * one key (`+5511999990001` and `+5511888880001` are both `+551***0001`): a rerun that refused by mask would refuse both.
+ */
+export function refusedDispatchesOf(events: ReadonlyArray<Record<string, unknown>>): number[] {
+  const out: number[] = [];
+  let ordinal = 0;
+  events.forEach((event, i) => {
+    if (event["type"] !== "rail.dispatch") return;
+    const attempt = (event["payload"] as { attempt_id?: unknown } | undefined)?.attempt_id;
+    const answer = events.slice(i + 1).find((e) => e["type"] === "rail.outcome" && (e["payload"] as { attempt_id?: unknown } | undefined)?.attempt_id === attempt);
+    if ((answer?.["payload"] as { status?: unknown } | undefined)?.status === "failed") out.push(ordinal);
+    ordinal += 1;
+  });
+  return out;
 }
 
 export interface StubRailOptions {
   clock?: () => Date;
-  /** Payees the stub refuses, to script a `failed` outcome. A masked key matches too: `rerun` reads it from a bundle, which masks it. */
+  /** Payees the stub refuses, to script a `failed` outcome. Full keys: a masked one matches nothing. */
   refusePayees?: string[];
+  /** The calls to `pay()` the stub refuses, by position from 0, whatever their payee: `rerun` replays a recorded refusal with it (`refusedDispatchesOf`). */
+  refuseDispatches?: number[];
   /** Attempt ids the stub answers `uncertain` for, once. */
   uncertainOnce?: string[];
   /**
@@ -92,6 +107,8 @@ export class StubRail implements PaymentRail {
   private readonly uncertainAnswered = new Set<string>();
   /** How many times pay() reached the point of persisting a NEW attempt. */
   payCount = 0;
+  /** How many times pay() was called, which is how many `rail.dispatch` events the engine wrote. */
+  private dispatches = 0;
 
   /** The NEXT new attempt answers `uncertain` once, whatever its id; the provider still took it, so a later lookup sees it in flight and then settled. For scenarios that reconcile. */
   armUncertainOnce(): void {
@@ -99,6 +116,7 @@ export class StubRail implements PaymentRail {
   }
 
   async pay(payment: RailPayment): Promise<RailOutcome> {
+    const dispatch = this.dispatches++;
     // The same refusal the CodeSpar rail makes before its call, so a scenario exercises it.
     const quoted = checkQuote(payment);
     if (!quoted.ok) return { status: "failed", code: quoted.code, message: `${quoted.detail}; nothing was sent` };
@@ -110,7 +128,7 @@ export class StubRail implements PaymentRail {
     const existing = this.store.stubRailGet(payment.attempt_id);
     if (existing) return this.repeat(payment.attempt_id, existing.request as Omit<RailPayment, "actor">, existing.outcome as Recorded, asked);
 
-    const uncertainPayee = listsPayee(this.options.uncertainPayees, payment.payee) && !this.uncertainAnswered.has(payment.attempt_id);
+    const uncertainPayee = (this.options.uncertainPayees?.includes(payment.payee) ?? false) && !this.uncertainAnswered.has(payment.attempt_id);
     if (this.uncertainArmed || this.uncertainPending.has(payment.attempt_id) || uncertainPayee) {
       // Armed and payee-scripted attempts were TAKEN by the provider, so they are on its books as in flight; `uncertainOnce` never reached it.
       if (this.uncertainArmed || uncertainPayee) this.store.stubRailPut(payment.attempt_id, request, IN_FLIGHT, this.clock().toISOString());
@@ -121,7 +139,7 @@ export class StubRail implements PaymentRail {
     }
 
     const at = this.clock().toISOString();
-    const outcome: RailOutcome = listsPayee(this.options.refusePayees, payment.payee)
+    const outcome: RailOutcome = this.options.refusePayees?.includes(payment.payee) || this.options.refuseDispatches?.includes(dispatch)
       ? { status: "failed", code: "psp_dispatch_failed", message: `stub: provider refused payee ${maskPayee(payment.payee)}` }
       : settledOutcome(payment.attempt_id, { stub: true, attempt_id: payment.attempt_id, at });
     this.payCount += 1;

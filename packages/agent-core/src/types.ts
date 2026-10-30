@@ -170,6 +170,8 @@ export interface ApprovalArtifact {
   signature: { alg: "HMAC-SHA256"; key_id: string; value: string };
   /** Set on the proof bundle's copy only: its items' payees are masked, so `items_hash` is not the hash of the items it lists. */
   payee_masked?: true;
+  /** Set with `payee_masked`: `itemsHash` over the masked items the copy lists. Unkeyed: it catches an edit that left it behind, and binds nothing to the seal. */
+  items_hash_masked?: string;
 }
 
 export interface ItemOutcome {

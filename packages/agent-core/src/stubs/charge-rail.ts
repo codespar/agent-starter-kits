@@ -17,7 +17,6 @@ import { sha256Hex } from "../hash.js";
 import type { PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt } from "../rail.js";
 import type { StateStore } from "../state/store.js";
 import type { Actor, ChargeInstrument } from "../types.js";
-import { listsPayee } from "./rail.js";
 
 export type StubPayerBehaviour = "pays" | "expires" | "never";
 
@@ -25,7 +24,7 @@ export interface StubChargeRailOptions {
   clock?: () => Date;
   /** What the fixture payer does with a receivable, once it is payable. */
   payer?: StubPayerBehaviour;
-  /** Debtor documents the issuer refuses (`failed` issuance), to script a partial failure. A masked document matches too, as in `StubRail`. */
+  /** Debtor documents the issuer refuses (`failed` issuance), to script a partial failure. */
   refusePayees?: string[];
   /** Attempt ids whose create answers `uncertain` once (the issuer's answer was lost); the reservation still exists and a later look finds it. */
   uncertainOnce?: string[];
@@ -87,7 +86,7 @@ export class StubChargeRail implements PaymentRail {
     }
 
     const at = this.clock().toISOString();
-    if (listsPayee(this.options.refusePayees, payment.payee)) {
+    if (this.options.refusePayees?.includes(payment.payee)) {
       const outcome: RailOutcome = { status: "failed", code: "issuer_refused", message: `stub: issuer refused a charge to ${maskPayee(payment.payee)}` };
       const { actor: _actor, ...request } = payment;
       this.store.stubRailPut(payment.attempt_id, request, outcome, at);
@@ -109,14 +108,14 @@ export class StubChargeRail implements PaymentRail {
     const looks = state.looks + 1;
     this.savePayerState(attemptId, { ...state, looks });
 
-    if (listsPayee(this.options.issuerErrorPayees, payment.payee)) {
+    if (this.options.issuerErrorPayees?.includes(payment.payee)) {
       const failed: RailOutcome = { status: "failed", code: "charge_issuer_error", message: `stub: the issuer ended charge ${outcome.transaction_id}'s registration in ERROR: no Pix, no boleto, nothing a payer can pay`, raw: { stub: true } };
       this.replace(attemptId, payment, failed);
       return failed;
     }
-    if (listsPayee(this.options.settlesUnpayablePayees, payment.payee) && looks === 1) return this.update(attemptId, payment, "PROCESSING", false);
+    if (this.options.settlesUnpayablePayees?.includes(payment.payee) && looks === 1) return this.update(attemptId, payment, "PROCESSING", false);
     // First look: the clearing house registered the instrument. It is payable from here.
-    if ((looks === 1 || !outcome.instrument.payable) && !listsPayee(this.options.settlesUnpayablePayees, payment.payee)) {
+    if ((looks === 1 || !outcome.instrument.payable) && !this.options.settlesUnpayablePayees?.includes(payment.payee)) {
       return this.update(attemptId, payment, "PENDING", true);
     }
     if (state.fate === "pays") {

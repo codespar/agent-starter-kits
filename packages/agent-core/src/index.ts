@@ -17,6 +17,7 @@ export * from "./receipt-verification.js";
 export * from "./receipt-chain.js";
 export * from "./tools.js";
 export * from "./bundle.js";
+export { MIN_PROSE_KEY_LENGTH, redactorFor } from "./masking.js";
 export * from "./engine.js";
 export * from "./agent.js";
 export * from "./language.js";

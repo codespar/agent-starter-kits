@@ -1,7 +1,8 @@
 /**
  * The bundle masks every payee key (#116), and `rerun` reads the refusals it
- * replays out of that bundle: the stub rail matches the masked key, so a line
- * the rail refused in the original run is refused again in the rerun.
+ * replays out of that bundle: by the position of the refused dispatch, never
+ * by the masked key, which more than one key can share. A line the rail
+ * refused in the original run is refused again in the rerun, and only it.
  */
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
@@ -53,6 +54,7 @@ describe("supplier-payments-agent: rerun of a refused line, from a masked bundle
 
     const bundle = join(stateDir, "runs", run_id);
     const payees = [...new Set([...MANDATE.beneficiaries.map((b) => b.payee), ...MANDATE.merchant_allowlist])].filter((p) => p !== "*");
+    // A batch's lines are the company's, never the model's tool call, so this run has no exception: no file names a key.
     for (const file of filesUnder(bundle)) {
       const text = readFileSync(file, "utf8");
       for (const payee of payees) expect(text.includes(payee), `${payee} in ${file}`).toBe(false);

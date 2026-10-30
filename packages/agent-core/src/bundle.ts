@@ -5,8 +5,9 @@
  */
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { canonicalJson } from "./hash.js";
+import { canonicalJson, itemsHash } from "./hash.js";
 import type { Mandate } from "./mandate.js";
+import { maskPayee, redactorFor } from "./masking.js";
 import type { RailReceipt } from "./rail.js";
 import type { ApprovalArtifact } from "./types.js";
 
@@ -20,6 +21,9 @@ export class ProofBundle {
   readonly dir: string;
   /** Every payee key this bundle has been handed, so a prose field that names one (an escalation detail) is masked too. */
   private readonly payees = new Set<string>();
+  /** The redactor over `payees`, rebuilt only when a value brings a key it has not seen. */
+  private redact = redactorFor([]);
+  private redactFor = 0;
 
   constructor(
     runsDir: string,
@@ -35,7 +39,9 @@ export class ProofBundle {
 
   /**
    * Masked like an event, except the model's tool calls: `rerun` replays them byte for byte, and the mandate resolves a
-   * beneficiary by its key too, so a masked input would draft another payment. A key a tool call names stays in it.
+   * beneficiary by its key too, so a masked input would draft another payment. A key a tool call names stays in it, in the
+   * clear, and is the one exception to "no key in the clear" in a bundle. A step's `reply` is masked: `rerun` replays it as
+   * the masked text, which ends the turn the same way and decides nothing.
    */
   transcript(line: TranscriptLine): void {
     appendFileSync(join(this.dir, "transcript.jsonl"), JSON.stringify(this.masked(line, REPLAYED_FIELDS)) + "\n");
@@ -56,15 +62,19 @@ export class ProofBundle {
   }
 
   /**
-   * `value` with every `payee` field masked, and every payee key this bundle knows masked inside the prose fields
-   * (`PROSE_FIELDS`, at any depth below one). Any other string, an id or a hash, is left as it is even when a key is
-   * a substring of it. A field in `keep` is written verbatim, whatever it holds.
+   * `value` with every `payee` field masked, and inside the prose fields (`PROSE_FIELDS`, at any depth below one) every
+   * payee key this bundle knows and every Pix-shaped key, known or not (`redactorFor`). Any other string, an id or a
+   * hash, is left as it is even when a key is a substring of it. A field in `keep` is written verbatim, whatever it holds.
    */
   private masked<T>(value: T, keep: ReadonlySet<string> = new Set()): T {
     collectPayees(value, this.payees);
-    const pairs = [...this.payees].sort((a, b) => b.length - a.length).map((raw) => [raw, maskPayee(raw)] as const).filter(([raw, mask]) => raw !== mask);
+    if (this.payees.size !== this.redactFor) {
+      this.redact = redactorFor(this.payees);
+      this.redactFor = this.payees.size;
+    }
+    const redact = this.redact;
     const walk = (v: unknown, key: string | undefined, prose: boolean): unknown => {
-      if (typeof v === "string") return key === "payee" ? maskPayee(v) : prose ? pairs.reduce((out, [raw, mask]) => out.split(raw).join(mask), v) : v;
+      if (typeof v === "string") return key === "payee" ? maskPayee(v) : prose ? redact(v) : v;
       if (Array.isArray(v)) return v.map((x) => walk(x, key, prose));
       if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, keep.has(k) ? x : walk(x, k, prose || PROSE_FIELDS.has(k))]));
       return v;
@@ -80,10 +90,11 @@ export class ProofBundle {
    * person, and the QR and the copy-and-paste were sent by the runner.
    *
    * It carries no contact in the clear: the channel masks it before it gets
-   * here, because the bundle travels.
+   * here, because the bundle travels. A payee key in a message is masked
+   * here, like in an event.
    */
   channel(line: Record<string, unknown>): void {
-    appendFileSync(join(this.dir, "channel.jsonl"), JSON.stringify(line) + "\n");
+    appendFileSync(join(this.dir, "channel.jsonl"), JSON.stringify(this.masked(line)) + "\n");
   }
 
   readChannel(): Record<string, unknown>[] {
@@ -107,12 +118,16 @@ export class ProofBundle {
   /**
    * `approval.json` is the list of artifacts of this run, in approval order. Each is the artifact with its items' payees masked and
    * `payee_masked: true` (#116): `items_hash` and the signature are the original's, computed over the full items, so the copy's items
-   * no longer hash to it. The full artifact is in state.db, where the engine reads it.
+   * no longer hash to it. `items_hash_masked` is `itemsHash` over the masked items, so an edit to the copy's list that leaves its hash
+   * behind is caught; it is unkeyed and binds nothing to the seal. The full artifact is in state.db, where the engine reads it.
    */
   approval(artifact: ApprovalArtifact): void {
     const path = join(this.dir, "approval.json");
     const current: ApprovalArtifact[] = existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as ApprovalArtifact[]) : [];
-    if (!current.some((a) => a.approval_id === artifact.approval_id)) current.push({ ...this.masked(artifact), payee_masked: true });
+    if (!current.some((a) => a.approval_id === artifact.approval_id)) {
+      const copy = this.masked(artifact);
+      current.push({ ...copy, payee_masked: true, items_hash_masked: itemsHash(copy.items) });
+    }
     writeFileSync(path, JSON.stringify(current, null, 2) + "\n");
   }
 
@@ -215,7 +230,7 @@ export function copyDisagreesWithRead(copy: Record<string, unknown>, read: Recor
 /** The fields whose text can name a payee: an escalation or transition detail, a rail's message, an outcome's error, a turn of the conversation, a tool's result. */
 const PROSE_FIELDS: ReadonlySet<string> = new Set(["detail", "message", "error", "text", "reply", "content"]);
 
-/** What a rerun replays from the transcript, verbatim. */
+/** What a rerun replays from the transcript, verbatim: the tool calls. A step's `reply` is not among them (see `transcript`). */
 const REPLAYED_FIELDS: ReadonlySet<string> = new Set(["tool_calls", "input"]);
 
 /** Adds every string under a `payee` key, at any depth, to `into`. */
@@ -229,11 +244,4 @@ function collectPayees(value: unknown, into: Set<string>): void {
   }
 }
 
-/** `escola@exemplo.com.br` -> `es***@exemplo.com.br`; `+5511999998888` -> `+55***8888`; a UUID keeps its first and last 4. */
-export function maskPayee(payee: string): string {
-  if (payee === "*") return payee;
-  const at = payee.indexOf("@");
-  if (at > 0) return `${payee.slice(0, Math.min(2, at))}***${payee.slice(at)}`;
-  if (payee.length <= 8) return `${payee.slice(0, 2)}***`;
-  return `${payee.slice(0, 4)}***${payee.slice(-4)}`;
-}
+export { maskPayee } from "./masking.js";

@@ -352,7 +352,7 @@ describe("partial failure of a multi-item execution, and rerun reproducing it", 
     expect(payload.receipts).toHaveLength(3);
     const events = readFileSync(join(runsDir, payload.run_id, "events.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; payload: { status?: string } });
     expect(events.filter((e) => e.type === "rail.outcome").map((e) => e.payload.status)).toEqual(["settled", "failed", "settled", "settled"]);
-    // #116: the refused key is masked in the bundle, and the rerun below reads it from there.
+    // #116: the refused key is masked in the bundle; the rerun below replays the refusal by its dispatch position, not by the key.
     for (const file of ["events.jsonl", "approval.json"]) expect(readFileSync(join(runsDir, payload.run_id, file), "utf8")).not.toContain("+5511999990001");
 
     const rerun = run("rerun", [payload.run_id, "--json"], { BILLS_STATE_DIR: stateDir, BILLS_RUNS_DIR: runsDir });

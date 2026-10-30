@@ -8,8 +8,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { ProofBundle } from "@codespar/agent-core";
-import { assembleTimeline, redactorFor, renderHtml, renderText, REPLAY_NOTE, VERIFY_NOTE } from "../src/inspect.js";
+import { ProofBundle, redactorFor } from "@codespar/agent-core";
+import { assembleTimeline, renderHtml, renderText, REPLAY_NOTE, VERIFY_NOTE } from "../src/inspect.js";
 
 // Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
 const tempDirs: string[] = [];

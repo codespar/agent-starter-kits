@@ -101,8 +101,8 @@ describe("a receivable is accepted, then settled by the payer", () => {
     expect(h.rail.issueCount).toBe(1);
   });
 
-  it("the stub issuer refuses a debtor scripted by the masked document a bundle carries, as StubRail does (#116)", async () => {
-    const h = receivables({ rail: { refusePayees: [maskPayee(DEBTOR)] } });
+  it("the stub issuer refuses a scripted debtor and names its document masked (#116)", async () => {
+    const h = receivables({ rail: { refusePayees: [DEBTOR] } });
     const d = await h.engine.draft({ items: [{ payee: "acordo-1", amount: 50000, due_date: "2026-09-25" }] });
     if (!d.ok) throw new Error("refused");
     const out = await h.engine.execute(d.execution.id);
