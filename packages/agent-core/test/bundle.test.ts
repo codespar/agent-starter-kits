@@ -127,6 +127,33 @@ describe("the proof bundle holds no full payee key (#116)", () => {
     expect(full.payee_masked).toBeUndefined();
   });
 
+  it("masks a key inside prose fields only: an id or a hash that contains one is written byte for byte", () => {
+    const h = harness({ mode: "human" });
+    h.bundle.mandateSnapshot(h.engine.mandate);
+    // Every field but `detail` holds the full key as a substring; split/join over every string rewrote them all.
+    const payload = { attempt_id: `att_${MERCADO}_0`, idempotency_key: `idk_${MERCADO}`, receipt_id: `rcpt_${MERCADO}`, path: `receipts/${MERCADO}.json`, detail: `first payment to Mercado (${MERCADO})`, held: { by: `exe_${MERCADO}` } };
+    h.bundle.event({ type: "test.event", payload });
+    const [written] = h.bundle.readEvents() as Array<{ payload: typeof payload }>;
+    expect(written!.payload).toEqual({ ...payload, detail: `first payment to Mercado (${maskPayee(MERCADO)})` });
+  });
+
+  it("masks the transcript's turns and tool results, and leaves the tool calls a rerun replays as they were recorded", () => {
+    const h = harness({ mode: "human" });
+    h.bundle.mandateSnapshot(h.engine.mandate);
+    const call = { id: "tc_1", name: "codespar_pay", input: { action: "pay", items: [{ payee: MERCADO, amount_minor: 1000 }] } };
+    h.bundle.transcript({ at: "t", kind: "user", text: `paga o ${MERCADO}` });
+    h.bundle.transcript({ at: "t", kind: "assistant_step", tool_calls: [call] });
+    h.bundle.transcript({ at: "t", kind: "tool_call", tool_call_id: "tc_1", name: "codespar_pay", input: call.input });
+    h.bundle.transcript({ at: "t", kind: "tool_result", tool_call_id: "tc_1", name: "codespar_pay", refused: false, content: JSON.stringify({ paid: true, payee: MERCADO }) });
+    h.bundle.transcript({ at: "t", kind: "assistant", text: `Paguei ${MERCADO}.` });
+    const [user, step, toolCall, result, reply] = h.bundle.readTranscript();
+    expect(user!["text"]).toBe(`paga o ${maskPayee(MERCADO)}`);
+    expect(step!["tool_calls"]).toEqual([call]);
+    expect(toolCall!["input"]).toEqual(call.input);
+    expect(result!["content"]).toBe(JSON.stringify({ paid: true, payee: maskPayee(MERCADO) }));
+    expect(reply!["text"]).toBe(`Paguei ${maskPayee(MERCADO)}.`);
+  });
+
   it("the stub rail refuses a payee scripted by its masked key, which is what rerun reads from a bundle", async () => {
     const h = harness({ mode: "human", rail: { refusePayees: [maskPayee(ESCOLA)] } });
     const draft = await h.engine.draft({ items: [{ payee: "escola", amount: 1000 }] });

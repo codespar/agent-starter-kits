@@ -140,6 +140,8 @@ export interface ApprovalLinkCheck {
   sealed: SealedApproval;
   artifact: { approval_id: string; items_hash: string; batch_hash: string | null } | null;
   reason: string;
+  /** Whether `items_hash` was recomputed from the artifact's own items. `false` for a bundle's masked copy, whose payee keys are not the ones hashed. */
+  items_checked?: boolean;
 }
 
 /** The part of an approval artifact the approval link is held against: what was approved, never who. */
@@ -149,6 +151,8 @@ export interface ApprovalClaim {
   /** When present, `items_hash` is recomputed from them first: a hash that does not describe its own list proves nothing about the list. */
   items?: readonly ExecutionItem[];
   batch?: { batch_hash: string };
+  /** A proof bundle's copy (#116): its items list masked payee keys, so they are not given, and a match says so. */
+  payee_masked?: true;
 }
 
 export interface ReceiptVerification {
@@ -582,12 +586,22 @@ export function verifyReceiptRead(read: unknown, keyDocument: unknown, options: 
   if (!sameApprovalHash(sealed.batch_hash, artifact.batch_hash)) {
     return mismatch("batch_hash_differs", `it seals batch_hash ${sealed.batch_hash ?? "none"} where the artifact carries ${artifact.batch_hash ?? "none"}`);
   }
+  if (approval.payee_masked) {
+    return {
+      ...signature,
+      reason: "approval_matches_masked_copy",
+      message: `receipt ${signature.receipt_id} was sealed by CodeSpar, ${bound}, and it seals the items_hash a masked copy of artifact ${approval.approval_id} carries (${sealed.items_hash}${sealed.batch_hash ? `, batch ${sealed.batch_hash}` : ""}). The copy masks its payee keys, so its items were not recomputed and the payee keys were not checked: that the hash is the hash of the list it names needs the full artifact, which stays in the run's state.db. WHO approved it is in the artifact, under a local key, and nowhere in the seal`,
+      chain_check: chainCheck,
+      approval_check: { status: "matched", sealed, artifact, reason: "approval_matches_masked_copy", items_checked: false },
+      sealed_payment: sealedPayment,
+    };
+  }
   return {
     ...signature,
     reason: "approval_matches",
     message: `receipt ${signature.receipt_id} was sealed by CodeSpar, ${bound}, and it was paid against the list artifact ${approval.approval_id} approved (${sealed.items_hash}${sealed.batch_hash ? `, batch ${sealed.batch_hash}` : ""}). WHO approved it is in the artifact, under a local key, and nowhere in the seal`,
     chain_check: chainCheck,
-    approval_check: { status: "matched", sealed, artifact, reason: "approval_matches" },
+    approval_check: { status: "matched", sealed, artifact, reason: "approval_matches", items_checked: approval.items !== undefined },
     sealed_payment: sealedPayment,
   };
 }

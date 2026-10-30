@@ -17,8 +17,8 @@ import { checkSpendApproval, wireActorOf, type PaymentRail, type RailLookup, typ
 import type { StateStore } from "../state/store.js";
 import type { Actor } from "../types.js";
 
-/** A scripted payee list names this payee, by its key or by the key as a bundle masks it. */
-function listsPayee(list: string[] | undefined, payee: string): boolean {
+/** A scripted payee list names this payee, by its key or by the key as a bundle masks it. Both stub rails match with it. */
+export function listsPayee(list: string[] | undefined, payee: string): boolean {
   return list !== undefined && (list.includes(payee) || list.includes(maskPayee(payee)));
 }
 

@@ -117,6 +117,21 @@ describe("a v4 receipt: signature, body and approval", () => {
     expect(verifyReceiptRead(sealed(4), keyDocument(), { approval: artifact({ items: edited }) })).toMatchObject({ verdict: "approval_mismatch", reason: "artifact_items_hash_inconsistent" });
   });
 
+  it("against a bundle's masked copy, says the hash matched and the items and payee keys were not checked (#116)", () => {
+    const { items: _items, ...hashOnly } = artifact();
+    const masked = verifyReceiptRead(sealed(4), keyDocument(), { approval: { ...hashOnly, payee_masked: true } });
+    expect(masked).toMatchObject({ verdict: "verified", reason: "approval_matches_masked_copy" });
+    expect(masked.approval_check).toMatchObject({ status: "matched", reason: "approval_matches_masked_copy", items_checked: false });
+    expect(masked.message).toContain("payee keys were not checked");
+    // The full artifact is checked item by item, and says so.
+    const full = verifyReceiptRead(sealed(4), keyDocument(), { approval: artifact() });
+    expect(full).toMatchObject({ verdict: "verified", reason: "approval_matches" });
+    expect(full.approval_check).toMatchObject({ reason: "approval_matches", items_checked: true });
+    // A masked copy whose hash is not the sealed one is still a mismatch.
+    const other = `sha256:${"9".repeat(64)}`;
+    expect(verifyReceiptRead(sealed(4, { items_hash: other, batch_hash: null }), keyDocument(), { approval: { ...hashOnly, payee_masked: true } })).toMatchObject({ verdict: "approval_mismatch", reason: "items_hash_differs" });
+  });
+
   it("is verified, approval not compared, when no artifact is given — and prints the sealed hash to compare by hand", () => {
     const report = verifyReceiptRead(sealed(4), keyDocument());
     expect(report.verdict).toBe("verified");

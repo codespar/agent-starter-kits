@@ -18,7 +18,7 @@ export interface TranscriptLine {
 
 export class ProofBundle {
   readonly dir: string;
-  /** Every payee key this bundle has been handed, so free text that names one (an escalation detail) is masked too. */
+  /** Every payee key this bundle has been handed, so a prose field that names one (an escalation detail) is masked too. */
   private readonly payees = new Set<string>();
 
   constructor(
@@ -33,8 +33,12 @@ export class ProofBundle {
     return existsSync(join(runsDir, runId)) ? new ProofBundle(runsDir, runId) : undefined;
   }
 
+  /**
+   * Masked like an event, except the model's tool calls: `rerun` replays them byte for byte, and the mandate resolves a
+   * beneficiary by its key too, so a masked input would draft another payment. A key a tool call names stays in it.
+   */
   transcript(line: TranscriptLine): void {
-    appendFileSync(join(this.dir, "transcript.jsonl"), JSON.stringify(line) + "\n");
+    appendFileSync(join(this.dir, "transcript.jsonl"), JSON.stringify(this.masked(line, REPLAYED_FIELDS)) + "\n");
   }
 
   readTranscript(): TranscriptLine[] {
@@ -46,22 +50,26 @@ export class ProofBundle {
       .map((l) => JSON.parse(l) as TranscriptLine);
   }
 
-  /** Payee keys are masked on the way in (#116), in their fields and in any text that names one: the full key stays in state.db, which never travels. */
+  /** Payee keys are masked on the way in (#116), in their fields and in any prose field that names one: the full key stays in state.db, which never travels. */
   event(event: Record<string, unknown>): void {
     appendFileSync(join(this.dir, "events.jsonl"), JSON.stringify(this.masked(event)) + "\n");
   }
 
-  /** `value` with every `payee` field masked and every payee key this bundle knows masked inside any other string. */
-  private masked<T>(value: T): T {
+  /**
+   * `value` with every `payee` field masked, and every payee key this bundle knows masked inside the prose fields
+   * (`PROSE_FIELDS`, at any depth below one). Any other string, an id or a hash, is left as it is even when a key is
+   * a substring of it. A field in `keep` is written verbatim, whatever it holds.
+   */
+  private masked<T>(value: T, keep: ReadonlySet<string> = new Set()): T {
     collectPayees(value, this.payees);
     const pairs = [...this.payees].sort((a, b) => b.length - a.length).map((raw) => [raw, maskPayee(raw)] as const).filter(([raw, mask]) => raw !== mask);
-    const walk = (v: unknown, key?: string): unknown => {
-      if (typeof v === "string") return key === "payee" ? maskPayee(v) : pairs.reduce((out, [raw, mask]) => out.split(raw).join(mask), v);
-      if (Array.isArray(v)) return v.map((x) => walk(x));
-      if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));
+    const walk = (v: unknown, key: string | undefined, prose: boolean): unknown => {
+      if (typeof v === "string") return key === "payee" ? maskPayee(v) : prose ? pairs.reduce((out, [raw, mask]) => out.split(raw).join(mask), v) : v;
+      if (Array.isArray(v)) return v.map((x) => walk(x, key, prose));
+      if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, keep.has(k) ? x : walk(x, k, prose || PROSE_FIELDS.has(k))]));
       return v;
     };
-    return walk(value) as T;
+    return walk(value, undefined, false) as T;
   }
 
   /**
@@ -203,6 +211,12 @@ export function copyDisagreesWithRead(copy: Record<string, unknown>, read: Recor
   if ("sealed_actor" in copy) expected.push(["sealed_actor", canonicalJson(copy["sealed_actor"] ?? null), canonicalJson(read["actor"] ?? null)]);
   return expected.filter(([, a, b]) => a !== b).map(([name]) => name);
 }
+
+/** The fields whose text can name a payee: an escalation or transition detail, a rail's message, an outcome's error, a turn of the conversation, a tool's result. */
+const PROSE_FIELDS: ReadonlySet<string> = new Set(["detail", "message", "error", "text", "reply", "content"]);
+
+/** What a rerun replays from the transcript, verbatim. */
+const REPLAYED_FIELDS: ReadonlySet<string> = new Set(["tool_calls", "input"]);
 
 /** Adds every string under a `payee` key, at any depth, to `into`. */
 function collectPayees(value: unknown, into: Set<string>): void {
