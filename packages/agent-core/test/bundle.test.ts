@@ -245,7 +245,7 @@ describe("the proof bundle holds no full payee key (#116)", () => {
   it("two keys that share a mask: the refusal of one is replayed from the bundle without refusing the other", async () => {
     expect(maskPayee(MERCADO_TWIN)).toBe(maskPayee(MERCADO));
     const base = testMandate();
-    const mandate = { merchant_allowlist: [...base.merchant_allowlist, MERCADO_TWIN], beneficiaries: [...base.beneficiaries, { alias: "mercado2", name: "Mercado Dois", payee: MERCADO_TWIN }] };
+    const mandate = { merchant_allowlist: [...base.merchant_allowlist, MERCADO_TWIN] as [string, ...string[]], beneficiaries: [...base.beneficiaries, { alias: "mercado2", name: "Mercado Dois", payee: MERCADO_TWIN }] };
     const run = async (rail: StubRailOptions) => {
       const h = harness({ mode: "human", mandate, rail });
       const states: string[] = [];
