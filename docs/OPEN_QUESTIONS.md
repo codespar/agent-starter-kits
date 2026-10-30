@@ -1468,3 +1468,43 @@ So the file is placed by hand by whoever holds the organization's key. The agent
 - **The wait is inside the turn.** As for a bolepix, the run looks (every 2 s on the sandbox) until the pull closes or `--wait` runs out, and messages the person sends meanwhile are read after. A background looker that answers "still waiting for the bank" while the conversation goes on would be a runtime change for every await-payer agent.
 
 **Open:** whether a pull belongs in the CodeSpar API (which would seal it like a payment), the AUTOMATIC trigger (not provisioned in the sandbox), and what `riskSignals` an agent with no device should send.
+
+## 67. Zod GHSA-mrhx-c7xc-m3w5: where the kit parses, and why Zod 4 waits for the SDK (2026-10-29)
+
+`npm audit --package-lock-only --ignore-scripts` reports two high entries at `d8fc583`: `zod` 3.25.76 and `@codespar/sdk` 0.16.16. They are one advisory, [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5); the SDK entry exists only because the SDK depends on `zod ^3.24.0`. Affected is every Zod `< 4.6.6`, and 3.25.76 is the last 3.x, so no 3.x carries the fix (#115).
+
+**What the advisory is.** Its summary says "oversized constrained collections"; its description is narrower and more general at once: `$ZodArray` keeps one issue for every element that fails, with no cap and no early stop, so a large array whose elements fail exhausts memory. The schema needs no `.max()` to be exposed; it needs a `z.array` whose input is large and comes from someone who can make the elements fail. A `.max()` on the array would not help on 3.x: the elements are still checked. The question per site is therefore who writes the input, and whether the schema holds an array or a record.
+
+**The parse sites.** One row per file that builds a Zod schema, with the calls that run it.
+
+| File | Parsed by | Input written by | From outside? | Collections | Bounds on a collection |
+|---|---|---|---|---|---|
+| `packages/agent-core/src/manifest.ts` | `:71` | `agent.yaml`, in the repository | No | 3 arrays, 1 record | `.nonempty()` on `approval`, `channels` |
+| `packages/agent-core/src/tools.ts` | `:57`, `check.ts:70` | `tools.json`, in the repository | No | 2 arrays, 1 record | none |
+| `packages/agent-core/src/guardrails.ts` | `:48`, `check.ts:90` | `guardrails.json`, in the repository | No | 1 record | none |
+| `packages/agent-core/src/mandate.ts` | `:68`, `check.ts:199`, `supplier-payments-agent/src/kit.ts:39`, `bills-agent/src/modules/embedded-consent.ts:43` and `:120` | `mandate.example.json` in the repository, or `.codespar/mandate.json`; at `embedded-consent.ts:120`, the answer of `POST /v1/consents/{token}/submit` | **Yes, at `embedded-consent.ts:120`** (below) | 2 arrays (`merchant_allowlist`, `beneficiaries`), 1 record (`canonical`) | `.nonempty()` on `merchant_allowlist` |
+| `packages/agent-core/src/channels.ts` | `:74`, `:188`, `check.ts:129`, `:134`, `:177` | `channels/whatsapp/*.json`, in the repository | No | 2 arrays | `.nonempty()`, `.max(3)` on `buttons` |
+| `packages/agent-core/src/locale.ts` | composed into other schemas | `--locale`, `agent.yaml` | No | none (one enum) | n/a |
+| `packages/agent-core/src/api/mandate-status.ts` | `:60` | the answer of `GET /v1/mandates/{id}` | **Yes** (below) | none: three scalars, `.passthrough()` | n/a |
+| `packages/agent-runtime/src/scenarios.ts` | `:139` | `scenarios/*.json`, in the repository | No | 8 arrays, 1 record | `.nonempty()` on `modes`, `rails`, `turns` |
+| `packages/agent-runtime/src/adversarial.ts` | `:99` | `evals/adversarial/*.json`, in the repository | No | 4 arrays | none |
+| `agents/checkout-agent/src/pricing.ts` | `:56` | `guardrails.json` `envelope`, in the repository | No | 1 array | none (`.max(100)` is on numbers) |
+| `agents/collections-agent/src/envelope.ts` | `:34` | `guardrails.json` `envelope`, in the repository | No | none | n/a (`.min`/`.max` are on numbers) |
+
+No Zod schema parses an inbound webhook, a WhatsApp message or a model output.
+
+**The two sites that read the network**, both answers of the CodeSpar API to a call this kit makes with its own `csk_test_` key:
+
+- `mandate-status.ts:60` parses `GET /v1/mandates/{id}`. The schema holds no array and no record: three scalar fields and `.passthrough()`, which keeps every other key without checking it. The advisory's construct is not there. Not exposed.
+- `embedded-consent.ts:120` (bills-agent, consent step) builds the mandate from the answer of `POST /v1/consents/{token}/submit` and parses it with `MandateSchema`. `merchant_allowlist` is passed through from that answer, and the schema checks it as `z.array(z.string().min(1))`: an answer carrying a very large list of empty strings is the advisory's case. `canonical` is the signed envelope as a `z.record(z.string(), z.unknown())`, whose values are not checked and so raise no issue per element. `beneficiaries` comes from the local `mandate.example.json`. Exposed in principle, to the API this agent is authenticated to, during a consent the person runs at the keyboard, in the sandbox.
+
+`.codespar/mandate.json` is written by that consent (or by hand, §65) and parsed again on every start; a file the person's own process wrote is not an outside input.
+
+**The SDK's own copy.** `@codespar/sdk` 0.16.16 (`node_modules/@codespar/sdk/dist/types.js`) uses Zod for one schema, `SessionConfigSchema`, run once at `dist/index.js:96` in `sessions.create(userId, config)` on the `config` the caller passes. It holds `servers` (array of strings), `metadata` (record of strings) and `mocks` (record of records or arrays of records, values unchecked). It parses no API answer: the answers are typed by the generated OpenAPI types and not validated at run time. The kit never calls `sessions.create`: the one session it opens, the checkout-agent's invoice (`agents/checkout-agent/src/modules/nfse-invoice.ts:115`), goes through the REST client as `POST /v1/sessions`, which does not run that schema. Not exposed through the SDK.
+
+**Decision.** The practical exposure is one site, the consent answer of the CodeSpar API itself, and none through the SDK. The workspace stays on `zod` 3.25.76 for now, recorded as an assessed exception, and the move to Zod 4 (`>= 4.6.6`) waits for the SDK:
+
+- `@codespar/sdk` 0.16.23, the latest, still requires `zod ^3.24.0`. Moving the kit's three exact pins (`packages/agent-core`, `packages/agent-runtime`, `agents/checkout-agent`) to Zod 4 alone would leave the SDK's 3.x copy in the tree and the audit entry with it, for the one copy that is not exposed.
+- An `overrides` forcing Zod 4 under the SDK is not taken: the SDK's schemas use the 3.x one-argument `z.record`, and its behaviour on Zod 4 is not tested.
+
+**Open, for the SDK's owner:** a release of `@codespar/sdk` that accepts Zod 4 (`^3.25.0 || ^4.0.0`, as `@anthropic-ai/sdk` does). With it, the kit moves its pins to Zod 4 in one PR with the suite green, and the audit clears. Until then, `npm audit` keeps reporting this advisory, and this section is the reason. If a bound is wanted before that, it goes on the consent answer: a cap on `merchant_allowlist` checked before the parse.
