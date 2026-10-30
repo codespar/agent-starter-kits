@@ -222,6 +222,27 @@ describe("codespar-agent verify, the body and the approval of a v4 receipt read"
     expect(out.stderr).toContain("paid against the list artifact apr_1 approved");
   });
 
+  it("exits 0 against a bundle's masked copy, and says its payee keys were not checked (#116)", () => {
+    const f = v4Fixture();
+    const maskedItems = ITEMS.map((i) => ({ ...i, payee: maskPayee(i.payee) }));
+    const masked = { ...f.artifact, items: maskedItems, payee_masked: true, items_hash_masked: itemsHash(maskedItems) };
+    writeFileSync(f.paths.artifact, JSON.stringify([masked]));
+    const out = run([f.paths.read, "--keys", f.paths.keys, "--approval", f.paths.artifact], f.dir);
+    expect(out.code).toBe(0);
+    expect(out.stdout).toContain(`VERIFIED (masked copy; payee keys not checked)  ${RECEIPT_ID}`);
+    expect(out.stderr).toContain("the payee keys were not checked");
+    const json = JSON.parse(run([f.paths.read, "--keys", f.paths.keys, "--approval", f.paths.artifact, "--json"], f.dir).stdout) as Record<string, unknown>;
+    expect(json).toMatchObject({ verdict: "verified", reason: "approval_matches_masked_copy", approval_check: { status: "matched", items_checked: true, payee_keys_checked: false } });
+    // The flag does not switch the check off: a list edited under it exits 9, terminal and --json alike.
+    writeFileSync(f.paths.artifact, JSON.stringify([{ ...masked, items: maskedItems.map((i) => ({ ...i, amount: 1 })) }]));
+    const edited = run([f.paths.read, "--keys", f.paths.keys, "--approval", f.paths.artifact, "--json"], f.dir);
+    expect(edited.code).toBe(9);
+    expect(JSON.parse(edited.stdout)).toMatchObject({ verdict: "approval_mismatch", reason: "masked_items_hash_inconsistent" });
+    // The same file without the flag is an artifact whose items do not hash to its items_hash, and is refused as one.
+    writeFileSync(f.paths.artifact, JSON.stringify([{ ...masked, payee_masked: undefined }]));
+    expect(run([f.paths.read, "--keys", f.paths.keys, "--approval", f.paths.artifact], f.dir).code).toBe(9);
+  });
+
   it("exits 9, approval_mismatch, when the receipt sealed another list than the artifact's", () => {
     const f = v4Fixture(`sha256:${"9".repeat(64)}`);
     const out = run([f.paths.read, "--keys", f.paths.keys, "--approval", f.paths.artifact, "--json"], f.dir);

@@ -140,6 +140,13 @@ export interface ApprovalLinkCheck {
   sealed: SealedApproval;
   artifact: { approval_id: string; items_hash: string; batch_hash: string | null } | null;
   reason: string;
+  /**
+   * Whether the artifact's list was recomputed against a hash it carries: `items_hash` for a full artifact, `items_hash_masked`
+   * for a bundle's masked copy. `false` when the artifact listed no items.
+   */
+  items_checked?: boolean;
+  /** Whether the payee keys behind `items_hash` were checked. `false` for a masked copy: it holds no key, so nothing binds its list to the seal. */
+  payee_keys_checked?: boolean;
 }
 
 /** The part of an approval artifact the approval link is held against: what was approved, never who. */
@@ -149,6 +156,12 @@ export interface ApprovalClaim {
   /** When present, `items_hash` is recomputed from them first: a hash that does not describe its own list proves nothing about the list. */
   items?: readonly ExecutionItem[];
   batch?: { batch_hash: string };
+  /**
+   * A proof bundle's copy (#116): `items` list masked payee keys, so they are recomputed against `items_hash_masked` instead of
+   * `items_hash`, and a match says the keys were not checked.
+   */
+  payee_masked?: true;
+  items_hash_masked?: string;
 }
 
 export interface ReceiptVerification {
@@ -573,7 +586,14 @@ export function verifyReceiptRead(read: unknown, keyDocument: unknown, options: 
     approval_check: { status: "mismatch", sealed, artifact, reason },
     sealed_payment: sealedPayment,
   });
-  if (approval.items && itemsHash(approval.items) !== approval.items_hash) {
+  if (approval.payee_masked) {
+    if (!approval.items || approval.items_hash_masked === undefined) {
+      return mismatch("masked_copy_unhashed", `the artifact is a masked copy with no items_hash_masked over its items, so nothing it lists can be held against anything`);
+    }
+    if (itemsHash(approval.items) !== approval.items_hash_masked) {
+      return mismatch("masked_items_hash_inconsistent", `the masked copy's items_hash_masked ${approval.items_hash_masked} is not the hash of the items it lists (${itemsHash(approval.items)}): the copy was edited after it was written`);
+    }
+  } else if (approval.items && itemsHash(approval.items) !== approval.items_hash) {
     return mismatch("artifact_items_hash_inconsistent", `the artifact's items_hash ${approval.items_hash} is not the hash of the items it lists (${itemsHash(approval.items)})`);
   }
   if (!sameApprovalHash(sealed.items_hash, artifact.items_hash)) {
@@ -582,12 +602,22 @@ export function verifyReceiptRead(read: unknown, keyDocument: unknown, options: 
   if (!sameApprovalHash(sealed.batch_hash, artifact.batch_hash)) {
     return mismatch("batch_hash_differs", `it seals batch_hash ${sealed.batch_hash ?? "none"} where the artifact carries ${artifact.batch_hash ?? "none"}`);
   }
+  if (approval.payee_masked) {
+    return {
+      ...signature,
+      reason: "approval_matches_masked_copy",
+      message: `receipt ${signature.receipt_id} was sealed by CodeSpar, ${bound}, and it seals the items_hash a masked copy of artifact ${approval.approval_id} carries (${sealed.items_hash}${sealed.batch_hash ? `, batch ${sealed.batch_hash}` : ""}). The copy masks its payee keys: its items were recomputed against its own items_hash_masked, which is unkeyed, and the payee keys were not checked. That the sealed hash is the hash of the list it names needs the full artifact, which stays in the run's state.db. WHO approved it is in the artifact, under a local key, and nowhere in the seal`,
+      chain_check: chainCheck,
+      approval_check: { status: "matched", sealed, artifact, reason: "approval_matches_masked_copy", items_checked: true, payee_keys_checked: false },
+      sealed_payment: sealedPayment,
+    };
+  }
   return {
     ...signature,
     reason: "approval_matches",
     message: `receipt ${signature.receipt_id} was sealed by CodeSpar, ${bound}, and it was paid against the list artifact ${approval.approval_id} approved (${sealed.items_hash}${sealed.batch_hash ? `, batch ${sealed.batch_hash}` : ""}). WHO approved it is in the artifact, under a local key, and nowhere in the seal`,
     chain_check: chainCheck,
-    approval_check: { status: "matched", sealed, artifact, reason: "approval_matches" },
+    approval_check: { status: "matched", sealed, artifact, reason: "approval_matches", items_checked: approval.items !== undefined, payee_keys_checked: approval.items !== undefined },
     sealed_payment: sealedPayment,
   };
 }

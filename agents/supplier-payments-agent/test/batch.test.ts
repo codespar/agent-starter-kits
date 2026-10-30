@@ -105,9 +105,9 @@ describe("batch-payout: a batch is a loop of executions", () => {
     const s = open(tempDir(join(tmpdir(), "supplier-batch-q-")));
     try {
       await run(s, "folha-2026-10");
-      const artifacts = s.bundle.readApprovals();
+      // The full artifact, from state.db: the bundle's copy masks the payee (#116), and the rail is sent the full key.
       for (const e of s.engine.list()) {
-        const line = artifacts.find((a) => a.execution_id === e.id)!.items[0]!;
+        const line = s.store.getApproval(e.approval_id!)!.items[0]!;
         const outcome = e.outcomes[0]!;
         const sent = s.store.stubRailGet(outcome.attempt_id)!.request as { quote?: { price_minor: number; payee: string; seller: string } };
         expect(sent.quote).toMatchObject({ seller: line.beneficiary, price_minor: line.amount, payee: line.payee });

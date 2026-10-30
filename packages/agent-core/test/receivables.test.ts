@@ -11,7 +11,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { CodeSparChargeRail, outcomeOf, type ChargeView } from "../src/api/charge-rail.js";
 import { createCodeSparClient } from "../src/api/client.js";
 import { hmacSigner } from "../src/approval.js";
-import { ProofBundle } from "../src/bundle.js";
+import { maskPayee, ProofBundle } from "../src/bundle.js";
 import { ExecutionEngine, type EngineDeps, type PolicyExtension } from "../src/engine.js";
 import type { PaymentRail, RailLookup, RailPayment } from "../src/rail.js";
 import { itemsHash } from "../src/hash.js";
@@ -99,6 +99,15 @@ describe("a receivable is accepted, then settled by the payer", () => {
     // A third look changes nothing and issues nothing.
     expect((await h.engine.reconcile(issued.id)).state).toBe("settled");
     expect(h.rail.issueCount).toBe(1);
+  });
+
+  it("the stub issuer refuses a scripted debtor and names its document masked (#116)", async () => {
+    const h = receivables({ rail: { refusePayees: [DEBTOR] } });
+    const d = await h.engine.draft({ items: [{ payee: "acordo-1", amount: 50000, due_date: "2026-09-25" }] });
+    if (!d.ok) throw new Error("refused");
+    const out = await h.engine.execute(d.execution.id);
+    expect(out.state).toBe("failed");
+    expect(out.outcomes[0]).toMatchObject({ status: "failed", code: "issuer_refused", message: `stub: issuer refused a charge to ${maskPayee(DEBTOR)}` });
   });
 
   it("a receivable nobody pays closes failed with charge_expired, never settled", async () => {

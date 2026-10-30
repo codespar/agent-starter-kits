@@ -298,6 +298,8 @@ function pickArtifact(input: unknown, id: string | undefined): ApprovalClaim | u
     approval_id: chosen["approval_id"] as string,
     items_hash: chosen["items_hash"] as string,
     ...(Array.isArray(chosen["items"]) ? { items: chosen["items"] as ExecutionItem[] } : {}),
+    // A bundle's copy masks its items' payees, so they no longer hash to `items_hash`: they are recomputed against `items_hash_masked`, and the verdict says the keys were not checked.
+    ...(chosen["payee_masked"] === true ? { payee_masked: true as const, ...(typeof chosen["items_hash_masked"] === "string" ? { items_hash_masked: chosen["items_hash_masked"] } : {}) } : {}),
     ...(isRecord(batch) && typeof batch["batch_hash"] === "string" ? { batch: { batch_hash: batch["batch_hash"] } } : {}),
   };
 }
@@ -333,7 +335,8 @@ function readJson(path: string, say: (line: string) => void): unknown {
 
 /** The terminal rendering: the verdict first, then what it is about. */
 function render(report: ReceiptVerification): string {
-  const lines = [`${report.verdict.toUpperCase()}  ${report.receipt_id ?? "(no receipt id)"}`];
+  const qualifier = report.approval_check?.reason === "approval_matches_masked_copy" ? " (masked copy; payee keys not checked)" : "";
+  const lines = [`${report.verdict.toUpperCase()}${qualifier}  ${report.receipt_id ?? "(no receipt id)"}`];
   if (report.kid) lines.push(`  key          ${report.kid}${report.key_status ? ` (${report.key_status})` : ""}`);
   if (report.keys_from) lines.push(`  key set      ${report.keys_from}`);
   if (report.signing_string) lines.push(`  signed       ${report.signing_string}`);

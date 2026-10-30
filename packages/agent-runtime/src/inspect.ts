@@ -18,7 +18,7 @@
  * text: a debtor's own words are in `transcript.jsonl` and are not this
  * command's to re-publish.
  */
-import { maskPayee, type ApprovalArtifact, type ExecutionBatch, type ExecutionComposition, type ProofBundle } from "@codespar/agent-core";
+import { maskPayee, redactorFor, type ApprovalArtifact, type ExecutionBatch, type ExecutionComposition, type ProofBundle } from "@codespar/agent-core";
 import { formatMinor } from "./default-kit.js";
 
 export interface InspectItem {
@@ -218,27 +218,6 @@ export function actorLabel(actor: unknown): string {
 function maskMaybe(value: unknown): string | null {
   const s = str(value);
   return s === null ? null : maskPayee(s);
-}
-
-/**
- * A payee key also turns up inside free text: an escalation detail names the
- * payee it escalated on, a refusal names the one it refused. Masking the
- * `payee` field alone would leave the same key readable one line below, so
- * every raw payee the bundle holds is replaced by its mask wherever it
- * appears. Longest first, or a key that is a prefix of another masks it twice.
- */
-export function redactorFor(rawPayees: Iterable<string>): (value: string | null) => string | null {
-  const pairs = [...new Set([...rawPayees].filter((p) => p.length > 0 && p !== "*"))]
-    .sort((a, b) => b.length - a.length)
-    .map((raw) => [raw, maskPayee(raw)] as const)
-    .filter(([raw, masked]) => raw !== masked);
-  if (!pairs.length) return (value) => value;
-  return (value) => {
-    if (value === null) return null;
-    let out = value;
-    for (const [raw, masked] of pairs) out = out.split(raw).join(masked);
-    return out;
-  };
 }
 
 /** Every raw payee this bundle holds: the drafted items, the rail calls, the settlement events and the approval artifacts. */
