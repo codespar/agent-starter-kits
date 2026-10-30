@@ -29,14 +29,21 @@ export const MIN_PROSE_KEY_LENGTH = 10;
  * `*` names no key at all. An e-mail, a `+` phone, a CPF or CNPJ written with
  * or without its punctuation, and an EVP (a UUID). None of them matches a
  * masked key, so a value already masked passes through unchanged, and none
- * matches inside a longer word or id (`exe_<uuid>`, `sha256:<hex>`).
+ * matches inside a longer word or id (`exe_<uuid>`, `sha256:<hex>`). A key
+ * at the end of a sentence (`CPF 11144477735.`) or after a label
+ * (`chave:11144477735`) is still a key.
+ *
+ * Every part is bounded (an e-mail's local part starts where a run of its
+ * characters starts and is at most 64 long, a label 63), and the e-mail shape
+ * runs only on text with an `@`, so a long value costs linear time: the
+ * bundle masks whatever a tool result returned.
  */
+const EMAIL_SHAPE = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){0,8}\.[A-Za-z]{2,24}/g;
 const KEY_SHAPES: readonly RegExp[] = [
-  /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g,
   /(?<![\w+])\+\d{10,15}(?!\d)/g,
   /(?<![\w.\/-])\d{3}\.\d{3}\.\d{3}-\d{2}(?![\w-])/g,
   /(?<![\w.\/-])\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}(?![\w-])/g,
-  /(?<![\w.\/:-])(?:\d{14}|\d{11})(?![\w.\/-])/g,
+  /(?<![\w.\/-])(?:\d{14}|\d{11})(?![\w\/-])(?!\.\d)/g,
   /(?<![\w-])[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![\w-])/g,
 ];
 
@@ -57,6 +64,7 @@ export function redactorFor(rawPayees: Iterable<string>): (value: string | null)
     if (value === null) return null;
     let out = value;
     for (const [raw, masked] of pairs) out = out.split(raw).join(masked);
+    if (out.includes("@")) out = out.replace(EMAIL_SHAPE, maskPayee);
     for (const shape of KEY_SHAPES) out = out.replace(shape, maskPayee);
     return out;
   };
