@@ -49,6 +49,12 @@ state machine, no network. `--rail api` is the Iniciador sandbox.
 - `escalate_above.amount: 300`: a pull above R$ 3,00, or pulls adding up above it within 24 h (`velocity`), wait for a human even in `mandate`.
 - Above R$ 5,00 per pull or R$ 10,00 in total: denied by the core before the bank is asked.
 
+## What the run leaves (`runs/<run-id>/`)
+
+The run's proof bundle has the same masking as every other agent's ([`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md) §37). No API key and no secret is written there, and no account key appears in the clear except in one place. The account's key (the creditor id the mandate names, behind the alias `minha-conta`) is masked in its `payee` fields, in `mandate.snapshot.json`, in `receipts/`, and in the prose fields that can name it: an escalation detail, a rail's refusal message, a turn of the conversation in `transcript.jsonl` and `channel.jsonl`, a tool's result. The one exception is the tool calls in `transcript.jsonl` (`tool_calls`, `input`). `rerun` replays them byte for byte, and the mandate resolves an account by its key as well as by its alias, so they are written as the model sent them. `codespar_charge` asks for the alias and never a key. A key therefore shows up there only when the model disobeys that and puts one (or a Pix key the person typed) in `account`, and it is written there in the clear. Read `transcript.jsonl` before handing the folder over. The full record stays in `.codespar/state.db`, which never travels.
+
+`receipts/` is a local record, not a sealed receipt: `receipt-verification` is `blocked` in this kit (above), so `npm run verify` has nothing to check here.
+
 ## Commands
 
 | Command | What |
