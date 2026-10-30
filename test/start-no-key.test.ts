@@ -3,6 +3,10 @@
  * a run is set up, with one line saying what to do, and exit 1: never the
  * replay provider's throw and its stack trace. A replay stays reachable, but
  * only when it is asked for by name.
+ *
+ * It lives here, not in the runtime's own tests, because it runs the
+ * hello-agent, and a template scaffolds one agent and no sibling of it
+ * (`templates-read-nothing-outside.test.ts`).
  */
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -17,8 +21,8 @@ afterAll(() => {
 });
 
 const setupCalls = vi.hoisted(() => ({ count: 0 }));
-vi.mock("../src/setup.js", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../src/setup.js")>();
+vi.mock("../packages/agent-runtime/src/setup.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../packages/agent-runtime/src/setup.js")>();
   return {
     ...original,
     setup: () => {
@@ -28,11 +32,11 @@ vi.mock("../src/setup.js", async (importOriginal) => {
   };
 });
 
-const { start } = await import("../src/commands/start.js");
-const { loadAgent } = await import("../src/agent.js");
+const { start } = await import("../packages/agent-runtime/src/commands/start.js");
+const { loadAgent } = await import("../packages/agent-runtime/src/agent.js");
 
-const HELLO_DIR = resolve(import.meta.dirname, "../../../agents/hello-agent");
-const BIN = resolve(import.meta.dirname, "../bin.mjs");
+const HELLO_DIR = resolve(import.meta.dirname, "../agents/hello-agent");
+const BIN = resolve(import.meta.dirname, "../packages/agent-runtime/bin.mjs");
 
 describe("npm start, interactive, with no model key and no transcript", () => {
   let written: string[];
