@@ -188,6 +188,33 @@ function scriptedLooks(inner: StubChargeRail, script: RailLookup[]): PaymentRail
   };
 }
 
+describe("a pull with two consent pages in one attempt (consent_step)", () => {
+  const page = (url: string, step: "enroll" | "sign"): RailLookup => ({
+    status: "accepted",
+    transaction_id: "auth_1",
+    sandbox: true,
+    raw: {},
+    instrument: { payable: true, status: "PENDING", pix_copy_paste: null, boleto_bank_line: null, boleto_bar_code: null, due_date: null, consent_url: url, consent_step: step },
+  });
+
+  it("the log records the enroll page and the sign page, and each is shown once, on the real engine", async () => {
+    const h = receivables({ wrap: (rail) => scriptedLooks(rail, [page("https://bank.example/par", "enroll"), page("https://bank.example/par", "enroll"), page("https://app.example/pay/1", "sign"), page("https://app.example/pay/1", "sign")]) });
+    const d = await h.engine.draft({ items: [{ payee: "acordo-1", amount: 100, due_date: "2026-09-30" }] });
+    if (!d.ok) throw new Error("refused");
+    const issued = await h.engine.execute(d.execution.id);
+    const shown: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const seen = await h.engine.reconcile(issued.id);
+      // What pollUntilClosed does with each look.
+      for (const o of seen.outcomes) if (o.status === "accepted" && o.instrument?.payable && h.engine.markShown(seen.id, o.attempt_id, o.instrument.consent_step)) shown.push(o.instrument.consent_step ?? "-");
+    }
+    expect(shown).toEqual(["enroll", "sign"]);
+    const steps = h.store.listEvents({ execution_id: issued.id }).filter((e) => e.type === "charge.instrument").map((e) => (e.payload as { consent_step?: string }).consent_step);
+    expect(steps.filter(Boolean)).toEqual(["enroll", "sign"]);
+    expect(h.bundle.readEvents().filter((e) => e["type"] === "charge.instrument" && (e["payload"] as { consent_step?: string }).consent_step === "sign")).toHaveLength(1);
+  });
+});
+
 describe("a receivable already out whose look answers uncertain", () => {
   async function issued(script: RailLookup[]) {
     const h = receivables({ wrap: (rail) => scriptedLooks(rail, script) });
