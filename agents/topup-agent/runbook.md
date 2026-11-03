@@ -21,3 +21,5 @@ What to say and do while the demo runs, against Iniciador's sweeping sandbox.
 If the link expires (step 5 took too long): the conversation says so and offers another. Type `sim` again; a new execution, a new link.
 
 If the run stops looking before the pull completes: `npm run poll -- --channel whatsapp --conversation recarga`.
+
+Before handing over `runs/<run-id>/`, read its `transcript.jsonl`. The bundle masks the account's key everywhere except in the model's tool calls (`tool_calls`, `input`), which `rerun` replays byte for byte. A key appears there only if the model put one in `account` instead of the alias (README.md, "What the run leaves"). Nothing in the folder is a sealed receipt: `receipt-verification` is `blocked` in this kit.
