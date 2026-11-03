@@ -77,8 +77,10 @@ describe("two consent pages in one attempt", () => {
 });
 
 describe("a consent link in the channel log", () => {
-  it("the person gets the whole link; channel.jsonl keeps where it pointed, never its query", async () => {
+  /** Sends one consent link over a scripted backend; answers what the person got, what channel.jsonl keeps, and the console line. */
+  async function sendLink(link: string) {
     const delivered: OutboundBody[] = [];
+    const drawn: string[] = [];
     const inbox: InboundMessage[] = [{ id: "wamid.in.1", from: "+5511900000001", text: "sim", timestamp: Date.parse("2026-10-28T15:00:00Z") / 1000 }];
     const backend: ChannelBackend = {
       name: "scripted",
@@ -89,14 +91,32 @@ describe("a consent link in the channel log", () => {
       onStatus: () => undefined,
       close: async () => undefined,
     };
-    const channel = new WhatsAppChannel({ backend, conversation: { contact: "+5511900000001" }, now: () => new Date("2026-10-28T15:00:05Z"), templates: [] });
+    const channel = new WhatsAppChannel({ backend, conversation: { contact: "+5511900000001" }, now: () => new Date("2026-10-28T15:00:05Z"), templates: [], render: (l: string) => void drawn.push(l) });
     await channel.next();
-    const link = "https://app.example/agentic/pay/abc?token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl";
     await channel.send({ kind: "instrument", instrument: "consent_url", value: link, cta: consentCta("sign") });
-    expect(delivered.at(-1)).toMatchObject({ value: link });
-    const logged = JSON.stringify(channel.log());
-    expect(logged).toContain("https://app.example/agentic/pay/abc?<redacted>");
-    expect(logged).not.toContain("token=");
-    expect(logged).not.toContain("eyJ");
+    const out = channel.log().filter((l) => l.direction === "out").at(-1)!;
+    return { delivered: delivered.at(-1), logged: out.text, line: drawn.at(-1) ?? "" };
+  }
+
+  const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl";
+
+  it("the person gets the whole link; channel.jsonl keeps where it pointed, never its query", async () => {
+    const link = `https://app.example/agentic/pay/abc?token=${JWT}`;
+    const r = await sendLink(link);
+    expect(r.delivered).toMatchObject({ value: link });
+    expect(r.logged).toBe("https://app.example/agentic/pay/abc?<redacted>");
+  });
+
+  it("a token in the path is dropped too, and a fragment is named as one", async () => {
+    expect((await sendLink(`https://app.example/pay/${JWT}`)).logged).toBe("https://app.example/pay/<redacted>");
+    expect((await sendLink("https://app.example/pay/0b4c3f0e-8a7d-4a51-9a3e-1f2d3c4b5a69/sign")).logged).toBe("https://app.example/pay/<redacted>/sign");
+    expect((await sendLink("https://app.example/pay#k=secret")).logged).toBe("https://app.example/pay#<redacted>");
+  });
+
+  it("a link it cannot read is kept as neither value nor code: the console still calls it a link", async () => {
+    const r = await sendLink("not a url eyJsecret");
+    expect(r.logged).toBe("<consent link, unreadable>");
+    expect(r.line).toContain(CORE_STRINGS["pt-BR"].waConsentLink);
+    expect(r.line).not.toContain(CORE_STRINGS["pt-BR"].waCopyPaste);
   });
 });

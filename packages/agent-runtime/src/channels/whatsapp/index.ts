@@ -298,6 +298,7 @@ export class WhatsAppChannel implements Channel {
       const about = (body.kind === "text" || body.kind === "template") && body.about ? body.about : undefined;
       queueMicrotask(() => this.reportFailure({ ...early, ...(about ? { about } : {}) }));
     }
+    const text = textOf(body);
     this.record({
       at: this.options.now().toISOString(),
       direction: "out",
@@ -305,7 +306,7 @@ export class WhatsAppChannel implements Channel {
       kind: body.kind,
       message_id: sent.id,
       state: sent.state,
-      ...(textOf(body) !== undefined ? { text: textOf(body)! } : {}),
+      ...(text !== undefined ? { text } : {}),
       ...(sent.refused ? { refused: sent.refused } : {}),
       ...(sent.fallback ? { fallback: sent.fallback } : {}),
       ...((body.kind === "text" || body.kind === "template") && body.about ? { about: body.about } : {}),
@@ -345,7 +346,7 @@ function draw(line: ChannelLogLine, text: CoreStrings): string {
   const who = line.direction === "in" ? `${line.contact}:` : text.waShop;
   const what =
     line.kind === "instrument"
-      ? `${line.text?.startsWith("https://") ? text.waConsentLink : text.waCopyPaste} ${line.text ?? ""}`
+      ? `${isConsentLink(line.text) ? text.waConsentLink : text.waCopyPaste} ${line.text ?? ""}`
       : line.kind === "media"
         ? text.waQrImage
         : line.kind === "template"
@@ -359,8 +360,8 @@ function textOf(body: OutboundBody): string | undefined {
     case "text":
       return body.text;
     case "instrument":
-      // A consent link's query is its credential (a PAR request_uri, a signing page's JWT): the log keeps where it pointed, not the key.
-      return body.instrument === "consent_url" ? withoutQuery(body.value) : body.value;
+      // A consent link carries its credential (a PAR request_uri, a signing page's JWT): the log keeps where it pointed, not the key.
+      return body.instrument === "consent_url" ? redactedLink(body.value) : body.value;
     case "media":
       return body.caption;
     case "template":
@@ -368,13 +369,33 @@ function textOf(body: OutboundBody): string | undefined {
   }
 }
 
-function withoutQuery(link: string): string {
+/** What the log keeps of a consent link it could not read as one: never the value, and still drawn as a link, not as a code to copy. */
+const UNREADABLE_LINK = "<consent link, unreadable>";
+
+/**
+ * A consent link as channel.jsonl keeps it: where it pointed, without the
+ * credential. The query and the fragment are dropped whole; a path segment
+ * that looks like a token (a JWT, or 24 characters and more, such as a
+ * one-shot page's id) is dropped too, since some pages carry the key in
+ * the path and not in the query.
+ */
+function redactedLink(link: string): string {
+  let url: URL;
   try {
-    const url = new URL(link);
-    return `${url.origin}${url.pathname}${url.search || url.hash ? "?<redacted>" : ""}`;
+    url = new URL(link);
   } catch {
-    return "<link>";
+    return UNREADABLE_LINK;
   }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return UNREADABLE_LINK;
+  const path = url.pathname
+    .split("/")
+    .map((segment) => (segment.length >= 24 || segment.startsWith("eyJ") ? "<redacted>" : segment))
+    .join("/");
+  return `${url.origin}${path}${url.search ? "?<redacted>" : ""}${url.hash ? "#<redacted>" : ""}`;
+}
+
+function isConsentLink(text: string | undefined): boolean {
+  return text !== undefined && (text.startsWith("https://") || text.startsWith("http://") || text === UNREADABLE_LINK);
 }
 
 export * from "../contact.js";
