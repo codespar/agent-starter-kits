@@ -27,6 +27,7 @@ export function instrumentBodies(execution: Execution, instalment: number, charg
         item ? money.format(item.amount / 100) : "",
         instrument.due_date ? text.dueOn(formatDay(instrument.due_date, locale)) : "",
         // A pull's id is the bank authorization's, which means nothing to the person; the link below is what they act on.
+        // On a two-page pull the amount comes again with the sign page, on purpose: that page is the one that moves the money.
         instrument.consent_url ? "" : text.chargeRef(chargeId),
       ].join(""),
     },
