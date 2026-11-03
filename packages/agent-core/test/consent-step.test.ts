@@ -6,6 +6,7 @@
  * read exactly as before.
  */
 import { describe, expect, it } from "vitest";
+import { CORE_STRINGS, consentWords } from "../src/strings.js";
 import { harness } from "./helpers.js";
 
 describe("markShown and consent_step", () => {
@@ -29,5 +30,14 @@ describe("markShown and consent_step", () => {
     expect(h.engine.markShown("exe_1", "att_1_0")).toBe(true);
     expect(h.engine.markShown("exe_1", "att_1_0", "sign")).toBe(true);
     expect(h.engine.markShown("exe_1", "att_1_0")).toBe(false);
+  });
+});
+
+describe("consentWords: one choice of words per step, for every channel", () => {
+  it("no step is the bank's page; enroll and sign are the passkey's two pages", () => {
+    const pt = CORE_STRINGS["pt-BR"];
+    expect(consentWords(undefined)).toEqual({ lead: pt.consentLink, prompt: pt.consentPrompt, button: pt.consentButton });
+    expect(consentWords("enroll").lead).toBe(pt.enrollLink);
+    expect(consentWords("sign", "en").lead).toBe(CORE_STRINGS.en.signLink);
   });
 });

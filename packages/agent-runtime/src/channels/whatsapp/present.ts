@@ -11,7 +11,7 @@
  * its OWN message underneath, because a code inside a picture cannot be
  * copied and a code inside a paragraph cannot be tapped.
  */
-import { CORE_STRINGS, formatDay, type ChargeInstrument, type Execution, type Locale } from "@codespar/agent-core";
+import { CORE_STRINGS, consentWords, formatDay, type ChargeInstrument, type Execution, type Locale } from "@codespar/agent-core";
 import type { OutboundBody } from "../types.js";
 
 export function instrumentBodies(execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument, currency: string, locale: Locale = "pt-BR"): OutboundBody[] {
@@ -46,11 +46,8 @@ export function instrumentBodies(execution: Execution, instalment: number, charg
   return bodies;
 }
 
-/** The words on a consent link's button: the bank's one page, or which of a JSR pull's two it is. */
+/** The words on a consent link's button: the core's for that step (`consentWords`), in the shape the channel sends. */
 export function consentCta(step: ChargeInstrument["consent_step"], locale: Locale = "pt-BR"): { body: string; button: string; lead: string } {
-  const text = CORE_STRINGS[locale];
-  if (step === "enroll") return { body: text.enrollPrompt, button: text.enrollButton, lead: text.enrollLink };
-  if (step === "sign") return { body: text.signPrompt, button: text.signButton, lead: text.signLink };
-  return { body: text.consentPrompt, button: text.consentButton, lead: text.consentLink };
+  const words = consentWords(step, locale);
+  return { body: words.prompt, button: words.button, lead: words.lead };
 }
-

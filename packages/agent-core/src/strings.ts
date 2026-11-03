@@ -11,7 +11,8 @@
  * (`parseBatchGesture`). A prompt shown in English and answered in Portuguese
  * decides exactly what the same answer decides under a Portuguese prompt.
  */
-import type { LocaleTable } from "./locale.js";
+import type { Locale, LocaleTable } from "./locale.js";
+import type { ChargeInstrument } from "./types.js";
 
 const pt = {
   // How an execution reads on the console.
@@ -196,3 +197,15 @@ const en: CoreStrings = {
 };
 
 export const CORE_STRINGS: LocaleTable<CoreStrings> = { "pt-BR": pt, en };
+
+/**
+ * The words for a consent link, on every channel: the bank's one page, or
+ * which of a JSR pull's two pages it is (ChargeInstrument.consent_step).
+ * `lead` goes above a bare link, `prompt` and `button` make a tappable one.
+ */
+export function consentWords(step: ChargeInstrument["consent_step"], locale: Locale = "pt-BR"): { lead: string; prompt: string; button: string } {
+  const text = CORE_STRINGS[locale];
+  if (step === "enroll") return { lead: text.enrollLink, prompt: text.enrollPrompt, button: text.enrollButton };
+  if (step === "sign") return { lead: text.signLink, prompt: text.signPrompt, button: text.signButton };
+  return { lead: text.consentLink, prompt: text.consentPrompt, button: text.consentButton };
+}
