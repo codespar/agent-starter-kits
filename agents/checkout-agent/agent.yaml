@@ -30,8 +30,8 @@ scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md
 
-# What a person reads about this agent where it is offered (the Playground's catalog). DRAFT copy, 2026-11-04:
-# to be replaced by the product's wording. One entry per locale; `examples` names every scenario pack.
+# What a person reads about this agent where it is offered (the Playground's catalog). pt-BR reviewed by the Playground's
+# product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
 presentation:
   pt-BR:
     title: "Vendas na conversa"
@@ -57,7 +57,7 @@ presentation:
         description: "O cliente informa um cupom que a loja não tem; o desconto não é aplicado."
       escalated-above-threshold:
         title: "Pedido alto vai ao atendente"
-        description: "No modo política, um pedido acima de R$ 500,00 ainda passa pelo atendente."
+        description: "Com a política de vendas ligada, um pedido acima de R$ 500,00 ainda passa pelo atendente."
       happy-path:
         title: "Pacote de aulas"
         description: "A cliente pede o pacote de dez aulas e uma avaliação; o pedido é confirmado e a cobrança é paga."
@@ -103,7 +103,7 @@ presentation:
         description: "The customer gives a coupon the store does not have; no discount is applied."
       escalated-above-threshold:
         title: "Large order goes to the attendant"
-        description: "In policy mode, an order above R$ 500.00 still goes to the attendant."
+        description: "With the sales policy on, an order above R$ 500.00 still goes to the attendant."
       happy-path:
         title: "Lesson package"
         description: "The customer asks for the ten-lesson package and an assessment; the order is confirmed and the charge is paid."

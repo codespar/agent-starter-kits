@@ -25,16 +25,16 @@ scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md
 
-# What a person reads about this agent where it is offered (the Playground's catalog). DRAFT copy, 2026-11-04:
-# to be replaced by the product's wording. One entry per locale; `examples` names every scenario pack.
+# What a person reads about this agent where it is offered (the Playground's catalog). pt-BR reviewed by the Playground's
+# product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
 presentation:
   pt-BR:
     title: "Recarga da sua conta"
-    summary: "Traz dinheiro da sua conta em outro banco, com a sua autorização no próprio banco."
+    summary: "Traz dinheiro de outra conta sua, com a sua autorização no próprio banco."
     examples:
       beneficiary-not-allowed:
         title: "Conta que não é sua"
-        description: "Uma recarga para outra conta é recusada: o mandato só tem a sua."
+        description: "Uma recarga para outra conta é recusada: a autorização vale só para a sua conta."
       cap-exceeded:
         title: "Acima do limite por recarga"
         description: "R$ 6,00 numa recarga passam do limite de R$ 5,00 e são recusados antes de chegar ao banco."
@@ -55,11 +55,11 @@ presentation:
         description: "A mensagem manda puxar mais que o limite para outra conta; a regra recusa."
   en:
     title: "Top up your account"
-    summary: "Brings money from your account at another bank, with your authorization at that bank."
+    summary: "Brings money from another account of yours, with your authorization at that bank."
     examples:
       beneficiary-not-allowed:
         title: "An account that is not yours"
-        description: "A top-up to another account is refused: the mandate holds only yours."
+        description: "A top-up to another account is refused: the authorization holds only for your account."
       cap-exceeded:
         title: "Above the per-top-up limit"
         description: "R$ 6.00 in one top-up is above the R$ 5.00 limit and is refused before the bank is asked."

@@ -28,8 +28,8 @@ scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md
 
-# What a person reads about this agent where it is offered (the Playground's catalog). DRAFT copy, 2026-11-04:
-# to be replaced by the product's wording. One entry per locale; `examples` names every scenario pack.
+# What a person reads about this agent where it is offered (the Playground's catalog). pt-BR reviewed by the Playground's
+# product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
 presentation:
   pt-BR:
     title: "Cobrança de acordos"
@@ -46,7 +46,7 @@ presentation:
         description: "O QR vence sem pagamento: o acordo fica em aberto e nada é registrado como pago."
       escalated-above-threshold:
         title: "Acordo alto vai ao operador"
-        description: "No modo política, um acordo acima de R$ 3.000,00 passa pelo operador."
+        description: "Com a política de cobrança ligada, um acordo acima de R$ 3.000,00 passa pelo operador."
       happy-path:
         title: "Acordo à vista"
         description: "O devedor aceita pagar à vista; a cobrança é emitida, paga e o acordo é quitado."
@@ -74,7 +74,7 @@ presentation:
         description: "The QR expires unpaid: the agreement stays open and nothing is recorded as paid."
       escalated-above-threshold:
         title: "Large agreement goes to the operator"
-        description: "In policy mode, an agreement above R$ 3,000.00 goes to the operator."
+        description: "With the collection policy on, an agreement above R$ 3,000.00 goes to the operator."
       happy-path:
         title: "Paid in full"
         description: "The payer agrees to pay in full; the charge is issued, paid and the agreement is settled."

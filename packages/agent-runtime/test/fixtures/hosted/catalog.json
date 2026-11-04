@@ -14,7 +14,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:96f138500d771edf412d4de944d88ab92c2715c1294a18063356a70e696938b7"
+        "packageDigest": "sha256:d0edf2383ff0bd6d6205b82b1aed58c605ae4104b224890cd3e92f042d4ac8c5"
       },
       "entrypoint": "kits/bills-agent/src/kit.js",
       "inputSchema": {
@@ -130,11 +130,11 @@
       "presentation": {
         "pt-BR": {
           "title": "Contas do mês",
-          "summary": "Paga as contas da casa sob um mandato assinado: você aprova cada pagamento e recebe um recibo."
+          "summary": "Paga as contas da casa dentro dos limites que você definiu. Você aprova cada pagamento."
         },
         "en": {
           "title": "Monthly bills",
-          "summary": "Pays household bills under a signed mandate: you approve each payment and get a receipt."
+          "summary": "Pays household bills within the limits you set. You approve each payment."
         }
       },
       "recommended": {
@@ -219,11 +219,11 @@
           "presentation": {
             "pt-BR": {
               "title": "Quando o agente pede sua aprovação",
-              "description": "No modo mandato, um favorecido novo ou um valor alto ainda passa por você."
+              "description": "Com aprovação automática, um favorecido novo ou um valor alto ainda passa por você."
             },
             "en": {
               "title": "When the agent asks you",
-              "description": "In mandate mode, a new payee or a large amount still comes to you."
+              "description": "With automatic approval, a new payee or a large amount still comes to you."
             }
           }
         },
@@ -243,11 +243,11 @@
           "presentation": {
             "pt-BR": {
               "title": "Pagar a escola",
-              "description": "Você pede a mensalidade de outubro; o agente propõe, você aprova e o pagamento sai com recibo."
+              "description": "Você pede a mensalidade de outubro; o agente propõe, você aprova e o pagamento sai."
             },
             "en": {
               "title": "Pay the school",
-              "description": "You ask for October's tuition; the agent proposes it, you approve, and the payment goes out with a receipt."
+              "description": "You ask for October's tuition; the agent proposes it, you approve, and the payment goes out."
             }
           }
         },
@@ -317,7 +317,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:ab340e0b67b18657e301e1792a03b8cc83ce0e3dd7d8b71af9970073cff1e931"
+        "packageDigest": "sha256:84fca7a5ae45e520da1cbd4dea146e8ad01d4ad8cd7127e21bab15be272618cc"
       },
       "entrypoint": "kits/checkout-agent/src/kit.js",
       "inputSchema": {
@@ -654,11 +654,11 @@
           "presentation": {
             "pt-BR": {
               "title": "Pedido alto vai ao atendente",
-              "description": "No modo política, um pedido acima de R$ 500,00 ainda passa pelo atendente."
+              "description": "Com a política de vendas ligada, um pedido acima de R$ 500,00 ainda passa pelo atendente."
             },
             "en": {
               "title": "Large order goes to the attendant",
-              "description": "In policy mode, an order above R$ 500.00 still goes to the attendant."
+              "description": "With the sales policy on, an order above R$ 500.00 still goes to the attendant."
             }
           }
         },
@@ -854,7 +854,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:5b53ef1a5140d59b3b18e3b0f84cb350fb3209bb742a875b85b33a306eece0b1"
+        "packageDigest": "sha256:979a5217484b546c93c201ab05cedf70989db59198f78d511e8926d28133bbea"
       },
       "entrypoint": "kits/collections-agent/src/kit.js",
       "inputSchema": {
@@ -1081,11 +1081,11 @@
           "presentation": {
             "pt-BR": {
               "title": "Acordo alto vai ao operador",
-              "description": "No modo política, um acordo acima de R$ 3.000,00 passa pelo operador."
+              "description": "Com a política de cobrança ligada, um acordo acima de R$ 3.000,00 passa pelo operador."
             },
             "en": {
               "title": "Large agreement goes to the operator",
-              "description": "In policy mode, an agreement above R$ 3,000.00 goes to the operator."
+              "description": "With the collection policy on, an agreement above R$ 3,000.00 goes to the operator."
             }
           }
         },
@@ -1206,7 +1206,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:072570191bdcde520a836fe17821fdd43878647819de5c3caae67eb50c2c5afa"
+        "packageDigest": "sha256:3ed17311d9a13756098336a3ed5ea23334d373358775ead7758b839c322b40b1"
       },
       "entrypoint": "kits/hello-agent/src/kit.js",
       "inputSchema": {
@@ -1288,11 +1288,11 @@
       "presentation": {
         "pt-BR": {
           "title": "Primeiros passos",
-          "summary": "Lê as contas do mês e responde perguntas. Não paga nada."
+          "summary": "Lê as contas do mês e responde perguntas. Não move dinheiro."
         },
         "en": {
           "title": "First steps",
-          "summary": "Reads the month's bills and answers questions. Pays nothing."
+          "summary": "Reads the month's bills and answers questions. Moves no money."
         }
       },
       "recommended": null,
@@ -1356,7 +1356,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:9bacc13f985f64acabb67157be40c3da7017619c73aeb69d3bc77d78fa0040c3"
+        "packageDigest": "sha256:7419b066c88541412ed98894719d51d6000adb05789e11bb515cb12d1977a38b"
       },
       "entrypoint": "kits/supplier-payments-agent/src/kit.js",
       "inputSchema": {
@@ -1473,11 +1473,11 @@
       "presentation": {
         "pt-BR": {
           "title": "Pagamentos a fornecedores",
-          "summary": "Paga fornecedores, comissões e folha em lotes: você aprova a lista e cada linha tem o seu recibo."
+          "summary": "Paga fornecedores, comissões e folha em lote. Você aprova a lista, e cada linha tem o seu resultado."
         },
         "en": {
           "title": "Supplier payments",
-          "summary": "Pays suppliers, commissions and payroll in batches: you approve the list and each line gets its own receipt."
+          "summary": "Pays suppliers, commissions and payroll in batches. You approve the list, and each line has its own result."
         }
       },
       "recommended": null,
@@ -1560,11 +1560,11 @@
           "presentation": {
             "pt-BR": {
               "title": "Quando o agente pede sua aprovação",
-              "description": "No modo mandato, um fornecedor novo ou um valor alto ainda passa por você."
+              "description": "Com aprovação automática, um fornecedor novo ou um valor alto ainda passa por você."
             },
             "en": {
               "title": "When the agent asks you",
-              "description": "In mandate mode, a new supplier or a large amount still comes to you."
+              "description": "With automatic approval, a new supplier or a large amount still comes to you."
             }
           }
         },
@@ -1584,11 +1584,11 @@
           "presentation": {
             "pt-BR": {
               "title": "Folha de outubro",
-              "description": "A folha vira um pagamento por pessoa, cada um com o seu recibo."
+              "description": "A folha vira um pagamento por pessoa, cada um decidido e registrado."
             },
             "en": {
               "title": "October payroll",
-              "description": "The payroll becomes one payment per person, each with its own receipt."
+              "description": "The payroll becomes one payment per person, each decided and recorded."
             }
           }
         },
@@ -1682,7 +1682,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:97a2b484da2457eee71c33d8de972f8a25c62b86a09ad2e8dd876514733db880"
+        "packageDigest": "sha256:03c399efaaa399578d3f3babe72ca4fb954b483418f0a9da9ff3d8e15362abbd"
       },
       "entrypoint": "kits/topup-agent/src/kit.js",
       "inputSchema": {
@@ -1782,11 +1782,11 @@
       "presentation": {
         "pt-BR": {
           "title": "Recarga da sua conta",
-          "summary": "Traz dinheiro da sua conta em outro banco, com a sua autorização no próprio banco."
+          "summary": "Traz dinheiro de outra conta sua, com a sua autorização no próprio banco."
         },
         "en": {
           "title": "Top up your account",
-          "summary": "Brings money from your account at another bank, with your authorization at that bank."
+          "summary": "Brings money from another account of yours, with your authorization at that bank."
         }
       },
       "recommended": null,
@@ -1816,11 +1816,11 @@
           "presentation": {
             "pt-BR": {
               "title": "Conta que não é sua",
-              "description": "Uma recarga para outra conta é recusada: o mandato só tem a sua."
+              "description": "Uma recarga para outra conta é recusada: a autorização vale só para a sua conta."
             },
             "en": {
               "title": "An account that is not yours",
-              "description": "A top-up to another account is refused: the mandate holds only yours."
+              "description": "A top-up to another account is refused: the authorization holds only for your account."
             }
           }
         },

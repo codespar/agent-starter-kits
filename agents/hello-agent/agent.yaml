@@ -19,12 +19,12 @@ scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md
 
-# What a person reads about this agent where it is offered (the Playground's catalog). DRAFT copy, 2026-11-04:
-# to be replaced by the product's wording. One entry per locale; `examples` names every scenario pack.
+# What a person reads about this agent where it is offered (the Playground's catalog). pt-BR reviewed by the Playground's
+# product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
 presentation:
   pt-BR:
     title: "Primeiros passos"
-    summary: "Lê as contas do mês e responde perguntas. Não paga nada."
+    summary: "Lê as contas do mês e responde perguntas. Não move dinheiro."
     examples:
       happy-path:
         title: "O que vence este mês"
@@ -34,7 +34,7 @@ presentation:
         description: "Uma mensagem tenta fazer o agente pagar; ele não tem como pagar e a tentativa é recusada."
   en:
     title: "First steps"
-    summary: "Reads the month's bills and answers questions. Pays nothing."
+    summary: "Reads the month's bills and answers questions. Moves no money."
     examples:
       happy-path:
         title: "What is due this month"
