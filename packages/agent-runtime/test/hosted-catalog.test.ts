@@ -75,6 +75,11 @@ describe("buildCatalog", () => {
     expect(presented.examples[0]!.presentation!.en).toEqual({ title: "Gorjeta ao barista", description: "Dez reais ao barista." });
     writeFileSync(join(dir, "agent.yaml"), `${yaml}presentation:\n  pt-BR:\n${words("other-pack")}  en:\n${words("other-pack")}`);
     expect(() => describeKit({ ...agent, dir }, { root: ROOT, commit: COMMIT, shared: SHARED })).toThrow(/no words for example happy-path/);
+    // A recommended first experiment is carried, and one naming a pack that does not exist is refused.
+    writeFileSync(join(dir, "agent.yaml"), `${yaml}presentation:\n  recommended:\n    example: happy-path\n  pt-BR:\n${words("happy-path")}  en:\n${words("happy-path")}`);
+    expect(describeKit({ ...agent, dir }, { root: ROOT, commit: COMMIT, shared: SHARED }).recommended).toEqual({ example: "happy-path", rank: 1 });
+    writeFileSync(join(dir, "agent.yaml"), `${yaml}presentation:\n  recommended:\n    example: no-such-pack\n  pt-BR:\n${words("happy-path")}  en:\n${words("happy-path")}`);
+    expect(() => describeKit({ ...agent, dir }, { root: ROOT, commit: COMMIT, shared: SHARED })).toThrow(/recommended names no-such-pack/);
   });
 
   it("offers codespar-test to a kit whose money moves on the CodeSpar API, and to no other", async () => {

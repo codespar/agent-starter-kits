@@ -97,6 +97,8 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
   if (words) {
     const names = new Set(examples.map((e) => e.id));
     for (const locale of ["pt-BR", "en"] as const) for (const named of Object.keys(words[locale].examples)) if (!names.has(named)) throw new Error(`${m.name}: presentation (${locale}) names ${named}, which is not a scenario pack`);
+    const recommended = words.recommended;
+    if (recommended && !examples.some((e) => e.id === recommended.example && e.replay)) throw new Error(`${m.name}: presentation.recommended names ${recommended.example}, which is not a scenario pack with a recorded transcript`);
   }
 
   // The executors: the kit's own stub always. `codespar-test` for a kit whose money moves on the CodeSpar API: there the kit
@@ -159,6 +161,7 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
     locales: ["pt-BR", "en"],
     defaultLocale: m.locale ?? "pt-BR",
     presentation: words ? { "pt-BR": { title: words["pt-BR"].title, summary: words["pt-BR"].summary }, en: { title: words.en.title, summary: words.en.summary } } : null,
+    recommended: words?.recommended ? { example: words.recommended.example, rank: words.recommended.rank ?? 1 } : null,
     exampleIds,
     examples,
   };

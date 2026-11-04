@@ -29,6 +29,10 @@ agents_md: ./AGENTS.md
 # What a person reads about this agent where it is offered (the Playground's catalog). DRAFT copy, 2026-11-04:
 # to be replaced by the product's wording. One entry per locale; `examples` names every scenario pack.
 presentation:
+  # The first experiment the Playground offers: it replays on the simulator with no account, key or mandate of the person's.
+  recommended:
+    example: happy-path
+    rank: 1
   pt-BR:
     title: "Contas do mês"
     summary: "Paga as contas da casa sob um mandato assinado: você aprova cada pagamento e recebe um recibo."

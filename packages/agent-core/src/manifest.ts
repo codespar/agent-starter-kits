@@ -36,8 +36,17 @@ export const PresentationTextSchema = z
   })
   .strict();
 
-/** Optional. Present, it carries every locale the code prints in. */
-export const PresentationSchema = z.object({ "pt-BR": PresentationTextSchema, en: PresentationTextSchema }).strict();
+/**
+ * Optional. Present, it carries every locale the code prints in, and may name the scenario pack a host should offer as the
+ * first experiment (`recommended`). `rank` orders recommendations across kits: 1 first.
+ */
+export const PresentationSchema = z
+  .object({
+    "pt-BR": PresentationTextSchema,
+    en: PresentationTextSchema,
+    recommended: z.object({ example: z.string().regex(/^[a-z0-9-]+$/), rank: z.number().int().min(1).max(99).optional() }).strict().optional(),
+  })
+  .strict();
 
 export const ManifestSchema = z
   .object({

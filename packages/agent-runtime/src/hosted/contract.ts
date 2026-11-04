@@ -89,6 +89,8 @@ export const HostedKitDescriptorSchema = z
     defaultLocale: LocaleNameSchema,
     /** The kit's own words per locale (`agent.yaml` `presentation`), or null when it declares none. */
     presentation: z.object({ "pt-BR": z.object({ title: z.string(), summary: z.string() }).strict(), en: z.object({ title: z.string(), summary: z.string() }).strict() }).strict().nullable(),
+    /** The first experiment the kit recommends (`presentation.recommended`): an example it replays on the simulator. `rank` 1 is offered first. */
+    recommended: z.object({ example: z.string(), rank: z.number().int().min(1) }).strict().nullable(),
     exampleIds: z.array(z.string()),
     examples: z.array(
       z
@@ -117,6 +119,7 @@ export const HostedKitDescriptorSchema = z
     if (!d.locales.includes(d.defaultLocale)) issue("defaultLocale must be one of locales", ["defaultLocale"]);
     if (JSON.stringify(d.exampleIds) !== JSON.stringify(d.examples.map((e) => e.id))) issue("exampleIds must list examples[].id in order", ["exampleIds"]);
     if (d.supportedModelModes.includes("replay") && !d.examples.some((e) => e.replay)) issue("replay needs an example with a transcript", ["supportedModelModes"]);
+    if (d.recommended && !d.examples.some((e) => e.id === d.recommended!.example && e.replay)) issue("the recommended example must be one of the kit's examples, with a recorded transcript", ["recommended"]);
     const moves = d.tools.some((t) => t.effect === "payment" || t.effect === "charge");
     if (d.needsMandate !== moves) issue("needsMandate is true exactly when a payment or charge tool exists", ["needsMandate"]);
     if ((d.settlement === "none") !== !moves) issue('settlement is "none" exactly when no payment or charge tool exists', ["settlement"]);
@@ -142,6 +145,8 @@ export const HostedCatalogSchema = z
     const ids = c.kits.map((k) => k.id);
     if (JSON.stringify(ids) !== JSON.stringify([...ids].sort())) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "kits sorted by id", path: ["kits"] });
     if (new Set(ids).size !== ids.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate kit id", path: ["kits"] });
+    const ranks = c.kits.flatMap((k) => (k.recommended ? [k.recommended.rank] : []));
+    if (new Set(ranks).size !== ranks.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "two kits recommend a first experiment at the same rank", path: ["kits"] });
     for (const [i, k] of c.kits.entries()) if (k.source.commit !== c.artifact.commit) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "every kit comes from the artifact's commit", path: ["kits", i, "source", "commit"] });
   });
 

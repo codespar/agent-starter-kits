@@ -13,14 +13,14 @@
           "id": "bills-agent",
           "version": "0.1.0",
           "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-          "packageDigest": "sha256:7be456f61c14b409008123acfe5843dae6a69d6b2409e2438cbbb8735e582a8d"
+          "packageDigest": "sha256:96f138500d771edf412d4de944d88ab92c2715c1294a18063356a70e696938b7"
         },
         "modelMode": "replay",
         "executor": "codespar-test",
         "approvalMode": "human",
         "locale": "pt-BR",
         "exampleId": "happy-path",
-        "inputRevision": "sha256:14e86d33bbb99d283cc3493ba22b9fd1d3aa8642b6e156b776f3f4bc1b7ec784"
+        "inputRevision": "sha256:8d5df25a45248a06a00981eecf9d689c870675a0487f5482703073526e54e9af"
       }
     },
     {

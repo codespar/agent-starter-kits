@@ -44,6 +44,11 @@ describe("the hosted catalog of this repository", () => {
     }
   });
 
+  it("recommends one first experiment: bills-agent's happy path, which the simulator runs end to end", async () => {
+    const recommended = [...(await catalog()).values()].filter((k) => k.recommended);
+    expect(recommended.map((k) => [k.id, k.recommended])).toEqual([["bills-agent", { example: "happy-path", rank: 1 }]]);
+  });
+
   it("offers replay for every agent, from the packs it ships", async () => {
     for (const kit of (await catalog()).values()) {
       expect(kit.supportedModelModes, kit.id).toEqual(["replay", "model"]);
