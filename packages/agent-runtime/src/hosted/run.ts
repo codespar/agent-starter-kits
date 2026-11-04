@@ -48,6 +48,7 @@ import {
 import { envName, type Agent } from "../agent.js";
 import type { HostedRailContext, KitConfig, RailBuild, RailKind } from "../kit.js";
 import { isAwaitingPayer } from "../poll.js";
+import { loadScenario } from "../scenarios.js";
 import { assembleSetup, loadAgentFiles, type Setup } from "../setup.js";
 import { decideByGesture, followUp, handleExecution, type BatchGestureRecord } from "../terminal.js";
 import type {
@@ -365,7 +366,7 @@ export class HostedRun {
     if (model.mode === "model") return model.runtime;
     const example = this.example();
     if (!example) throw new HostedRefusal("example_unknown", "a replay needs an example");
-    this.replay ??= ReplayRuntime.fromFile(resolve(this.kit.agent.dir, "scenarios", `${example.id}.transcript.jsonl`), this.image.replayCursor ?? 0);
+    this.replay ??= ReplayRuntime.fromFile(resolve(this.kit.agent.dir, "scenarios", loadScenario(this.kit.agent, example.id).transcript), this.image.replayCursor ?? 0);
     return this.replay;
   }
 
