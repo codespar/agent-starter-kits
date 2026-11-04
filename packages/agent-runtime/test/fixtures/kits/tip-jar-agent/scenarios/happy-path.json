@@ -1,0 +1,8 @@
+{
+  "name": "happy-path",
+  "description": "The person tips the barista R$ 10,00; the core asks; the person approves; one receipt.",
+  "modes": ["human"],
+  "transcript": "./happy-path.transcript.jsonl",
+  "turns": [{ "input": "tip the barista 10 reais", "decision": "approve" }],
+  "expect": { "human": { "states": ["settled"], "receipts": 1, "settled_total": 1000 } }
+}

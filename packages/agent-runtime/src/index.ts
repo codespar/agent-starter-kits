@@ -10,6 +10,8 @@ export * from "./webhook.js";
 export * from "./scenarios.js";
 export * from "./adversarial.js";
 export * from "./inspect.js";
+export * from "./hosted/contract.js";
+export * from "./hosted/catalog.js";
 export { main } from "./cli.js";
 export { checkStrings } from "./commands/check.js";
 export { pollWhatsApp, type PollWhatsAppOptions } from "./commands/poll-whatsapp.js";

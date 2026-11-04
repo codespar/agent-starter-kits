@@ -161,7 +161,7 @@ describe("the proof's settings", () => {
     process.env["BILLS_CONSUMER_ID"] = PROOF.consumerId;
     process.env["BILLS_PROOF_RECEIVER_KEY"] = PROOF.receiverKey;
     const engine = engineFor({ ...example(), id: "mdt_proof_bills" }, "human");
-    const out = (await listBills({}, { engine } as never)) as { bills: Array<{ alias: string; amount_minor: number }> };
+    const out = (await listBills(process.env)({}, { engine } as never)) as { bills: Array<{ alias: string; amount_minor: number }> };
     expect(out.bills.map((b) => [b.alias, b.amount_minor])).toEqual(INTEGRATED_BILLS.map((b) => [b.alias, b.amount_minor]));
   });
 });
