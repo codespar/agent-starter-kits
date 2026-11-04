@@ -1,0 +1,347 @@
+{
+  "runId": "pkr_Fx7bills0proposal",
+  "events": [
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 1,
+      "at": "2026-11-04T10:00:00.000Z",
+      "type": "run.created",
+      "source": "host",
+      "data": {
+        "kit": {
+          "id": "bills-agent",
+          "version": "0.1.0",
+          "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
+          "packageDigest": "sha256:f6c00fbc68501bc8f79bdd783b2e799ca59290417f34664ff4ebbce351621a03"
+        },
+        "modelMode": "replay",
+        "executor": "codespar-test",
+        "approvalMode": "human",
+        "locale": "pt-BR",
+        "exampleId": "happy-path",
+        "inputRevision": "sha256:0b27169c9741448c267063fa941739a8fb7387ee32a6d9ff54584683b8d7c96b"
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 2,
+      "at": "2026-11-04T10:00:02.000Z",
+      "type": "turn.accepted",
+      "source": "host",
+      "ref": {
+        "turnId": "turn_1"
+      },
+      "data": {
+        "turnId": "turn_1",
+        "index": 0,
+        "text": "pague a escola de outubro",
+        "origin": "example"
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 3,
+      "at": "2026-11-04T10:00:02.010Z",
+      "type": "tool.started",
+      "source": "loop",
+      "ref": {
+        "turnId": "turn_1",
+        "toolCallId": "tc_1"
+      },
+      "data": {
+        "toolCallId": "tc_1",
+        "name": "list_bills",
+        "effect": "read"
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 4,
+      "at": "2026-11-04T10:00:02.020Z",
+      "type": "tool.completed",
+      "source": "loop",
+      "ref": {
+        "turnId": "turn_1",
+        "toolCallId": "tc_1"
+      },
+      "data": {
+        "toolCallId": "tc_1",
+        "name": "list_bills",
+        "effect": "read",
+        "refused": false,
+        "error": null
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 5,
+      "at": "2026-11-04T10:00:02.030Z",
+      "type": "tool.started",
+      "source": "loop",
+      "ref": {
+        "turnId": "turn_1",
+        "toolCallId": "tc_2"
+      },
+      "data": {
+        "toolCallId": "tc_2",
+        "name": "codespar_pay",
+        "effect": "payment"
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 6,
+      "at": "2026-11-04T10:00:02.040Z",
+      "type": "execution.proposed",
+      "source": "engine",
+      "ref": {
+        "turnId": "turn_1",
+        "toolCallId": "tc_2",
+        "executionId": "exe_9d2c41a7e0b35f18"
+      },
+      "data": {
+        "id": "exe_9d2c41a7e0b35f18",
+        "state": "drafted",
+        "reason": null,
+        "detail": null,
+        "approvalMode": "human",
+        "items": [
+          {
+            "beneficiary": "Escola Aurora",
+            "payeeMasked": "fi***@escola-aurora.example.com.br",
+            "alias": "escola",
+            "amountMinor": 185000,
+            "description": "mensalidade outubro",
+            "dueDate": null
+          }
+        ],
+        "totalMinor": 185000,
+        "currency": "BRL",
+        "itemsHash": "sha256:8fbc7dd769e48628af454f014cc283cd181c25679f13dec7ca1ef1704087c86a",
+        "batch": null,
+        "compositionHash": null,
+        "escalation": null,
+        "approvalId": null,
+        "approvedBy": null,
+        "attempts": [],
+        "evidence": [],
+        "history": [],
+        "createdAt": "2026-11-04T10:00:02.040Z",
+        "updatedAt": "2026-11-04T10:00:02.040Z"
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 7,
+      "at": "2026-11-04T10:00:02.040Z",
+      "type": "execution.transitioned",
+      "source": "engine",
+      "ref": {
+        "executionId": "exe_9d2c41a7e0b35f18"
+      },
+      "data": {
+        "from": "drafted",
+        "to": "awaiting_approval",
+        "reason": null,
+        "detail": null,
+        "actor": {
+          "type": "agent",
+          "agent": "bills-agent@0.1.0",
+          "onBehalfOf": "usr_demo_titular"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 8,
+      "at": "2026-11-04T10:00:02.040Z",
+      "type": "approval.requested",
+      "source": "engine",
+      "ref": {
+        "executionId": "exe_9d2c41a7e0b35f18"
+      },
+      "data": {
+        "binding": {
+          "itemsHash": "sha256:8fbc7dd769e48628af454f014cc283cd181c25679f13dec7ca1ef1704087c86a",
+          "totalMinor": 185000,
+          "currency": "BRL",
+          "mandateId": "mdt_example_bills_0001",
+          "mandateVersion": 1,
+          "batchHash": null,
+          "batchIndex": null,
+          "compositionHash": null
+        },
+        "rule": {
+          "approvalMode": "human",
+          "trigger": null,
+          "detail": null
+        },
+        "canApprove": true,
+        "blockingReasons": [],
+        "expiresAt": null
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 9,
+      "at": "2026-11-04T10:00:02.050Z",
+      "type": "execution.transitioned",
+      "source": "engine",
+      "ref": {
+        "executionId": "exe_9d2c41a7e0b35f18"
+      },
+      "data": {
+        "from": "awaiting_approval",
+        "to": "approved",
+        "reason": null,
+        "detail": null,
+        "actor": {
+          "type": "human",
+          "id": "user_2pQx7Lw0Fixture",
+          "channel": "platform-proposal"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 10,
+      "at": "2026-11-04T10:00:02.050Z",
+      "type": "approval.decided",
+      "source": "host",
+      "ref": {
+        "executionId": "exe_9d2c41a7e0b35f18",
+        "approvalId": "apr_0feb2aee49161f3e"
+      },
+      "data": {
+        "decision": "forward",
+        "actor": {
+          "type": "human",
+          "id": "user_2pQx7Lw0Fixture",
+          "channel": "platform-proposal"
+        },
+        "approvalId": "apr_0feb2aee49161f3e",
+        "resultState": "approved"
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 11,
+      "at": "2026-11-04T10:00:02.050Z",
+      "type": "execution.transitioned",
+      "source": "engine",
+      "ref": {
+        "executionId": "exe_9d2c41a7e0b35f18"
+      },
+      "data": {
+        "from": "approved",
+        "to": "executing",
+        "reason": null,
+        "detail": "idempotency_key idk_f37366fdfad456fd112e63d717b6be5c",
+        "actor": {
+          "type": "agent",
+          "agent": "bills-agent@0.1.0",
+          "onBehalfOf": "usr_demo_titular"
+        }
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 12,
+      "at": "2026-11-04T10:00:02.050Z",
+      "type": "dispatch.attempted",
+      "source": "engine",
+      "ref": {
+        "executionId": "exe_9d2c41a7e0b35f18",
+        "attemptId": "att_f37366fdfad456fd112e63d717b6be5c_0"
+      },
+      "data": {
+        "attemptId": "att_f37366fdfad456fd112e63d717b6be5c_0",
+        "idempotencyKey": "idk_f37366fdfad456fd112e63d717b6be5c",
+        "amountMinor": 185000,
+        "payeeMasked": "fi***@escola-aurora.example.com.br",
+        "rail": "codespar-proposal"
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 13,
+      "at": "2026-11-04T10:00:02.050Z",
+      "type": "proposal.updated",
+      "source": "engine",
+      "ref": {
+        "executionId": "exe_9d2c41a7e0b35f18",
+        "proposalId": "prp_a090a4c1f17ccb76099a",
+        "attemptId": "att_f37366fdfad456fd112e63d717b6be5c_0"
+      },
+      "data": {
+        "proposalId": "prp_a090a4c1f17ccb76099a",
+        "attemptId": "att_f37366fdfad456fd112e63d717b6be5c_0",
+        "state": "awaiting_approval"
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 14,
+      "at": "2026-11-04T10:00:02.050Z",
+      "type": "outcome.pending",
+      "source": "engine",
+      "ref": {
+        "executionId": "exe_9d2c41a7e0b35f18"
+      },
+      "data": {
+        "kind": "awaiting_proposal",
+        "detail": "1 receivable(s) issued and unpaid: prp_a090a4c1f17ccb76099a"
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 15,
+      "at": "2026-11-04T10:00:02.060Z",
+      "type": "tool.completed",
+      "source": "loop",
+      "ref": {
+        "turnId": "turn_1",
+        "toolCallId": "tc_2",
+        "executionId": "exe_9d2c41a7e0b35f18"
+      },
+      "data": {
+        "toolCallId": "tc_2",
+        "name": "codespar_pay",
+        "effect": "payment",
+        "refused": false,
+        "error": null
+      }
+    },
+    {
+      "v": 1,
+      "runId": "pkr_Fx7bills0proposal",
+      "seq": 16,
+      "at": "2026-11-04T10:00:02.070Z",
+      "type": "assistant.replied",
+      "source": "loop",
+      "ref": {
+        "turnId": "turn_1"
+      },
+      "data": {
+        "turnId": "turn_1",
+        "text": "Propus o pagamento da Escola Aurora, R$ 1.850,00 (mensalidade de outubro). O resultado está no terminal.",
+        "truncated": false
+      }
+    }
+  ]
+}

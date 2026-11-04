@@ -28,6 +28,7 @@ import {
   StateStore,
   canonicalJson,
   isTerminal,
+  loadMandate,
   maskPayee,
   newRunId,
   redactorFor,
@@ -46,11 +47,13 @@ import {
   type TransitionRecord,
 } from "@codespar/agent-core";
 import { envName, type Agent } from "../agent.js";
-import type { HostedRailContext, KitConfig, RailBuild, RailKind } from "../kit.js";
+import type { KitConfig, RailBuild, RailKind } from "../kit.js";
 import { isAwaitingPayer } from "../poll.js";
 import { loadScenario } from "../scenarios.js";
+import { ProposalPaymentRail, type ProposalRail } from "./proposals.js";
 import { assembleSetup, loadAgentFiles, type Setup } from "../setup.js";
 import { decideByGesture, followUp, handleExecution, type BatchGestureRecord } from "../terminal.js";
+import { RUN_ID } from "./contract.js";
 import type {
   ActorView,
   ApprovalBinding,
@@ -84,7 +87,8 @@ export interface IdentityPort {
 /** The run's durable record. `save` is compare-and-set on `revision` (0: the run does not exist yet) and writes the image and its new events together. */
 export interface StatePort {
   load(runId: string): Promise<{ image: RunImage; revision: number } | undefined>;
-  save(runId: string, image: RunImage, newEvents: readonly HostedEvent[], expectedRevision: number): Promise<{ ok: true; revision: number } | { ok: false; reason: "revision_conflict" }>;
+  /** `binding_changed`: the host already holds another binding for an execution this save asks approval for; nothing of the save was kept. */
+  save(runId: string, image: RunImage, newEvents: readonly HostedEvent[], expectedRevision: number): Promise<{ ok: true; revision: number } | { ok: false; reason: "revision_conflict" | "binding_changed" }>;
   events(runId: string, after: number): Promise<HostedEvent[]>;
 }
 
@@ -95,8 +99,13 @@ export interface ApprovalPort {
   authorize(request: { runId: string; executionId: string; decision: "approve" | "deny"; binding: ApprovalBinding; actor: HostedActor }): Promise<{ ok: true } | { ok: false; code: string; message: string }>;
 }
 
-/** The executor, pinned at create. No fallback in either direction. */
-export type RailPort = { executor: "simulator" } | { executor: "codespar-test"; client: HostedRailContext["client"]; mandate: Mandate };
+/**
+ * The executor, pinned at create. No fallback in either direction.
+ * `simulator`: the kit's own stub rail and example mandate, in the run's private store.
+ * `codespar-test`: each attempt is a platform proposal drafted through `proposals`; a person pays it, the platform dispatches it.
+ * The kit gets no client and no key. `mandate` is the one the host binds the kit's own policy to; absent, the kit's example.
+ */
+export type RailPort = { executor: "simulator" } | { executor: "codespar-test"; proposals: ProposalRail; mandate?: Mandate };
 
 /** The model mode, pinned at create. `replay` is the example's own recorded transcript; `model` is the host's runtime, under its budgets. */
 export type ModelPort = { mode: "replay" } | { mode: "model"; runtime: AgentRuntime };
@@ -173,6 +182,8 @@ export type HostedRefusalCode =
   | "run_stopped"
   | "revision_conflict"
   | "decision_stale"
+  | "decide_on_proposal"
+  | "binding_changed"
   | "not_awaiting_approval"
   | "not_awaiting_payer"
   | "not_authorized"
@@ -238,9 +249,13 @@ export async function createHostedRun(kit: HostedKit, ports: HostedPorts, comman
   const locale = options.locale ?? d.defaultLocale;
   const actor = await ports.identity.actor();
   const runId = command.runId ?? newRunId("hosted");
-  if (!/^run_[A-Za-z0-9_-]+$/.test(runId)) throw new HostedRefusal("invalid_command", "a run id starts with run_");
+  if (!RUN_ID.test(runId)) throw new HostedRefusal("invalid_command", `a run id matches ${RUN_ID}`);
 
-  const binding = { modelMode: command.modelMode, executor: command.executor, approvalMode, locale, exampleId, inputRevision: sha256({ approvalMode, locale, exampleId }) };
+  const executor = d.executors.find((e) => e.id === command.executor);
+  if (executor && executor.blockedBy.length > 0) throw new HostedRefusal("executor_unsupported", `${d.id} on ${command.executor} is blocked by ${executor.blockedBy.join(", ")}`);
+  // Options are immutable per run: the revision is the hash of everything the run was created with.
+  const inputRevision = sha256({ kit: d.id, packageDigest: d.source.packageDigest, modelMode: command.modelMode, executor: command.executor, options: { approvalMode, locale, exampleId } });
+  const binding = { modelMode: command.modelMode, executor: command.executor, approvalMode, locale, exampleId, inputRevision };
   const existing = await ports.state.load(runId);
   if (existing) {
     const prior = existing.image.commands[command.commandId];
@@ -337,9 +352,9 @@ export class HostedRun {
       const stubRail = agent.settlement === "await-payer" ? { payer: "never" as const } : undefined;
       built = agent.kit.buildRail({ kind: "stub", env: config, agentDir: agent.dir, stateDir: NO_STATE_DIR, manifest: files.manifest, store, gate, now: clock, mandate: undefined, stubRail, envVar: (name) => config[envName(agent, name)] });
     } else {
-      if (!agent.kit.hostedRail) throw new HostedRefusal("executor_unsupported", `${this.kit.descriptor.id} builds no hosted rail`);
+      // The kit's policy runs on the host's mandate (or its own example) and the local status gate; the platform runs its own gate on the proposal.
       railKind = "api";
-      built = agent.kit.hostedRail({ client: rail.client, mandate: rail.mandate, store, manifest: files.manifest, now: clock, config });
+      built = { rail: new ProposalPaymentRail(rail.proposals, store), mandate: rail.mandate ?? loadMandate(files.manifest.resolvePath(files.manifest.manifest.mandate_schema)) };
     }
     const bundle = ProofBundle.inMemory(this.image.runId, this.files);
     bundle.learnPayees(built.mandate);
@@ -386,7 +401,7 @@ export class HostedRun {
       system: s.system,
       bundle: s.bundle,
       engine: s.engine,
-      onExecution: (execution) => this.continueExecution(execution),
+      onExecution: (execution) => this.continueExecution(this.forward(execution)),
       onBatch: async (batch) => {
         this.image.batches[batch.ref] = { presentation: batch, gesture: null };
         this.project();
@@ -418,6 +433,19 @@ export class HostedRun {
       },
     });
     return this.loop;
+  }
+
+  /**
+   * codespar-test: the kit's approval is not where the person decides; the platform proposal is. An execution the kit holds for
+   * approval is forwarded by the run's actor (channel `platform-proposal`), so the engine runs its last gate and drafts the
+   * proposal. The forward authorizes no payment and a blocked execution is still denied by the engine.
+   */
+  private forward(execution: Execution): Execution {
+    if (this.image.binding.executor !== "codespar-test" || execution.state !== "awaiting_approval") return execution;
+    this.project();
+    const forwarded = this.setup.engine.approve(execution.id, { id: this.approver.id, channel: "platform-proposal" });
+    this.decided(forwarded, "forward", "platform-proposal");
+    return forwarded;
   }
 
   /** What the terminal does with an execution a tool or a decision produced, never asking anyone: awaiting stays awaiting; approved runs; a receivable is looked at once. */
@@ -562,6 +590,7 @@ export class HostedRun {
     if (this.replayed(command.commandId, "decide", payload)) return this.snapshot();
     const actor = await this.actor();
     this.refuseIfStopped();
+    if (this.image.binding.executor === "codespar-test") throw new HostedRefusal("decide_on_proposal", "on codespar-test a person pays the platform proposal, or Aprovações decides it; the run decides nothing");
     const engine = this.setup.engine;
     engine.expireStale();
     const execution = engine.get(command.executionId);
@@ -586,6 +615,7 @@ export class HostedRun {
     if (this.replayed(command.commandId, "decide_batch", payload)) return this.snapshot();
     const actor = await this.actor();
     this.refuseIfStopped();
+    if (this.image.binding.executor === "codespar-test") throw new HostedRefusal("decide_on_proposal", "on codespar-test a person pays the platform proposal, or Aprovações decides it; the run decides nothing");
     const engine = this.setup.engine;
     engine.expireStale();
     const presented = this.image.batches[command.batchRef];
@@ -741,7 +771,10 @@ export class HostedRun {
       throw this.dead;
     }
     if (!saved.ok) {
-      this.dead = new HostedRefusal("revision_conflict", `run ${image.runId} changed under this process; reopen it`);
+      this.dead =
+        saved.reason === "binding_changed"
+          ? new HostedRefusal("binding_changed", `the host holds another binding for an execution of run ${image.runId}; nothing of this save was kept`)
+          : new HostedRefusal("revision_conflict", `run ${image.runId} changed under this process; reopen it`);
       throw this.dead;
     }
     this.revision = saved.revision;
@@ -790,6 +823,11 @@ export class HostedRun {
         return;
       case "charge.instrument": {
         const outcome = execution?.outcomes.find((o) => o.attempt_id === payload["attempt_id"]);
+        if (this.image.binding.executor === "codespar-test") {
+          const proposalId = String(payload["charge_id"]);
+          this.emit("proposal.updated", "engine", { proposalId, attemptId: String(payload["attempt_id"]), state: String(payload["status"]) as "drafted" }, { ...ref, proposalId, attemptId: String(payload["attempt_id"]) }, row.at);
+          return;
+        }
         const instrument = outcome?.instrument;
         this.emit(
           "instrument.presented",
@@ -813,19 +851,19 @@ export class HostedRun {
         this.emit("outcome.pending", "engine", { kind: payload["needs_human"] ? "needs_human" : "uncertain", detail: this.redact(String(payload["detail"] ?? "")) ?? "" }, ref, row.at);
         return;
       case "execution.awaiting_settlement":
-        this.emit("outcome.pending", "engine", { kind: "awaiting_payer", detail: this.redact(String(payload["detail"] ?? "")) ?? "" }, ref, row.at);
+        this.emit("outcome.pending", "engine", { kind: this.image.binding.executor === "codespar-test" ? "awaiting_proposal" : "awaiting_payer", detail: this.redact(String(payload["detail"] ?? "")) ?? "" }, ref, row.at);
         return;
       default:
         return;
     }
   }
 
-  private decided(execution: Execution, decision: "approve" | "deny"): void {
+  private decided(execution: Execution, decision: "approve" | "deny" | "forward", channel: "playground" | "platform-proposal" = "playground"): void {
     this.project();
     this.emit(
       "approval.decided",
       "host",
-      { decision, actor: { type: "human", id: this.approver.id, channel: "playground" }, approvalId: execution.approval_id ?? null, resultState: execution.state },
+      { decision, actor: { type: "human", id: this.approver.id, channel }, approvalId: execution.approval_id ?? null, resultState: execution.state },
       { executionId: execution.id, ...(execution.approval_id ? { approvalId: execution.approval_id } : {}), ...(execution.batch ? { batchRef: execution.batch.ref } : {}) },
     );
   }
@@ -909,7 +947,7 @@ export class HostedRun {
 // ---- views -------------------------------------------------------------------
 
 function actorView(actor: Actor): ActorView {
-  return actor.type === "agent" ? { type: "agent", agent: actor.agent, onBehalfOf: actor.on_behalf_of } : { type: "human", id: actor.id, channel: "playground" };
+  return actor.type === "agent" ? { type: "agent", agent: actor.agent, onBehalfOf: actor.on_behalf_of } : { type: "human", id: actor.id, channel: actor.channel === "platform-proposal" ? "platform-proposal" : "playground" };
 }
 
 export function bindingOf(e: Execution): ApprovalBinding {
@@ -933,7 +971,7 @@ function evidenceOf(e: Execution, kind: EvidenceKind): EvidenceRef[] {
   if (kind === "none") return [];
   return e.outcomes.map((o) => {
     if (o.status === "settled") return { kind, id: o.receipt_id ?? o.transaction_id ?? o.attempt_id, detail: kind === "simulated" ? "simulator: not a CodeSpar receipt" : null };
-    if (o.status === "accepted") return { kind, id: o.transaction_id ?? o.attempt_id, detail: "issued; the payer has not paid" };
+    if (o.status === "accepted") return { kind, id: o.transaction_id ?? o.attempt_id, detail: kind === "codespar_receipt" ? `platform proposal ${o.instrument?.status ?? "drafted"}; not paid` : "issued; the payer has not paid" };
     return { kind, id: o.attempt_id, detail: o.error ?? o.code ?? "failed" };
   });
 }
@@ -941,7 +979,7 @@ function evidenceOf(e: Execution, kind: EvidenceKind): EvidenceRef[] {
 function viewOf(e: Execution, store: StateStore, evidence: EvidenceKind, options: { asDrafted?: boolean; redact: (v: string | null) => string | null }): ExecutionView {
   const drafted = options.asDrafted === true;
   const approval = !drafted && e.approval_id ? store.getApproval(e.approval_id) : undefined;
-  const approvedBy: ActorView | null = approval ? (approval.approver.type === "mandate" ? { type: "mandate", id: approval.approver.id } : { type: "human", id: approval.approver.id, channel: "playground" }) : null;
+  const approvedBy: ActorView | null = approval ? (approval.approver.type === "mandate" ? { type: "mandate", id: approval.approver.id } : actorView({ type: "human", id: approval.approver.id, channel: approval.approver.channel })) : null;
   const items = e.items.map((i) => ({ beneficiary: i.beneficiary, payeeMasked: maskPayee(i.payee), alias: i.alias ?? null, amountMinor: i.amount, description: options.redact(i.description ?? null), dueDate: i.due_date ?? null }));
   return {
     id: e.id,
@@ -989,6 +1027,8 @@ function statusOf(image: RunImage, store: StateStore): RunStatus {
   const open = store.listExecutions({ state: ["awaiting_approval", "executing"] });
   if (open.some((e) => e.state === "awaiting_approval")) return "awaiting_decision";
   if (open.some((e) => e.state === "executing" && !isAwaitingPayer(e))) return "awaiting_reconciliation";
+  // A proposal waits for a person to pay it: a decision, taken on the platform.
+  if (image.binding.executor === "codespar-test" && open.some((e) => e.state === "executing")) return "awaiting_decision";
   if (open.some((e) => e.state === "executing")) return "awaiting_payer";
   return "idle";
 }
@@ -1031,6 +1071,11 @@ export function snapshotOf(image: RunImage, store: StateStore, descriptor: Hoste
       }
       for (const o of e.outcomes) {
         if (o.status !== "accepted" || !o.transaction_id || !o.instrument) continue;
+        if (image.binding.executor === "codespar-test") {
+          const state = o.instrument.status;
+          pending.push({ kind: "payment_proposal", executionId: e.id, proposalId: o.transaction_id, proposalState: state === "awaiting_approval" || state === "executing" ? state : "drafted" });
+          continue;
+        }
         const i = o.instrument;
         pending.push({
           kind: "payer",

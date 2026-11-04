@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { checkEventLog, RunSnapshotSchema, type HostedEvent, type RunSnapshot } from "../src/hosted/contract.js";
 import { createHostedRun, HostedRefusal, openHostedRun, type HostedKit } from "../src/hosted/run.js";
-import { ACTOR, MemoryState, ScriptedRuntime, hostedKit, ports } from "./hosted-ports.js";
+import { ACTOR, FakeProposals, MemoryState, ScriptedRuntime, hostedKit, ports } from "./hosted-ports.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../../..");
@@ -206,10 +206,72 @@ describe("what a host must survive", () => {
 });
 
 describe("what a run never infers", () => {
-  it("refuses an executor the kit does not build, a model port that disagrees, and a replay with nothing to replay", async () => {
-    await refusal(createHostedRun(kit, ports({ rail: { executor: "codespar-test", client: {} as never, mandate: {} as never } }), { ...replay, executor: "codespar-test" }), "executor_unsupported");
+  it("refuses an executor port that disagrees, a model port that disagrees, and a replay with nothing to replay", async () => {
+    await refusal(createHostedRun(kit, ports(), { ...replay, executor: "codespar-test" }), "executor_unsupported");
+    await refusal(createHostedRun(kit, ports({ rail: { executor: "codespar-test", proposals: new FakeProposals() } }), replay), "executor_unsupported");
     await refusal(createHostedRun(kit, ports(), { ...replay, modelMode: "model" }), "model_mode_unsupported");
     await refusal(createHostedRun(kit, ports(), { ...replay, options: {} }), "example_unknown");
     await refusal(createHostedRun(kit, ports(), { ...replay, options: { exampleId: "happy-path", approvalMode: "mandate", locale: "en" } }).then((r) => r.turn({ commandId: "t", text: "typed" })), "replay_requires_example_turn");
+  });
+});
+
+describe("codespar-test: money as platform proposals, paid by a person, never by the kit", () => {
+  const onTest = { ...replay, executor: "codespar-test" as const };
+
+  async function proposed() {
+    const proposals = new FakeProposals();
+    const p = ports({ rail: { executor: "codespar-test", proposals } });
+    const run = await createHostedRun(kit, p, onTest);
+    await run.turn({ commandId: "c-1", exampleTurn: 0 });
+    return { proposals, p, run, snapshot: valid(await run.snapshot()) };
+  }
+
+  it("forwards the kit's approval to one proposal per attempt and waits for the person to pay it", async () => {
+    const { proposals, p, run, snapshot } = await proposed();
+    expect(snapshot.run.status).toBe("awaiting_decision");
+    expect(snapshot.executions[0]).toMatchObject({ state: "executing", reason: "awaiting_settlement", approvedBy: { type: "human", id: ACTOR.userId, channel: "platform-proposal" } });
+    expect(proposals.submitted).toHaveLength(1);
+    expect(proposals.submitted[0]).toMatchObject({ executionId: snapshot.executions[0]!.id, totalMinor: 1000, currency: "BRL", items: [{ payee: "barista@cafe.example.com.br", amountMinor: 1000 }] });
+    expect(snapshot.pending).toEqual([{ kind: "payment_proposal", executionId: snapshot.executions[0]!.id, proposalId: `prop_${proposals.submitted[0]!.attemptId}`, proposalState: "awaiting_approval" }]);
+    const events = log(p, run.runId);
+    expect(checkEventLog(events)).toEqual([]);
+    expect(events.find((e) => e.type === "approval.decided")!.data).toMatchObject({ decision: "forward", actor: { channel: "platform-proposal" } });
+    expect(events.filter((e) => e.type === "proposal.updated").map((e) => (e.data as { state: string }).state)).toEqual(["awaiting_approval"]);
+    expect(events.some((e) => e.type === "outcome.pending" && (e.data as { kind: string }).kind === "awaiting_proposal")).toBe(true);
+    expect(events.some((e) => e.type === "instrument.presented")).toBe(false);
+  });
+
+  it("decides nothing through the run and simulates no payer", async () => {
+    const { run, snapshot } = await proposed();
+    const e = snapshot.executions[0]!;
+    const binding = { itemsHash: e.itemsHash, totalMinor: e.totalMinor, currency: "BRL" as const, mandateId: "mdt_example_tipjar_0001", mandateVersion: 1, batchHash: null, batchIndex: null, compositionHash: null };
+    await refusal(run.decide({ commandId: "d", executionId: e.id, decision: "approve", binding }), "decide_on_proposal");
+    await refusal(run.simulatePayer({ commandId: "p", executionId: e.id, behaviour: "pays" }), "payer_not_simulatable");
+  });
+
+  it("reads the paid proposal back as settled with the CodeSpar receipt, without drafting it again", async () => {
+    const { proposals, run, snapshot } = await proposed();
+    const pending = snapshot.pending[0]!;
+    if (pending.kind !== "payment_proposal") throw new Error("expected a proposal");
+    proposals.pay(pending.proposalId, "rcpt_platform_0001");
+    const done = valid(await run.resume({ commandId: "r" }));
+    expect(done.executions[0]).toMatchObject({ state: "settled", evidence: [{ kind: "codespar_receipt", id: "rcpt_platform_0001" }] });
+    expect(done.pending).toEqual([]);
+    expect(proposals.submitted).toHaveLength(1);
+  });
+
+  it("reads a refused proposal back as a failure that paid nothing", async () => {
+    const { proposals, run, snapshot } = await proposed();
+    const pending = snapshot.pending[0]!;
+    if (pending.kind !== "payment_proposal") throw new Error("expected a proposal");
+    proposals.deny(pending.proposalId);
+    const done = valid(await run.resume({ commandId: "r" }));
+    expect(done.executions[0]).toMatchObject({ state: "failed", reason: "rail_failed", attempts: [{ status: "failed", code: "proposal_denied" }] });
+  });
+
+  it("accepts a run id the host assigned", async () => {
+    const run = await createHostedRun(kit, ports(), { ...replay, runId: "pkr_AbCdEfGh12345678" });
+    expect(run.runId).toBe("pkr_AbCdEfGh12345678");
+    await refusal(createHostedRun(kit, ports(), { ...replay, runId: "../etc" }), "invalid_command");
   });
 });

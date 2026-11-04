@@ -22,36 +22,13 @@ import {
   formatDay,
   CORE_STRINGS,
   type Execution,
-  type Mandate,
   type StubChargeRailOptions,
   railErrorOf,
 } from "@codespar/agent-core";
-import { defineAgent, type AgentKit, type HostedRailContext, type RailBuild } from "@codespar/agent-runtime";
+import { defineAgent, type AgentKit } from "@codespar/agent-runtime";
 import { envelopePolicy, loadEnvelope } from "./envelope.js";
 import { makeHandlers } from "./modules/bolepix-receivables.js";
 import { STRINGS } from "./strings.js";
-
-/** The charge rail and the API's sandbox payer over a CodeSpar client, whoever made the client: `--rail api` from a test key, or a host. */
-function codesparChargeRail(client: HostedRailContext["client"], mandate: Mandate): RailBuild {
-  return {
-    rail: new CodeSparChargeRail(client),
-    mandate,
-    api: client,
-    pollIntervalMs: 3000,
-    payer: {
-      kind: "api" as const,
-      async pay(chargeId: string) {
-        const result = await payIfPayable(client, chargeId);
-        if (!result.ok) return { ok: false as const, detail: "refused" in result ? `${result.refused.code}: ${result.refused.message}` : `${result.failure.code}: ${result.failure.message}` };
-        const s = result.state;
-        return { ok: true as const, detail: `sandbox payer: ${s.charge_id} ${s.status} (${s.payment}, ${s.paid_minor} of ${s.quoted_minor}), simulated=${s.simulated}, settled_against=${s.settled_against}, money_moved=${s.money_moved}${s.idempotent_replay ? ", replay" : ""}` };
-      },
-      behave() {
-        /* the API's payer is a route, not a fixture; a scenario that needs "expires" declares rails: [stub] */
-      },
-    },
-  };
-}
 
 const kit: AgentKit = {
   settlement: "await-payer",
@@ -82,15 +59,29 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
           --conversation <name>          which channels/whatsapp/<name>.json binds the contact and the agreement
           --scripted                     replay that file's turns instead of reading them from the keyboard`,
 
-  // Hosted: the same charge rail and sandbox payer over the client the host scoped to one Test project.
-  hostedRail: (ctx) => codesparChargeRail(ctx.client, ctx.mandate),
-
   buildRail: (ctx) => {
     const mandate = ctx.mandate ?? loadMandate(ctx.manifest.resolvePath(ctx.manifest.manifest.mandate_schema));
     if (ctx.kind === "api") {
       assertTestKey(ctx.env["CODESPAR_API_KEY"]);
       const client = createCodeSparClient({ apiKey: ctx.env["CODESPAR_API_KEY"], baseUrl: ctx.env["CODESPAR_API_URL"], projectId: ctx.env["CODESPAR_PROJECT_ID"] });
-      return codesparChargeRail(client, mandate);
+      return {
+        rail: new CodeSparChargeRail(client),
+        mandate,
+        api: client,
+        pollIntervalMs: 3000,
+        payer: {
+          kind: "api" as const,
+          async pay(chargeId: string) {
+            const result = await payIfPayable(client, chargeId);
+            if (!result.ok) return { ok: false as const, detail: "refused" in result ? `${result.refused.code}: ${result.refused.message}` : `${result.failure.code}: ${result.failure.message}` };
+            const s = result.state;
+            return { ok: true as const, detail: `sandbox payer: ${s.charge_id} ${s.status} (${s.payment}, ${s.paid_minor} of ${s.quoted_minor}), simulated=${s.simulated}, settled_against=${s.settled_against}, money_moved=${s.money_moved}${s.idempotent_replay ? ", replay" : ""}` };
+          },
+          behave() {
+            /* the API's payer is a route, not a fixture; a scenario that needs "expires" declares rails: [stub] */
+          },
+        },
+      };
     }
     // COLLECTIONS_KILL_AFTER_DISPATCH=1 simulates a crash right after the issuer accepted the charge and before the outcome was recorded.
     const killAfterDispatch = ctx.envVar("KILL_AFTER_DISPATCH") === "1" ? { afterDispatch: () => process.exit(137) } : {};

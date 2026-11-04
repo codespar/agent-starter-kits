@@ -26,6 +26,8 @@ export const OutcomeKindSchema = z.enum(["answer", "payment", "charge", "order",
 export const EvidenceKindSchema = z.enum(["none", "simulated", "codespar_receipt", "charge_status", "rail_record"]);
 /** The closed list of platform prerequisites a descriptor may name; the host maps each one to readiness. */
 export const PlatformPrerequisiteSchema = z.enum(["platform.test_project", "platform.consumer_mandate", "platform.payouts", "platform.charges"]);
+/** What the platform does not offer yet and an executor would need: listed in `blockedBy`, never worked around. */
+export const PLATFORM_GAPS: readonly string[] = ["platform.charge_proposals"];
 export const ApprovalModeSchema = z.enum(["human", "mandate"]);
 export const LocaleNameSchema = z.enum(["pt-BR", "en"]);
 export const ToolEffectSchema = z.enum(["payment", "charge", "read", "state"]);
@@ -38,6 +40,8 @@ export type EvidenceKind = z.infer<typeof EvidenceKindSchema>;
 export type PlatformPrerequisite = z.infer<typeof PlatformPrerequisiteSchema>;
 
 const COMMIT = /^[0-9a-f]{40}$/;
+/** A run id the host assigns (`pkr_…` in the API) or the runtime generates (`run_…`). */
+export const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const HASH = /^sha256:[0-9a-f]{64}$/;
 
@@ -116,7 +120,7 @@ export const HostedKitDescriptorSchema = z
       if (!moves && e.evidence !== "none") issue("a read-only kit has no evidence to show", ["executors", i, "evidence"]);
       if (e.id === "simulator" && (e.requires.length > 0 || (e.evidence !== "simulated" && e.evidence !== "none"))) issue("the simulator needs nothing from the platform and proves nothing but simulation", ["executors", i]);
       if (e.id === "codespar-test" && !e.requires.includes("platform.test_project")) issue("codespar-test runs in a Test project", ["executors", i, "requires"]);
-      for (const cap of e.blockedBy) if (d.capabilityMaturity[cap] !== "blocked") issue(`blockedBy names ${cap}, which the manifest does not mark blocked`, ["executors", i, "blockedBy"]);
+      for (const cap of e.blockedBy) if (d.capabilityMaturity[cap] !== "blocked" && !PLATFORM_GAPS.includes(cap)) issue(`blockedBy names ${cap}, which is neither blocked in the manifest nor a known platform gap`, ["executors", i, "blockedBy"]);
     }
   });
 
@@ -145,7 +149,8 @@ const Nullable = <T extends z.ZodTypeAny>(t: T) => t.nullable();
 
 export const ActorViewSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("agent"), agent: z.string(), onBehalfOf: z.string() }).strict(),
-  z.object({ type: z.literal("human"), id: z.string(), channel: z.literal("playground") }).strict(),
+  /** `platform-proposal`: on codespar-test the run's actor forwarded the kit's approval to a platform proposal; that authorizes no payment. */
+  z.object({ type: z.literal("human"), id: z.string(), channel: z.enum(["playground", "platform-proposal"]) }).strict(),
   z.object({ type: z.literal("mandate"), id: z.string() }).strict(),
 ]);
 
@@ -162,6 +167,7 @@ export const SafeRefSchema = z
     approvalId: z.string(),
     receiptId: z.string(),
     chargeId: z.string(),
+    proposalId: z.string(),
   })
   .partial()
   .strict();
@@ -246,12 +252,14 @@ const EventData = {
   "approval.requested": z
     .object({ binding: ApprovalBindingSchema, rule: RuleSchema, canApprove: z.boolean(), blockingReasons: z.array(z.string()), expiresAt: Nullable(Iso) })
     .strict(),
-  "approval.decided": z.object({ decision: z.enum(["approve", "deny"]), actor: ActorViewSchema, approvalId: Nullable(z.string()), resultState: ExecutionStateSchema }).strict(),
+  "approval.decided": z.object({ decision: z.enum(["approve", "deny", "forward"]), actor: ActorViewSchema, approvalId: Nullable(z.string()), resultState: ExecutionStateSchema }).strict(),
   "batch.decided": z
     .object({ batchHash: z.string().regex(HASH), count: z.number().int().positive(), approved: z.array(z.number().int().nonnegative()), vetoed: z.array(z.number().int().nonnegative()), actor: ActorViewSchema })
     .strict(),
   "dispatch.attempted": z.object({ attemptId: z.string(), idempotencyKey: z.string(), amountMinor: z.number().int(), payeeMasked: z.string(), rail: z.string() }).strict(),
-  "outcome.pending": z.object({ kind: z.enum(["uncertain", "awaiting_payer", "needs_human"]), detail: z.string() }).strict(),
+  "outcome.pending": z.object({ kind: z.enum(["uncertain", "awaiting_payer", "needs_human", "awaiting_proposal"]), detail: z.string() }).strict(),
+  /** codespar-test: the platform proposal of one attempt, each time its observed state changes. */
+  "proposal.updated": z.object({ proposalId: z.string(), attemptId: z.string(), state: z.enum(["drafted", "awaiting_approval", "executing", "succeeded", "failed", "denied"]) }).strict(),
   "instrument.presented": z
     .object({
       chargeId: z.string(),
@@ -303,12 +311,13 @@ const EVENT_SOURCE: Record<HostedEventType, EventSource> = {
   "run.resumed": "host",
   "run.stopped": "host",
   "counterparty.message": "kit",
+  "proposal.updated": "engine",
 };
 
 const EnvelopeSchema = z
   .object({
     v: z.literal(1),
-    runId: z.string().regex(/^run_/),
+    runId: z.string().regex(RUN_ID),
     seq: z.number().int().positive(),
     at: Iso,
     type: z.enum(HOSTED_EVENT_TYPES as [HostedEventType, ...HostedEventType[]]),
@@ -377,6 +386,10 @@ export const PendingActionSchema = z.discriminatedUnion("kind", [
     .strict(),
   z.object({ kind: z.literal("payer"), executionId: z.string(), chargeId: z.string(), instalment: z.number().int().nonnegative(), instrument: InstrumentViewSchema, simulatable: z.boolean() }).strict(),
   z.object({ kind: z.literal("reconciliation"), executionId: z.string(), detail: z.string() }).strict(),
+  /** codespar-test: a platform proposal a person pays (`/v1/proposals/:id/pay`) or Aprovações decides. Not decided through the run. */
+  z
+    .object({ kind: z.literal("payment_proposal"), executionId: z.string(), proposalId: z.string(), proposalState: z.enum(["drafted", "awaiting_approval", "executing"]) })
+    .strict(),
 ]);
 
 export const RunSnapshotSchema = z
@@ -384,7 +397,7 @@ export const RunSnapshotSchema = z
     v: z.literal(1),
     run: z
       .object({
-        id: z.string().regex(/^run_/),
+        id: z.string().regex(RUN_ID),
         kit: RunKitRefSchema,
         modelMode: ModelModeSchema,
         executor: ExecutorIdSchema,
@@ -428,7 +441,7 @@ export const RunSnapshotSchema = z
         else if (e.itemsHash !== p.binding.itemsHash || e.totalMinor !== p.binding.totalMinor) issue("the binding is the execution's own", ["pending", i, "binding"]);
       }
     }
-    const waits = s.pending.some((p) => p.kind === "decision" || p.kind === "batch_decision");
+    const waits = s.pending.some((p) => p.kind === "decision" || p.kind === "batch_decision" || p.kind === "payment_proposal");
     if (waits && s.run.status !== "awaiting_decision" && s.run.status !== "stopped") issue("a pending decision means status awaiting_decision", ["run", "status"]);
     if (s.run.status === "running" && s.pending.some((p) => p.kind === "decision" || p.kind === "batch_decision")) issue("nothing is actionable while running", ["pending"]);
   });
