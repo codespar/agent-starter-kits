@@ -6,7 +6,7 @@
       "id": "supplier-payments-agent",
       "version": "0.1.0",
       "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-      "packageDigest": "sha256:08d292dbd99e45cf8b609cdfb64875cc7f43180ee227db896a7f8e4f082ef6ae"
+      "packageDigest": "sha256:70c2bf6e90db51869b0406c4b0fb3fe11128e4e812b1dc8869fddf0a22e31de9"
     },
     "modelMode": "replay",
     "executor": "simulator",
@@ -67,8 +67,8 @@
       "evidence": [
         {
           "kind": "simulated",
-          "id": "rcp_stub_28c0a7561ecfa05c",
-          "detail": "stub rail receipt; not a CodeSpar receipt"
+          "id": "rcpt_stub_2e87b66b3e4552f3",
+          "detail": "simulator: not a CodeSpar receipt"
         }
       ],
       "history": [
@@ -124,7 +124,7 @@
       "id": "exe_5c93f1e08a2d47b6",
       "state": "failed",
       "reason": "rail_failed",
-      "detail": "payee_refused: the stub rail refuses this payee",
+      "detail": "psp_dispatch_failed: stub: provider refused payee co***@insumos-atlantico.example.com.br",
       "approvalMode": "human",
       "items": [
         {
@@ -157,15 +157,15 @@
         {
           "attemptId": "att_6fc142a1522612b85fed24d52a50efe3_0",
           "status": "failed",
-          "code": "payee_refused",
-          "message": "the stub rail refuses this payee"
+          "code": "psp_dispatch_failed",
+          "message": "stub: provider refused payee co***@insumos-atlantico.example.com.br"
         }
       ],
       "evidence": [
         {
           "kind": "simulated",
           "id": "att_6fc142a1522612b85fed24d52a50efe3_0",
-          "detail": "refused by the rail; nothing moved"
+          "detail": "psp_dispatch_failed: stub: provider refused payee co***@insumos-atlantico.example.com.br"
         }
       ],
       "history": [
@@ -261,8 +261,8 @@
       "evidence": [
         {
           "kind": "simulated",
-          "id": "rcp_stub_3a2a5b06a9de513c",
-          "detail": "stub rail receipt; not a CodeSpar receipt"
+          "id": "rcpt_stub_346815415f2b082c",
+          "detail": "simulator: not a CodeSpar receipt"
         }
       ],
       "history": [
@@ -334,8 +334,8 @@
           "evidence": [
             {
               "kind": "simulated",
-              "id": "rcp_stub_28c0a7561ecfa05c",
-              "detail": "stub rail receipt; not a CodeSpar receipt"
+              "id": "rcpt_stub_2e87b66b3e4552f3",
+              "detail": "simulator: not a CodeSpar receipt"
             }
           ]
         },
@@ -350,7 +350,7 @@
             {
               "kind": "simulated",
               "id": "att_6fc142a1522612b85fed24d52a50efe3_0",
-              "detail": "refused by the rail; nothing moved"
+              "detail": "psp_dispatch_failed: stub: provider refused payee co***@insumos-atlantico.example.com.br"
             }
           ]
         },
@@ -364,8 +364,8 @@
           "evidence": [
             {
               "kind": "simulated",
-              "id": "rcp_stub_3a2a5b06a9de513c",
-              "detail": "stub rail receipt; not a CodeSpar receipt"
+              "id": "rcpt_stub_346815415f2b082c",
+              "detail": "simulator: not a CodeSpar receipt"
             }
           ]
         }

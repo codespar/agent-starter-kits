@@ -24,6 +24,7 @@ import {
   parseLocale,
   CORE_STRINGS,
   type AgentRuntime,
+  type ApprovalSigner,
   type CoreStrings,
   type Locale,
   type ApprovalMode,
@@ -44,7 +45,7 @@ import { AnthropicRuntime } from "@codespar/agent-core/providers/anthropic";
 import { GeminiRuntime } from "@codespar/agent-core/providers/gemini";
 import type { ApiClient } from "@codespar/sdk";
 import { envName, type Agent } from "./agent.js";
-import type { AgentKit, KitConfig, KitStrings, RailKind, SandboxPayer, Settlement } from "./kit.js";
+import type { AgentKit, KitConfig, KitStrings, RailBuild, RailKind, SandboxPayer, Settlement } from "./kit.js";
 
 /** The `.env.example` placeholder counts as no key: a copied example must replay, not call Anthropic with a fake key. */
 export const ANTHROPIC_KEY_PLACEHOLDER = "sk-ant-your_key_here";
@@ -186,13 +187,10 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
   const say = options.say ?? ((line: string) => process.stderr.write(line + "\n"));
   // `--now` on the one-shot, or CODESPAR_AGENT_NOW for every command: the clock the engine, the stubs, the gate and the loop read (#16).
   const now = options.now ?? resolveFixedClock(undefined, env);
-  const manifest = loadManifest(join(agent.dir, "agent.yaml"));
-  const guardrails = loadGuardrails(manifest.resolvePath(manifest.manifest.guardrails));
-  const tools = loadToolsFile(manifest.resolvePath(manifest.manifest.tools));
-  const system = readFileSync(join(agent.dir, "SYSTEM_PROMPT.md"), "utf8");
-  const mode: ApprovalMode = options.mode ?? manifest.manifest.default_approval;
-  const locale = resolveLocale(options.locale, manifest.manifest);
-  if (!manifest.manifest.approval.includes(mode)) throw new Error(`agent.yaml does not support approval: ${mode}`);
+  const files = loadAgentFiles(agent);
+  const mode: ApprovalMode = options.mode ?? files.manifest.manifest.default_approval;
+  const locale = resolveLocale(options.locale, files.manifest.manifest);
+  if (!files.manifest.manifest.approval.includes(mode)) throw new Error(`agent.yaml does not support approval: ${mode}`);
 
   // <PREFIX>_STATE_DIR / <PREFIX>_RUNS_DIR exist for the restart test, which drives a child process over a scratch state.
   const stateDir = options.stateDir ?? env[envName(agent, "STATE_DIR")] ?? stateDirOf(agent);
@@ -207,7 +205,7 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
     env,
     agentDir: agent.dir,
     stateDir,
-    manifest,
+    manifest: files.manifest,
     store,
     gate,
     now,
@@ -215,14 +213,84 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
     stubRail: options.stubRail,
     envVar: (name) => env[envName(agent, name)],
   });
-  const { rail, mandate } = built;
-  const status = built.status ?? gate;
 
   const runId = options.runId ?? newRunId(mode);
   const bundle = new ProofBundle(runs, runId);
-  bundle.mandateSnapshot(mandate);
+  const s = assembleSetup(agent, {
+    ...files,
+    mode,
+    locale,
+    store,
+    gate,
+    signer,
+    railKind,
+    built,
+    runId,
+    bundle,
+    now,
+    config: env,
+    makeRuntime: () => {
+      const provider = resolveProvider(env, options.provider);
+      if (provider === "anthropic") return new AnthropicRuntime({ apiKey: env["ANTHROPIC_API_KEY"] });
+      if (provider === "gemini") {
+        const runtime = new GeminiRuntime({ apiKey: env["GEMINI_API_KEY"]?.trim() || undefined, model: env["GEMINI_MODEL"]?.trim() || undefined });
+        say(`[gemini] model ${runtime.model}`);
+        return runtime;
+      }
+      if (!options.transcript) throw new Error("the replay provider needs a transcript (--transcript <file> or --scenario <name>)");
+      say(`[replay] no ANTHROPIC_API_KEY or GEMINI_API_KEY: replaying ${options.transcript}`);
+      return ReplayRuntime.fromFile(options.transcript);
+    },
+  });
+  s.bundle.mandateSnapshot(s.mandate);
   // Section 11: mode, rail and mandate id. The VERSION rides with the id, so a reader knows which signing of the mandate authorised the run without opening the snapshot.
-  bundle.meta({ run_id: runId, agent: `${manifest.manifest.name}@${manifest.manifest.version}`, mode, rail: railKind, mandate_id: mandate.id, mandate_version: mandate.version, locale, started_at: (now ?? (() => new Date()))().toISOString() });
+  s.bundle.meta({ run_id: runId, agent: `${files.manifest.manifest.name}@${files.manifest.manifest.version}`, mode, rail: railKind, mandate_id: s.mandate.id, mandate_version: s.mandate.version, locale, started_at: (now ?? (() => new Date()))().toISOString() });
+  return s;
+}
+
+/** The files every run of an agent reads: the manifest and the four files it names. */
+export function loadAgentFiles(agent: Agent): { manifest: LoadedManifest; guardrails: Guardrails; tools: ReturnType<typeof loadToolsFile>; system: string } {
+  const manifest = loadManifest(join(agent.dir, "agent.yaml"));
+  return {
+    manifest,
+    guardrails: loadGuardrails(manifest.resolvePath(manifest.manifest.guardrails)),
+    tools: loadToolsFile(manifest.resolvePath(manifest.manifest.tools)),
+    system: readFileSync(join(agent.dir, "SYSTEM_PROMPT.md"), "utf8"),
+  };
+}
+
+/** Everything `assembleSetup` wires, decided by its caller: `setup` from flags and the environment, a host from its ports. */
+export interface SetupParts {
+  manifest: LoadedManifest;
+  guardrails: Guardrails;
+  tools: ReturnType<typeof loadToolsFile>;
+  system: string;
+  mode: ApprovalMode;
+  locale: Locale;
+  store: StateStore;
+  gate: LocalMandateStatusStub;
+  signer: ApprovalSigner;
+  railKind: RailKind;
+  built: RailBuild;
+  runId: string;
+  bundle: ProofBundle;
+  now: (() => Date) | undefined;
+  config: KitConfig;
+  makeRuntime: () => AgentRuntime;
+  /** Awaited before every rail call (`EngineDeps.beforeDispatch`). */
+  beforeDispatch?: ((execution: Execution, attemptId: string) => Promise<void>) | undefined;
+}
+
+/**
+ * The engine, the kit's handlers and policy, and the loop factory over parts
+ * the caller resolved. The ONE place a run is wired, terminal or hosted, so
+ * the two cannot drift into different policies.
+ */
+export function assembleSetup(agent: Agent, p: SetupParts): Setup {
+  const { manifest, guardrails, tools, system, mode, locale, store, gate, signer, railKind, built, runId, bundle, now } = p;
+  if (!manifest.manifest.approval.includes(mode)) throw new Error(`agent.yaml does not support approval: ${mode}`);
+  const { rail, mandate } = built;
+  const status = built.status ?? gate;
 
   // Read at call time, because `poll --channel whatsapp` may move the run to the conversation's recorded locale after setup.
   const policyExtension = agent.kit.policyExtension?.({ agentDir: agent.dir, manifest, guardrails, store, locale: () => s.locale });
@@ -240,20 +308,8 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
     onBehalfOf: mandate.consumer_id,
     ...(policyExtension ? { policyExtension } : {}),
     ...(now ? { clock: now } : {}),
+    ...(p.beforeDispatch ? { beforeDispatch: p.beforeDispatch } : {}),
   });
-
-  const makeRuntime = (): AgentRuntime => {
-    const provider = resolveProvider(env, options.provider);
-    if (provider === "anthropic") return new AnthropicRuntime({ apiKey: env["ANTHROPIC_API_KEY"] });
-    if (provider === "gemini") {
-      const runtime = new GeminiRuntime({ apiKey: env["GEMINI_API_KEY"]?.trim() || undefined, model: env["GEMINI_MODEL"]?.trim() || undefined });
-      say(`[gemini] model ${runtime.model}`);
-      return runtime;
-    }
-    if (!options.transcript) throw new Error("the replay provider needs a transcript (--transcript <file> or --scenario <name>)");
-    say(`[replay] no ANTHROPIC_API_KEY or GEMINI_API_KEY: replaying ${options.transcript}`);
-    return ReplayRuntime.fromFile(options.transcript);
-  };
 
   const s: Setup = {
     agent,
@@ -278,14 +334,14 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
     handlers: {},
     tools,
     locale,
-    config: env,
+    config: p.config,
     get strings() {
       return agent.kit.strings[this.locale];
     },
     get coreStrings() {
       return CORE_STRINGS[this.locale];
     },
-    makeRuntime,
+    makeRuntime: p.makeRuntime,
     makeLoop: (runtime, onExecution, onBatch) => new AgentLoop({ runtime, tools, handlers: s.handlers, system, bundle, engine, onExecution, ...(onBatch ? { onBatch } : {}), ...(now ? { clock: now } : {}) }),
     close: () => store.close(),
   };

@@ -23,12 +23,18 @@ export class ReplayExhaustedError extends Error {
 
 export class ReplayRuntime implements AgentRuntime {
   readonly name = "replay";
-  private cursor = 0;
+  private cursor: number;
 
-  constructor(private readonly steps: RecordedStep[]) {}
+  /** `start`: the steps a previous process already consumed, so a run reopened elsewhere answers the next one and not the first. */
+  constructor(
+    private readonly steps: RecordedStep[],
+    start = 0,
+  ) {
+    this.cursor = start;
+  }
 
-  static fromFile(path: string): ReplayRuntime {
-    return new ReplayRuntime(parseTranscript(readFileSync(path, "utf8")));
+  static fromFile(path: string, start = 0): ReplayRuntime {
+    return new ReplayRuntime(parseTranscript(readFileSync(path, "utf8")), start);
   }
 
   static fromLines(lines: Array<Record<string, unknown>>): ReplayRuntime {

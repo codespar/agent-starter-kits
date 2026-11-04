@@ -14,7 +14,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:f6c00fbc68501bc8f79bdd783b2e799ca59290417f34664ff4ebbce351621a03"
+        "packageDigest": "sha256:1ba741365f10957c5d3463c99862d83a63842e06453a8ed3378eb71002f18435"
       },
       "entrypoint": "kits/bills-agent/src/kit.js",
       "inputSchema": {
@@ -243,7 +243,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:a013076c74f9e08fc7005bc0b9dc7fc103596bc05c907af15f319a1ef94304b9"
+        "packageDigest": "sha256:816ba90a4770b2e6c8e004fb35efbbe4725472523ed34d2452c2d9cbb81eac62"
       },
       "entrypoint": "kits/checkout-agent/src/kit.js",
       "inputSchema": {
@@ -628,7 +628,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:eab6ce20a204fa84bef3f7304bf6214a3727708bfb910eda710aff3a168535df"
+        "packageDigest": "sha256:98a332a1df06cbb451ab03e236901427d93447505e4fa353b4247260c329dc31"
       },
       "entrypoint": "kits/collections-agent/src/kit.js",
       "inputSchema": {
@@ -1007,7 +1007,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:08d292dbd99e45cf8b609cdfb64875cc7f43180ee227db896a7f8e4f082ef6ae"
+        "packageDigest": "sha256:70c2bf6e90db51869b0406c4b0fb3fe11128e4e812b1dc8869fddf0a22e31de9"
       },
       "entrypoint": "kits/supplier-payments-agent/src/kit.js",
       "inputSchema": {
@@ -1252,7 +1252,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:4f55d02283f1ab5298c8672355201bc6243aff7f54d32bede7ffafc4f143d8af"
+        "packageDigest": "sha256:98ad933220ad1dc6b41ac03a693e029333fca4f0368011a2a247558f1a0f89fb"
       },
       "entrypoint": "kits/topup-agent/src/kit.js",
       "inputSchema": {

@@ -373,7 +373,7 @@
         "ref": {
           "executionId": "exe_0b6e2d17c9a4f380",
           "attemptId": "att_b0eb935b8dc099aa443fdd33705c2c8e_0",
-          "receiptId": "rcp_stub_28c0a7561ecfa05c"
+          "receiptId": "rcpt_stub_2e87b66b3e4552f3"
         },
         "data": {
           "from": "executing",
@@ -397,7 +397,7 @@
         "ref": {
           "executionId": "exe_0b6e2d17c9a4f380",
           "attemptId": "att_b0eb935b8dc099aa443fdd33705c2c8e_0",
-          "receiptId": "rcp_stub_28c0a7561ecfa05c"
+          "receiptId": "rcpt_stub_2e87b66b3e4552f3"
         },
         "data": {
           "state": "settled",
@@ -405,8 +405,8 @@
           "evidence": [
             {
               "kind": "simulated",
-              "id": "rcp_stub_28c0a7561ecfa05c",
-              "detail": "stub rail receipt; not a CodeSpar receipt"
+              "id": "rcpt_stub_2e87b66b3e4552f3",
+              "detail": "simulator: not a CodeSpar receipt"
             }
           ]
         }
@@ -513,7 +513,7 @@
           "from": "executing",
           "to": "failed",
           "reason": "rail_failed",
-          "detail": "payee_refused: the stub rail refuses this payee",
+          "detail": "psp_dispatch_failed: stub: provider refused payee co***@insumos-atlantico.example.com.br",
           "actor": {
             "type": "agent",
             "agent": "supplier-payments-agent@0.1.0",
@@ -539,7 +539,7 @@
             {
               "kind": "simulated",
               "id": "att_6fc142a1522612b85fed24d52a50efe3_0",
-              "detail": "refused by the rail; nothing moved"
+              "detail": "psp_dispatch_failed: stub: provider refused payee co***@insumos-atlantico.example.com.br"
             }
           ]
         }
@@ -641,7 +641,7 @@
         "ref": {
           "executionId": "exe_e7a4c2950d1b3f68",
           "attemptId": "att_74217d3a39264c45591e3d82b6f98512_0",
-          "receiptId": "rcp_stub_3a2a5b06a9de513c"
+          "receiptId": "rcpt_stub_346815415f2b082c"
         },
         "data": {
           "from": "executing",
@@ -665,7 +665,7 @@
         "ref": {
           "executionId": "exe_e7a4c2950d1b3f68",
           "attemptId": "att_74217d3a39264c45591e3d82b6f98512_0",
-          "receiptId": "rcp_stub_3a2a5b06a9de513c"
+          "receiptId": "rcpt_stub_346815415f2b082c"
         },
         "data": {
           "state": "settled",
@@ -673,8 +673,8 @@
           "evidence": [
             {
               "kind": "simulated",
-              "id": "rcp_stub_3a2a5b06a9de513c",
-              "detail": "stub rail receipt; not a CodeSpar receipt"
+              "id": "rcpt_stub_346815415f2b082c",
+              "detail": "simulator: not a CodeSpar receipt"
             }
           ]
         }

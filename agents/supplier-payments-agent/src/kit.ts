@@ -30,10 +30,21 @@ import {
   refusedDispatchesOf,
 } from "@codespar/agent-core";
 import { existsSync, readFileSync } from "node:fs";
-import { NoMandateError, defineAgent, describePayment, type AgentKit, type KitStrings } from "@codespar/agent-runtime";
+import { NoMandateError, defineAgent, describePayment, type AgentKit, type HostedRailContext, type KitStrings, type RailBuild } from "@codespar/agent-runtime";
 import { codesparLedger, codesparPay, listPayables } from "./modules/pix-out.js";
 
 const mandatePath = (agentDir: string) => join(agentDir, ".codespar", "mandate.json");
+
+/** The pix-out rail over a CodeSpar client, whoever made the client: `--rail api` from a test key, or a host. */
+function codesparRail(api: HostedRailContext["client"], mandate: Mandate, now: (() => Date) | undefined): RailBuild {
+  return {
+    rail: new CodeSparRail(api, { canonical: mandate.canonical, signature: mandate.signature }),
+    mandate,
+    api,
+    // Section 4.7 against the real status: the local stub answers only runs without a key.
+    status: new ApiMandateStatusSource(api, now),
+  };
+}
 
 function loadLocalMandate(path: string): Mandate | undefined {
   if (!existsSync(path)) return undefined;
@@ -89,13 +100,7 @@ a batch runs one execution per line: in \`human\` the terminal asks once for the
       const api = createCodeSparClient({ apiKey: ctx.env["CODESPAR_API_KEY"], baseUrl: ctx.env["CODESPAR_API_URL"], projectId: ctx.env["CODESPAR_PROJECT_ID"] });
       const mandate = ctx.mandate ?? loadLocalMandate(mandatePath(ctx.agentDir));
       if (!mandate) throw new NoMandateError();
-      return {
-        rail: new CodeSparRail(api, { canonical: mandate.canonical, signature: mandate.signature }),
-        mandate,
-        api,
-        // Section 4.7 against the real status: the local stub answers only runs without a key.
-        status: new ApiMandateStatusSource(api, ctx.now),
-      };
+      return codesparRail(api, mandate, ctx.now);
     }
     // SUPPLIER_PAYMENTS_KILL_AFTER_DISPATCH=1 simulates a crash right after the rail accepted the attempt and before the outcome was recorded.
     const killAfterDispatch = ctx.envVar("KILL_AFTER_DISPATCH") === "1" ? { afterDispatch: () => process.exit(137) } : {};
@@ -106,6 +111,9 @@ a batch runs one execution per line: in \`human\` the terminal asks once for the
       mandate: ctx.mandate ?? loadMandate(ctx.manifest.resolvePath(ctx.manifest.manifest.mandate_schema)),
     };
   },
+
+  // Hosted: the same rail over the client the host scoped to one Test project, under the organization's mandate the host bound the run to.
+  hostedRail: (ctx) => codesparRail(ctx.client, ctx.mandate, ctx.now),
 
   handlers: () => ({ codespar_pay: codesparPay, codespar_ledger: codesparLedger, list_payables: listPayables }),
 

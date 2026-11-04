@@ -272,11 +272,15 @@ const EventData = {
     .object({ reconciled: z.array(z.object({ executionId: z.string(), from: ExecutionStateSchema, to: ExecutionStateSchema }).strict()), expired: z.array(z.string()), open: z.array(z.string()) })
     .strict(),
   "run.stopped": z.object({ actor: ActorViewSchema, reason: Nullable(z.string()), deniedOpen: z.array(z.string()), stillExecuting: z.array(z.string()) }).strict(),
+  /** What the kit tells the counterparty about an outcome (`kit.announceOutcome`), once per outcome. In the Playground the person plays both sides. */
+  "counterparty.message": z.object({ text: z.string() }).strict(),
 } as const;
 
 export type HostedEventType = keyof typeof EventData;
 export const HOSTED_EVENT_TYPES = Object.keys(EventData) as HostedEventType[];
-const EVENT_SOURCE: Record<HostedEventType, "host" | "loop" | "engine"> = {
+export type EventSource = "host" | "loop" | "engine" | "kit";
+
+const EVENT_SOURCE: Record<HostedEventType, EventSource> = {
   "run.created": "host",
   "turn.accepted": "host",
   "turn.refused": "host",
@@ -298,6 +302,7 @@ const EVENT_SOURCE: Record<HostedEventType, "host" | "loop" | "engine"> = {
   "run.interrupted": "host",
   "run.resumed": "host",
   "run.stopped": "host",
+  "counterparty.message": "kit",
 };
 
 const EnvelopeSchema = z
@@ -307,7 +312,7 @@ const EnvelopeSchema = z
     seq: z.number().int().positive(),
     at: Iso,
     type: z.enum(HOSTED_EVENT_TYPES as [HostedEventType, ...HostedEventType[]]),
-    source: z.enum(["host", "loop", "engine"]),
+    source: z.enum(["host", "loop", "engine", "kit"]),
     ref: SafeRefSchema.optional(),
     data: z.unknown(),
   })
@@ -325,7 +330,7 @@ export type HostedEvent<T extends HostedEventType = HostedEventType> = {
   seq: number;
   at: string;
   type: T;
-  source: "host" | "loop" | "engine";
+  source: EventSource;
   ref?: z.infer<typeof SafeRefSchema>;
   data: z.infer<(typeof EventData)[T]>;
 };
