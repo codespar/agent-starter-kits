@@ -1,0 +1,13 @@
+// The hosted-kits artifact (scripts/build-hosted-kits.mjs): the runtime, the core and every agent's src compiled to JS
+// with the source tree's shape, so each kit's import.meta.url still finds its agent.yaml.
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": ".",
+    "sourceMap": false,
+    "declaration": false
+  },
+  "include": ["packages/agent-core/src/**/*.ts", "packages/agent-runtime/src/**/*.ts", "agents/*/src/**/*.ts"],
+  "exclude": ["packages/agent-runtime/src/hosted/catalog-cli.ts"]
+}

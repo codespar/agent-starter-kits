@@ -4,7 +4,8 @@
 // whole tree in the CI. A `csk_test_` value that is not the placeholder is
 // refused too: a test key is still a credential.
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 
 const PATTERNS = [
   { name: "codespar live key", re: /csk_live_[A-Za-z0-9]{6,}/ },
@@ -16,17 +17,26 @@ const PATTERNS = [
 const SKIP = [/^node_modules\//, /package-lock\.json$/, /\.png$|\.jpg$|\.gif$|\.ico$/];
 
 const mode = process.argv[2] ?? "staged";
+// `dir <path>`: every file under a directory that is not a checkout, its own node_modules included (the hosted-kits artifact bundles two packages there).
+const root = mode === "dir" ? process.argv[3] : undefined;
+if (mode === "dir" && !root) {
+  process.stderr.write("usage: node scripts/secret-scan.mjs dir <path>\n");
+  process.exit(2);
+}
+const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : e.isFile() ? [join(dir, e.name)] : []));
 const files =
-  mode === "all"
-    ? execSync("git ls-files", { encoding: "utf8" }).split("\n")
-    : execSync("git diff --cached --name-only --diff-filter=ACMR", { encoding: "utf8" }).split("\n");
+  mode === "dir"
+    ? walk(root)
+    : mode === "all"
+      ? execSync("git ls-files", { encoding: "utf8" }).split("\n")
+      : execSync("git diff --cached --name-only --diff-filter=ACMR", { encoding: "utf8" }).split("\n");
 
 let hits = 0;
 for (const file of files.filter(Boolean)) {
-  if (SKIP.some((s) => s.test(file))) continue;
+  if (SKIP.some((s) => s.test(mode === "dir" ? relative(root, file) : file)) && !(mode === "dir" && /^node_modules\//.test(relative(root, file)))) continue;
   let text;
   try {
-    text = mode === "all" ? readFileSync(file, "utf8") : execSync(`git show :${JSON.stringify(file)}`, { encoding: "utf8" });
+    text = mode === "all" || mode === "dir" ? readFileSync(file, "utf8") : execSync(`git show :${JSON.stringify(file)}`, { encoding: "utf8" });
   } catch {
     continue;
   }
@@ -41,4 +51,4 @@ if (hits) {
   process.stderr.write(`secret-scan: ${hits} finding(s). Keys live in .env (gitignored) and nowhere else.\n`);
   process.exit(1);
 }
-process.stderr.write(`secret-scan: clean (${mode})\n`);
+process.stderr.write(`secret-scan: clean (${mode}${root ? ` ${root}` : ""})\n`);

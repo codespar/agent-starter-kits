@@ -8,3 +8,6 @@ runs/
 .env
 .env.*
 !.env.example
+
+# the hosted-kits artifact (scripts/build-hosted-kits.mjs)
+build/
