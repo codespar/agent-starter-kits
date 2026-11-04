@@ -1,0 +1,146 @@
+{
+  "v": 1,
+  "run": {
+    "id": "pkr_Fx7bills0proposal",
+    "kit": {
+      "id": "bills-agent",
+      "version": "0.1.0",
+      "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
+      "packageDigest": "sha256:f6c00fbc68501bc8f79bdd783b2e799ca59290417f34664ff4ebbce351621a03"
+    },
+    "modelMode": "replay",
+    "executor": "codespar-test",
+    "approvalMode": "human",
+    "locale": "pt-BR",
+    "exampleId": "happy-path",
+    "inputRevision": "sha256:0b27169c9741448c267063fa941739a8fb7387ee32a6d9ff54584683b8d7c96b",
+    "status": "awaiting_decision",
+    "createdAt": "2026-11-04T10:00:00.000Z",
+    "updatedAt": "2026-11-04T10:00:02.070Z"
+  },
+  "cursor": {
+    "seq": 16
+  },
+  "pending": [
+    {
+      "kind": "payment_proposal",
+      "executionId": "exe_9d2c41a7e0b35f18",
+      "proposalId": "prp_a090a4c1f17ccb76099a",
+      "proposalState": "awaiting_approval"
+    }
+  ],
+  "executions": [
+    {
+      "id": "exe_9d2c41a7e0b35f18",
+      "state": "executing",
+      "reason": "awaiting_settlement",
+      "detail": "1 receivable(s) issued and unpaid: prp_a090a4c1f17ccb76099a",
+      "approvalMode": "human",
+      "items": [
+        {
+          "beneficiary": "Escola Aurora",
+          "payeeMasked": "fi***@escola-aurora.example.com.br",
+          "alias": "escola",
+          "amountMinor": 185000,
+          "description": "mensalidade outubro",
+          "dueDate": null
+        }
+      ],
+      "totalMinor": 185000,
+      "currency": "BRL",
+      "itemsHash": "sha256:8fbc7dd769e48628af454f014cc283cd181c25679f13dec7ca1ef1704087c86a",
+      "batch": null,
+      "compositionHash": null,
+      "escalation": null,
+      "approvalId": "apr_0feb2aee49161f3e",
+      "approvedBy": {
+        "type": "human",
+        "id": "user_2pQx7Lw0Fixture",
+        "channel": "platform-proposal"
+      },
+      "attempts": [
+        {
+          "attemptId": "att_f37366fdfad456fd112e63d717b6be5c_0",
+          "status": "accepted",
+          "code": null,
+          "message": null
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "codespar_receipt",
+          "id": "prp_a090a4c1f17ccb76099a",
+          "detail": "platform proposal awaiting_approval; not paid"
+        }
+      ],
+      "history": [
+        {
+          "from": "drafted",
+          "to": "awaiting_approval",
+          "at": "2026-11-04T10:00:02.040Z",
+          "reason": null,
+          "actor": {
+            "type": "agent",
+            "agent": "bills-agent@0.1.0",
+            "onBehalfOf": "usr_demo_titular"
+          }
+        },
+        {
+          "from": "awaiting_approval",
+          "to": "approved",
+          "at": "2026-11-04T10:00:02.050Z",
+          "reason": null,
+          "actor": {
+            "type": "human",
+            "id": "user_2pQx7Lw0Fixture",
+            "channel": "platform-proposal"
+          }
+        },
+        {
+          "from": "approved",
+          "to": "executing",
+          "at": "2026-11-04T10:00:02.050Z",
+          "reason": null,
+          "actor": {
+            "type": "agent",
+            "agent": "bills-agent@0.1.0",
+            "onBehalfOf": "usr_demo_titular"
+          }
+        }
+      ],
+      "createdAt": "2026-11-04T10:00:02.040Z",
+      "updatedAt": "2026-11-04T10:00:02.050Z"
+    }
+  ],
+  "batches": [],
+  "turns": [
+    {
+      "turnId": "turn_1",
+      "index": 0,
+      "text": "pague a escola de outubro",
+      "reply": "Propus o pagamento da Escola Aurora, R$ 1.850,00 (mensalidade de outubro). O resultado está no terminal.",
+      "tools": [
+        {
+          "toolCallId": "tc_1",
+          "name": "list_bills",
+          "effect": "read",
+          "refused": false
+        },
+        {
+          "toolCallId": "tc_2",
+          "name": "codespar_pay",
+          "effect": "payment",
+          "refused": false
+        }
+      ],
+      "interrupted": false
+    }
+  ],
+  "notRun": [],
+  "replay": {
+    "exampleId": "happy-path",
+    "turnsTotal": 1,
+    "turnsDone": 1,
+    "nextTurnText": null
+  }
+}

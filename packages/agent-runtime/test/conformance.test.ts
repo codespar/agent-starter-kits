@@ -108,7 +108,8 @@ describe.each(ALL.map((dir) => [dir.split("/").pop()!, dir]))("%s", (_name, dir)
     const moves = [...tools.meta_tools, ...tools.local_tools].some((t) => t.effect === "payment" || t.effect === "charge");
     expect(d.needsMandate).toBe(moves);
     for (const e of d.executors) for (const capability of e.blockedBy) expect(manifest.maturity[capability]).toBe("blocked");
-    expect(d.supportedExecutors.includes("codespar-test")).toBe(Boolean(agent.kit.hostedRail) && moves);
+    // codespar-test: money on the CodeSpar API, as platform proposals (CONTRATO.md v1.1); a kit on another rail has none.
+    expect(d.supportedExecutors.includes("codespar-test")).toBe(moves && agent.kit.apiRailKey !== "none");
   });
 });
 

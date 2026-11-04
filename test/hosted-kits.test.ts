@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { checkEventLog, createHostedRun, RunSnapshotSchema, type HostedEvent, type HostedRun, type RunSnapshot } from "@codespar/agent-runtime";
-import { hostedKit, MemoryState, ports } from "../packages/agent-runtime/test/hosted-ports.js";
+import { FakeProposals, hostedKit, MemoryState, ports } from "../packages/agent-runtime/test/hosted-ports.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const FIXTURES = join(ROOT, "packages/agent-runtime/test/fixtures/hosted");
@@ -141,6 +141,36 @@ describe("hosted, on the simulator, from each kit's own example", () => {
     expect(decision.binding.compositionHash).toMatch(/^sha256:/);
     const approved = valid(await run.decide({ commandId: "d", executionId: decision.executionId, decision: "approve", binding: decision.binding }));
     expect(approved.executions[0]!.state).toBe("approved");
+  });
+
+  it("supplier-payments-agent on codespar-test: every line becomes its own platform proposal, and nothing is decided through the run", async () => {
+    const proposals = new FakeProposals();
+    const state = new MemoryState();
+    const run = await createHostedRun(await kitOf("supplier-payments-agent"), ports({ state, rail: { executor: "codespar-test", proposals } }), { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "partial-batch-failure" } });
+    const s = await replayAll(run, 1);
+    expect(s.pending.map((p) => p.kind)).toEqual(["payment_proposal", "payment_proposal", "payment_proposal"]);
+    expect(new Set(proposals.submitted.map((r) => r.attemptId)).size).toBe(3);
+    expect(proposals.submitted.every((r) => r.batchHash !== null)).toBe(true);
+    expect(s.batches[0]!.lines.map((l) => l.state)).toEqual(["executing", "executing", "executing"]);
+    const p0 = s.pending[0]!;
+    if (p0.kind !== "payment_proposal") throw new Error("expected a proposal");
+    proposals.pay(p0.proposalId, "rcpt_platform_line_0");
+    const after = valid(await run.resume({ commandId: "r" }));
+    expect(after.batches[0]!.lines.map((l) => l.state)).toEqual(["settled", "executing", "executing"]);
+    expect(proposals.submitted).toHaveLength(3);
+    expect(events(state, run).filter((e) => e.type === "dispatch.attempted")).toHaveLength(3);
+  });
+
+  it("collections-agent and checkout-agent have no codespar-test run: the platform drafts no charge for a person to issue", async () => {
+    for (const name of ["collections-agent", "checkout-agent"]) {
+      const kit = await kitOf(name);
+      expect(kit.descriptor.executors.find((e) => e.id === "codespar-test")!.blockedBy).toContain("platform.charge_proposals");
+      const refused = await createHostedRun(kit, ports({ rail: { executor: "codespar-test", proposals: new FakeProposals() } }), { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "happy-path" } }).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      expect((refused as { code?: string }).code, name).toBe("executor_unsupported");
+    }
   });
 
   it("the contract's catalog fixture is what this repository derives, but for the commit and the digests", async () => {

@@ -3,7 +3,8 @@
  * turns messages into a request and the response into tool calls or a
  * reply; it never decides anything about money.
  */
-import Anthropic from "@anthropic-ai/sdk";
+// Loaded on the first step, not at import: a host that runs kits with its own model never loads this SDK (CONTRATO.md v1.1).
+import type Anthropic from "@anthropic-ai/sdk";
 import type { ContentBlockParam, MessageParam, Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/messages";
 import type { AgentRuntime, ConversationMessage, Reply, ToolCall, ToolSpec, Turn } from "./types.js";
 
@@ -17,20 +18,23 @@ export interface AnthropicRuntimeOptions {
 
 export class AnthropicRuntime implements AgentRuntime {
   readonly name = "anthropic";
-  private readonly client: Anthropic;
+  private readonly apiKey: string;
+  private client: Promise<Anthropic> | undefined;
   private readonly model: string;
   private readonly maxTokens: number;
 
   constructor(options: AnthropicRuntimeOptions = {}) {
     const apiKey = options.apiKey ?? process.env["ANTHROPIC_API_KEY"];
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set; use the replay provider for runs without a model");
-    this.client = new Anthropic({ apiKey });
+    this.apiKey = apiKey;
     this.model = options.model ?? process.env["ANTHROPIC_MODEL"] ?? DEFAULT_MODEL;
     this.maxTokens = options.maxTokens ?? 1024;
   }
 
   async step(input: Turn, tools: ToolSpec[]): Promise<ToolCall[] | Reply> {
-    const response = await this.client.messages.create({
+    this.client ??= import("@anthropic-ai/sdk").then(({ default: Sdk }) => new Sdk({ apiKey: this.apiKey }));
+    const client = await this.client;
+    const response = await client.messages.create({
       model: this.model,
       max_tokens: this.maxTokens,
       system: input.system,

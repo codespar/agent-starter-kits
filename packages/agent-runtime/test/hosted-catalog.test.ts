@@ -63,13 +63,13 @@ describe("buildCatalog", () => {
     expect(() => describeKit(lying, { root: ROOT, commit: COMMIT, shared: SHARED })).toThrow(/not backed by any tool/);
   });
 
-  it("offers codespar-test exactly when the kit builds a hosted rail, and lists the manifest's blocked capabilities against it", async () => {
+  it("offers codespar-test to a kit whose money moves on the CodeSpar API, and to no other", async () => {
     const agent = await loadAgent(TEST_KIT);
-    const without = describeKit(agent, { root: ROOT, commit: COMMIT, shared: SHARED });
-    expect(without.supportedExecutors).toEqual(["simulator"]);
-    const withRail = describeKit({ ...agent, kit: { ...agent.kit, hostedRail: () => ({}) as never } }, { root: ROOT, commit: COMMIT, shared: SHARED });
-    expect(withRail.supportedExecutors).toEqual(["simulator", "codespar-test"]);
-    expect(withRail.executors[1]).toEqual({ id: "codespar-test", evidence: "codespar_receipt", requires: ["platform.test_project", "platform.consumer_mandate", "platform.payouts"], blockedBy: [] });
+    const onApi = describeKit(agent, { root: ROOT, commit: COMMIT, shared: SHARED });
+    expect(onApi.supportedExecutors).toEqual(["simulator", "codespar-test"]);
+    expect(onApi.executors[1]).toEqual({ id: "codespar-test", evidence: "codespar_receipt", requires: ["platform.test_project", "platform.consumer_mandate", "platform.payouts"], blockedBy: [] });
+    const elsewhere = describeKit({ ...agent, kit: { ...agent.kit, apiRailKey: "none" } }, { root: ROOT, commit: COMMIT, shared: SHARED });
+    expect(elsewhere.supportedExecutors).toEqual(["simulator"]);
   });
 });
 

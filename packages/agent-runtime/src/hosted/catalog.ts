@@ -88,18 +88,22 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
     };
   });
 
-  // The executors: the kit's own stub always; the CodeSpar Test executor when the kit says how to build its rail over a host's client.
+  // The executors: the kit's own stub always. `codespar-test` for a kit whose money moves on the CodeSpar API: there the kit
+  // drafts a platform proposal per attempt and a person pays it (CONTRATO.md v1.1); a kit on another rail has none.
   const receiptBlocked = maturity["receipt-verification"] === "blocked";
   const executors: HostedKitDescriptor["executors"] = [{ id: "simulator", evidence: moves ? "simulated" : "none", requires: [], blockedBy: [] }];
-  if (agent.kit.hostedRail && moves) {
+  if (moves && agent.kit.apiRailKey !== "none") {
     const evidence: EvidenceKind = effects.has("payment") && !receiptBlocked ? "codespar_receipt" : "charge_status";
     const requires: PlatformPrerequisite[] = ["platform.test_project", "platform.consumer_mandate"];
     if (effects.has("payment")) requires.push("platform.payouts");
     if (effects.has("charge")) requires.push("platform.charges");
-    const blockedBy = Object.entries(maturity)
-      .filter(([capability, level]) => level === "blocked" && capability !== "receipt-verification")
-      .map(([capability]) => capability)
-      .sort();
+    const blockedBy = [
+      ...Object.entries(maturity)
+        .filter(([capability, level]) => level === "blocked" && capability !== "receipt-verification")
+        .map(([capability]) => capability),
+      // The platform drafts payment proposals; it has no governed route that drafts a charge for a person to issue. Not invented here.
+      ...(effects.has("charge") ? ["platform.charge_proposals"] : []),
+    ].sort();
     executors.push({ id: "codespar-test" satisfies ExecutorId, evidence, requires, blockedBy });
   }
 

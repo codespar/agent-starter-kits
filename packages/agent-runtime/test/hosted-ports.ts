@@ -8,6 +8,7 @@ import { hmacSigner, type AgentRuntime, type ConversationMessage, type Reply, ty
 import { loadAgent } from "../src/agent.js";
 import { describeKit } from "../src/hosted/catalog.js";
 import type { HostedEvent } from "../src/hosted/contract.js";
+import type { ProposalRail, ProposalState } from "../src/hosted/proposals.js";
 import type { ApprovalPort, HostedActor, HostedKit, HostedPorts, IdentityPort, ModelPort, RailPort, RunImage, StatePort } from "../src/hosted/run.js";
 
 export const ACTOR: HostedActor = { userId: "user_fixture_owner", orgId: "org_fixture", projectId: "prj_fixture", environment: "test" };
@@ -43,6 +44,33 @@ export class MemoryState implements StatePort {
 
   async events(runId: string, after: number) {
     return (this.log.get(runId) ?? []).filter((e) => e.seq > after);
+  }
+}
+
+/** The platform's proposals as the host would offer them: one per attempt, by id; paid or refused only when a test says so. */
+export class FakeProposals implements ProposalRail {
+  readonly submitted: Array<Parameters<ProposalRail["submit"]>[0]> = [];
+  private readonly states = new Map<string, { state: ProposalState; receiptId: string | null; failureCode: string | null }>();
+  async submit(request: Parameters<ProposalRail["submit"]>[0]) {
+    const proposalId = `prop_${request.attemptId}`;
+    if (!this.states.has(proposalId)) {
+      this.submitted.push(structuredClone(request));
+      this.states.set(proposalId, { state: "awaiting_approval", receiptId: null, failureCode: null });
+    }
+    return { proposalId, state: this.states.get(proposalId)!.state };
+  }
+  async read(proposalId: string) {
+    const found = this.states.get(proposalId);
+    if (!found) throw new Error(`no proposal ${proposalId}`);
+    return found;
+  }
+  /** A verified person paid it, and the platform sealed a receipt. */
+  pay(proposalId: string, receiptId: string): void {
+    this.states.set(proposalId, { state: "succeeded", receiptId, failureCode: null });
+  }
+  /** Aprovações or the person refused it. */
+  deny(proposalId: string): void {
+    this.states.set(proposalId, { state: "denied", receiptId: null, failureCode: null });
   }
 }
 

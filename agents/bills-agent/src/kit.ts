@@ -14,30 +14,16 @@ import {
   loadMandate,
   isReplayedSettlement,
   type Execution,
-  type Mandate,
   railErrorOf,
   refusedDispatchesOf,
 } from "@codespar/agent-core";
-import { NoMandateError, defineAgent, describePayment, type AgentKit, type HostedRailContext, type KitConfig, type RailBuild } from "@codespar/agent-runtime";
+import { NoMandateError, defineAgent, describePayment, type AgentKit } from "@codespar/agent-runtime";
 import { loadLocalMandate, runEmbeddedConsent } from "./modules/embedded-consent.js";
 import { assertMandateBinding, integratedExample, integratedProofFrom } from "./modules/integrated-proof.js";
 import { STRINGS } from "./strings.js";
 import { codesparLedger, codesparPay, listBills } from "./modules/pix-out.js";
 
 const mandatePath = (agentDir: string) => join(agentDir, ".codespar", "mandate.json");
-
-/** The pix-out rail over a CodeSpar client, whoever made the client: `--rail api` from a test key, or a host. */
-function codesparRail(api: HostedRailContext["client"], mandate: Mandate, config: KitConfig, now: (() => Date) | undefined): RailBuild {
-  const proof = integratedProofFrom(config);
-  if (proof) assertMandateBinding(mandate, proof, "local mandate");
-  return {
-    rail: new CodeSparRail(api, { canonical: mandate.canonical, signature: mandate.signature }),
-    mandate,
-    api,
-    // Section 4.7 against the real status: the local stub answers only runs without a key.
-    status: new ApiMandateStatusSource(api, now),
-  };
-}
 
 const kit: AgentKit = {
   settlement: "immediate",
@@ -66,7 +52,15 @@ options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript 
       const api = createCodeSparClient({ apiKey: ctx.env["CODESPAR_API_KEY"], baseUrl: ctx.env["CODESPAR_API_URL"], projectId: ctx.env["CODESPAR_PROJECT_ID"] });
       const mandate = ctx.mandate ?? loadLocalMandate(mandatePath(ctx.agentDir));
       if (!mandate) throw new NoMandateError();
-      return codesparRail(api, mandate, ctx.env, ctx.now);
+      const proof = integratedProofFrom(ctx.env);
+      if (proof) assertMandateBinding(mandate, proof, "local mandate");
+      return {
+        rail: new CodeSparRail(api, { canonical: mandate.canonical, signature: mandate.signature }),
+        mandate,
+        api,
+        // Section 4.7 against the real status: the local stub answers only runs without a key.
+        status: new ApiMandateStatusSource(api, ctx.now),
+      };
     }
     // BILLS_KILL_AFTER_DISPATCH=1 simulates a crash right after the rail accepted the attempt and before the outcome was recorded.
     const killAfterDispatch = ctx.envVar("KILL_AFTER_DISPATCH") === "1" ? { afterDispatch: () => process.exit(137) } : {};
@@ -77,9 +71,6 @@ options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript 
       mandate: ctx.mandate ?? loadMandate(ctx.manifest.resolvePath(ctx.manifest.manifest.mandate_schema)),
     };
   },
-
-  // Hosted: the same rail over the client the host scoped to one Test project, under the mandate the host bound the run to.
-  hostedRail: (ctx) => codesparRail(ctx.client, ctx.mandate, ctx.config, ctx.now),
 
   handlers: (s) => ({ codespar_pay: codesparPay, codespar_ledger: codesparLedger, list_bills: listBills(s.config) }),
 
