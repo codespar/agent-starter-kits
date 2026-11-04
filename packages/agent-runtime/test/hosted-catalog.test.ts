@@ -22,27 +22,44 @@ const SHARED = ["packages/agent-core/src", "packages/agent-runtime/src"];
 const scratch = mkdtempSync(join(tmpdir(), "hosted-catalog-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
+/** The test kit's files with only its read tool: what `describeKit` reads from disk, without importing a module from outside the workspace. */
+function readOnlyCopy(): string {
+  const dir = mkdtempSync(join(ROOT, "packages/agent-runtime/test/fixtures/kits/.read-only-"));
+  cpSync(TEST_KIT, dir, { recursive: true });
+  const tools = JSON.parse(readFileSync(join(dir, "tools.json"), "utf8")) as { meta_tools: unknown[]; local_tools: unknown[] };
+  writeFileSync(join(dir, "tools.json"), JSON.stringify({ meta_tools: [], local_tools: tools.local_tools }));
+  copies.push(dir);
+  return dir;
+}
+const copies: string[] = [];
+afterAll(() => {
+  for (const dir of copies) rmSync(dir, { recursive: true, force: true });
+});
+
 const json = (name: string) => JSON.parse(readFileSync(join(FIXTURES, name), "utf8")) as Record<string, unknown>;
 
+// Only the test kit and whatever agents/ holds: a scaffold of one agent runs this file too. The repository's own six are asserted in the root test/.
 describe("buildCatalog", () => {
-  it("describes every agent of the repository plus a kit nobody listed, sorted, from one commit", async () => {
-    const catalog = await buildCatalog({ root: ROOT, commit: COMMIT, shared: SHARED }, [...discoverAgentDirs(join(ROOT, "agents")), TEST_KIT], "0.0.0-test");
-    expect(catalog.kits.map((k) => k.id)).toEqual(["bills-agent", "checkout-agent", "collections-agent", "hello-agent", "supplier-payments-agent", "tip-jar-agent", "topup-agent"]);
+  it("describes every agent under agents/ plus a kit nobody listed, sorted, from one commit", async () => {
+    const dirs = discoverAgentDirs(join(ROOT, "agents"));
+    const catalog = await buildCatalog({ root: ROOT, commit: COMMIT, shared: SHARED }, [...dirs, TEST_KIT], "0.0.0-test");
+    expect(catalog.kits.map((k) => k.id)).toEqual([...dirs.map((d) => d.split("/").pop()!), "tip-jar-agent"].sort());
     expect(HostedCatalogSchema.safeParse(catalog).success).toBe(true);
     for (const kit of catalog.kits) expect(kit.source.commit).toBe(COMMIT);
   });
 
   it("derives what a read-only kit is: no mandate, no settlement, no evidence", async () => {
-    const hello = describeKit(await loadAgent(join(ROOT, "agents/hello-agent")), { root: ROOT, commit: COMMIT, shared: SHARED });
-    expect(hello).toMatchObject({ needsMandate: false, settlement: "none", outcomeKinds: ["answer"], supportedExecutors: ["simulator"] });
-    expect(hello.executors).toEqual([{ id: "simulator", evidence: "none", requires: [], blockedBy: [] }]);
+    const tipJar = await loadAgent(TEST_KIT);
+    // The same kit with its payment tool taken away is a read-only kit.
+    const readOnly = describeKit({ ...tipJar, dir: readOnlyCopy() }, { root: ROOT, commit: COMMIT, shared: SHARED });
+    expect(readOnly).toMatchObject({ needsMandate: false, settlement: "none", outcomeKinds: ["answer"], supportedExecutors: ["simulator"] });
+    expect(readOnly.executors).toEqual([{ id: "simulator", evidence: "none", requires: [], blockedBy: [] }]);
   });
 
   it("takes a kit's declared outcomes and refuses one no tool can produce", async () => {
-    const topup = describeKit(await loadAgent(join(ROOT, "agents/topup-agent")), { root: ROOT, commit: COMMIT, shared: SHARED });
-    expect(topup.outcomeKinds).toEqual(["answer", "pull"]);
-    const hello = await loadAgent(join(ROOT, "agents/hello-agent"));
-    const lying = { ...hello, kit: { ...hello.kit, hosted: { outcomeKinds: ["answer", "payment"] as const } } };
+    const tipJar = await loadAgent(TEST_KIT);
+    expect(describeKit({ ...tipJar, kit: { ...tipJar.kit, hosted: { outcomeKinds: ["answer", "payment"] as const } } }, { root: ROOT, commit: COMMIT, shared: SHARED }).outcomeKinds).toEqual(["answer", "payment"]);
+    const lying = { ...tipJar, dir: readOnlyCopy(), kit: { ...tipJar.kit, hosted: { outcomeKinds: ["answer", "payment"] as const } } };
     expect(() => describeKit(lying, { root: ROOT, commit: COMMIT, shared: SHARED })).toThrow(/not backed by any tool/);
   });
 

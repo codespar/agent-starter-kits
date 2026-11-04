@@ -33,9 +33,11 @@ function filesUnder(dir: string): string[] {
   return out;
 }
 
+// A scaffold of one agent carries this file too: nothing here counts the agents of this repository (the root `test/` does).
 describe("discovery", () => {
-  it("finds the six agents of this repository from their manifests", () => {
-    expect(AGENT_DIRS.length).toBe(6);
+  it("finds every directory under agents/ that holds an agent.yaml, named as its manifest names it", () => {
+    const expected = readdirSync(join(ROOT, "agents"), { withFileTypes: true }).filter((e) => e.isDirectory() && existsSync(join(ROOT, "agents", e.name, "agent.yaml")));
+    expect(AGENT_DIRS.length).toBe(expected.length);
     expect(AGENT_DIRS.map((d) => loadManifest(join(d, "agent.yaml")).manifest.name)).toEqual(AGENT_DIRS.map((d) => d.split("/").pop()));
   });
 });
