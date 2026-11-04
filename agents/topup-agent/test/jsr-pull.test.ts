@@ -168,3 +168,163 @@ describe("the MCP client", () => {
     expect(rpcMessage(stream, "text/event-stream", 8)).toBeUndefined();
   });
 });
+
+/** A scripted API: every call not overridden fails the test if it is reached. */
+function scripted(over: Partial<JsrApi>): JsrApi & { calls: string[] } {
+  const calls: string[] = [];
+  const unreached = (name: string) => async () => {
+    throw new Error(`${name} not reached`);
+  };
+  const api = {
+    completedEnrollment: unreached("completedEnrollment"),
+    createEnrollment: unreached("createEnrollment"),
+    getEnrollment: unreached("getEnrollment"),
+    createPayment: unreached("createPayment"),
+    getPayment: unreached("getPayment"),
+    ...over,
+  } as JsrApi;
+  const counted = Object.fromEntries(
+    (Object.keys(api) as Array<keyof JsrApi>).map((k) => [k, (...args: never[]) => (calls.push(k), (api[k] as (...a: never[]) => Promise<unknown>)(...args))]),
+  ) as unknown as JsrApi;
+  return Object.assign(counted, { calls });
+}
+
+const PENDING_ENROLLMENT = { authorizationId: "enr_1", status: "PENDING", upstreamStatus: "AWAITING_ACCOUNT_HOLDER_VALIDATION", terminal: false, url: "https://idp.invalid/authorize?request_uri=enr_1" };
+
+describe("expiry", () => {
+  it("an enrollment that ends before COMPLETED is charge_expired, and no payment is ever asked for", async () => {
+    const s = store();
+    let look = 0;
+    const api = scripted({
+      completedEnrollment: async () => null,
+      createEnrollment: async () => PENDING_ENROLLMENT,
+      // First look: still waiting for the passkey; second: the link expired unopened.
+      getEnrollment: async () => (++look === 1 ? { ...PENDING_ENROLLMENT, url: null } : { authorizationId: "enr_1", status: "REJECTED", upstreamStatus: "EXPIRED", terminal: true, url: null }),
+    });
+    const rail = new JsrPullRail(s, api, CONFIG, true);
+    expect(await rail.pay(payment())).toMatchObject({ status: "accepted", instrument: { consent_step: "enroll" } });
+    // Still pending: the same enroll page again, with the link kept from the create (the status answer has none).
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "accepted", instrument: { consent_step: "enroll", consent_url: PENDING_ENROLLMENT.url } });
+    const ended = await rail.lookup("att_1", payment());
+    expect(ended).toMatchObject({ status: "failed", code: "charge_expired" });
+    expect(ended && ended.status === "failed" && ended.message).toMatch(/REJECTED \(EXPIRED\) before the passkey was registered/);
+    // Final: neither a later look nor a re-dispatch reaches the bank again.
+    expect(await rail.lookup("att_1", payment())).toEqual(ended);
+    expect(await rail.pay(payment())).toEqual(ended);
+    expect(api.calls).not.toContain("createPayment");
+    expect(api.calls.filter((c) => c === "getEnrollment")).toHaveLength(2);
+  });
+
+  it("a signing page left open past its window keeps the sign step until the bank ends it, then charge_expired", async () => {
+    const s = store();
+    let look = 0;
+    const api = scripted({
+      completedEnrollment: async () => ({ authorizationId: "enr_1", status: "COMPLETED", upstreamStatus: "AUTHORISED", terminal: true, url: null }),
+      createPayment: async () => ({ paymentId: "p1", status: "PENDING", upstreamStatus: "CONSENT_AWAITING_AUTHORIZATION", terminal: false, url: "https://app.invalid/agentic/pay/p1?token=x", authorizationId: "enr_1", endToEndId: null, errorCode: null }),
+      getPayment: async () =>
+        ++look === 1
+          ? { paymentId: "p1", status: "PENDING", upstreamStatus: "CONSENT_AWAITING_AUTHORIZATION", terminal: false, url: null, authorizationId: null, endToEndId: null, errorCode: null }
+          : { paymentId: "p1", status: "REJECTED", upstreamStatus: "CONSENT_REJECTED", terminal: true, url: null, authorizationId: null, endToEndId: null, errorCode: "TIMEOUT_CONSENTIMENTO" },
+    });
+    const rail = new JsrPullRail(s, api, CONFIG, true);
+    await rail.pay(payment());
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "accepted", instrument: { consent_step: "sign", consent_url: "https://app.invalid/agentic/pay/p1?token=x" } });
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "failed", code: "charge_expired" });
+    expect(api.calls.filter((c) => c === "createPayment")).toHaveLength(1);
+  });
+});
+
+const ENROLLED = { data: [{ authorizationId: "enr_1", status: "COMPLETED", participantId: CONFIG.participantId, createdAt: "2026-10-27T14:00:00Z" }] };
+const CREATED = { url: "https://app.example/agentic/pay/p1?token=x", paymentId: "p1", mode: "redirect", authorizationId: "enr_1" };
+
+/**
+ * `fakeIniciador` with a fault injected in front of it: `fault` sees each call
+ * (the MCP tool name, or the REST path) and answers a Response or an Error to
+ * throw from `fetch`, or undefined to let the fake answer.
+ */
+function faulty(base: ReturnType<typeof fakeIniciador>, fault: (call: { path: string; tool?: string }) => Response | Error | undefined) {
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    const path = new URL(String(url)).pathname.replace(/^\/v1/, "");
+    const body = init?.body ? (JSON.parse(String(init.body)) as { params?: { name?: string } }) : null;
+    const injected = fault({ path, ...(body?.params?.name ? { tool: body.params.name } : {}) });
+    if (injected instanceof Error) throw injected;
+    if (injected) return injected;
+    return base.fetchImpl(url, init);
+  }) as typeof fetch;
+  return new HttpJsrApi({ baseUrl: "http://127.0.0.1:18790/v1", credentials: { clientId: CLIENT_ID, clientSecret: CLIENT_SECRET }, fetch: fetchImpl });
+}
+
+function expectNoSecret(...texts: Array<string | null | undefined>) {
+  for (const text of texts) for (const secret of [CLIENT_ID, CLIENT_SECRET, TOKEN]) expect(text ?? "").not.toContain(secret);
+}
+
+const timeout = () => new DOMException("The operation was aborted due to timeout", "TimeoutError");
+
+describe("a status read that times out", () => {
+  it("status_payment times out: uncertain, not final, no human; the next look settles; the payment asked for once", async () => {
+    const s = store();
+    const base = fakeIniciador(
+      { list_authorizations: () => ENROLLED, create_payment: () => CREATED, status_payment: () => ({ status: "COMPLETED", terminal: true, upstreamStatus: "PAYMENT_COMPLETED" }) },
+      { "/enrollments/payments/p1/status": { id: "p1", status: "PAYMENT_COMPLETED", endToEndId: "E44471172202610271427Uc0cd9af529" } },
+    );
+    let statusReads = 0;
+    const api = faulty(base, (c) => (c.tool === "status_payment" && ++statusReads === 1 ? timeout() : undefined));
+    const rail = new JsrPullRail(s, api, CONFIG, true);
+    expect(await rail.pay(payment())).toMatchObject({ status: "accepted", instrument: { consent_step: "sign" } });
+    const blip = await rail.lookup("att_1", payment());
+    expect(blip).toMatchObject({ status: "uncertain", code: "payment_unreadable" });
+    expect(blip && "needs_human" in blip && blip.needs_human).toBeFalsy();
+    expect(blip && blip.status === "uncertain" && blip.message).toMatch(/MCP status_payment: no answer \(TimeoutError\)/);
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "settled", transaction_id: "E44471172202610271427Uc0cd9af529" });
+    expect(base.calls.filter((c) => c.tool === "create_payment")).toHaveLength(1);
+  });
+
+  it("status_authorization times out: uncertain, the enrollment kept; the next look goes on to the sign page", async () => {
+    const s = store();
+    const base = fakeIniciador({
+      list_authorizations: () => ({ data: [] }),
+      create_authorization: () => ({ authorizationId: "enr_1", status: "PENDING", terminal: false, url: "https://idp.example/authorize?request_uri=r" }),
+      status_authorization: () => ({ status: "COMPLETED", terminal: true, upstreamStatus: "AUTHORISED" }),
+      create_payment: () => CREATED,
+    });
+    let reads = 0;
+    const api = faulty(base, (c) => (c.tool === "status_authorization" && ++reads === 1 ? timeout() : undefined));
+    const rail = new JsrPullRail(s, api, CONFIG, true);
+    expect(await rail.pay(payment())).toMatchObject({ status: "accepted", instrument: { consent_step: "enroll" } });
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "uncertain", code: "enrollment_unreadable" });
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "accepted", instrument: { consent_step: "sign" } });
+    expect(base.calls.filter((c) => c.tool === "create_payment")).toHaveLength(1);
+  });
+});
+
+describe("the MCP down", () => {
+  it("before the enrollment: uncertain, nothing on record, no payment, no secret", async () => {
+    const s = store();
+    const base = fakeIniciador({});
+    const api = faulty(base, () => new TypeError(`fetch failed: connect ECONNREFUSED 127.0.0.1:18790 ${CLIENT_SECRET}`));
+    const rail = new JsrPullRail(s, api, CONFIG, true);
+    const outcome = await rail.pay(payment());
+    expect(outcome).toMatchObject({ status: "uncertain", code: "enrollment_unconfirmed" });
+    expectNoSecret(outcome.status === "uncertain" ? outcome.message : "");
+    // Nothing that moves money was asked: no record, so the next dispatch starts clean.
+    expect(await rail.lookup("att_1", payment())).toBeUndefined();
+    expect(base.calls).toHaveLength(0);
+  });
+
+  it.each([
+    ["no answer at all", () => new TypeError(`fetch failed: connect ECONNREFUSED ${CLIENT_SECRET}`)],
+    ["a 503 that echoes the credentials", () => new Response(JSON.stringify({ code: "UNAVAILABLE", message: `upstream down for ${CLIENT_ID}/${CLIENT_SECRET} with Bearer ${TOKEN}` }), { status: 503, headers: { "content-type": "application/json" } })],
+  ])("at create_payment, %s: uncertain, needs a human, no secret anywhere, never asked again", async (_name, fault) => {
+    const s = store();
+    const base = fakeIniciador({ list_authorizations: () => ENROLLED, create_payment: () => CREATED });
+    let creates = 0;
+    const api = faulty(base, (c) => (c.tool === "create_payment" ? (creates++, fault()) : undefined));
+    const rail = new JsrPullRail(s, api, CONFIG, true);
+    const outcome = await rail.pay(payment());
+    expect(outcome).toMatchObject({ status: "uncertain", code: "pull_dispatch_uncertain", needs_human: true });
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "uncertain", code: "pull_dispatch_uncertain", needs_human: true });
+    expect(await rail.pay(payment())).toMatchObject({ status: "uncertain" });
+    expect(creates).toBe(1);
+    expectNoSecret(outcome.status === "uncertain" ? outcome.message : "", s.getCursor("jsr:att_1"));
+  });
+});
