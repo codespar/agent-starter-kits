@@ -1,0 +1,126 @@
+/**
+ * The deploy-time catalog and the contract's fixtures. The catalog is derived
+ * (CONTRATO.md section 1) and validated by the same schema the host uses; the
+ * fixtures under `fixtures/hosted/` are the JSON the dashboard builds against,
+ * and they must stay valid under the schema this package ships.
+ */
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, describe, expect, it } from "vitest";
+import { loadAgent } from "../src/agent.js";
+import { buildCatalog, describeKit, discoverAgentDirs, treeDigest } from "../src/hosted/catalog.js";
+import { HostedCatalogSchema, HostedKitDescriptorSchema, RunSnapshotSchema, checkEventLog, type HostedEvent, type HostedKitDescriptor } from "../src/hosted/contract.js";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(HERE, "../../..");
+const TEST_KIT = join(HERE, "fixtures/kits/tip-jar-agent");
+const FIXTURES = join(HERE, "fixtures/hosted");
+const COMMIT = "a".repeat(40);
+const SHARED = ["packages/agent-core/src", "packages/agent-runtime/src"];
+const scratch = mkdtempSync(join(tmpdir(), "hosted-catalog-"));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+const json = (name: string) => JSON.parse(readFileSync(join(FIXTURES, name), "utf8")) as Record<string, unknown>;
+
+describe("buildCatalog", () => {
+  it("describes every agent of the repository plus a kit nobody listed, sorted, from one commit", async () => {
+    const catalog = await buildCatalog({ root: ROOT, commit: COMMIT, shared: SHARED }, [...discoverAgentDirs(join(ROOT, "agents")), TEST_KIT], "0.0.0-test");
+    expect(catalog.kits.map((k) => k.id)).toEqual(["bills-agent", "checkout-agent", "collections-agent", "hello-agent", "supplier-payments-agent", "tip-jar-agent", "topup-agent"]);
+    expect(HostedCatalogSchema.safeParse(catalog).success).toBe(true);
+    for (const kit of catalog.kits) expect(kit.source.commit).toBe(COMMIT);
+  });
+
+  it("derives what a read-only kit is: no mandate, no settlement, no evidence", async () => {
+    const hello = describeKit(await loadAgent(join(ROOT, "agents/hello-agent")), { root: ROOT, commit: COMMIT, shared: SHARED });
+    expect(hello).toMatchObject({ needsMandate: false, settlement: "none", outcomeKinds: ["answer"], supportedExecutors: ["simulator"] });
+    expect(hello.executors).toEqual([{ id: "simulator", evidence: "none", requires: [], blockedBy: [] }]);
+  });
+
+  it("takes a kit's declared outcomes and refuses one no tool can produce", async () => {
+    const topup = describeKit(await loadAgent(join(ROOT, "agents/topup-agent")), { root: ROOT, commit: COMMIT, shared: SHARED });
+    expect(topup.outcomeKinds).toEqual(["answer", "pull"]);
+    const hello = await loadAgent(join(ROOT, "agents/hello-agent"));
+    const lying = { ...hello, kit: { ...hello.kit, hosted: { outcomeKinds: ["answer", "payment"] as const } } };
+    expect(() => describeKit(lying, { root: ROOT, commit: COMMIT, shared: SHARED })).toThrow(/not backed by any tool/);
+  });
+
+  it("offers codespar-test exactly when the kit builds a hosted rail, and lists the manifest's blocked capabilities against it", async () => {
+    const agent = await loadAgent(TEST_KIT);
+    const without = describeKit(agent, { root: ROOT, commit: COMMIT, shared: SHARED });
+    expect(without.supportedExecutors).toEqual(["simulator"]);
+    const withRail = describeKit({ ...agent, kit: { ...agent.kit, hostedRail: () => ({}) as never } }, { root: ROOT, commit: COMMIT, shared: SHARED });
+    expect(withRail.supportedExecutors).toEqual(["simulator", "codespar-test"]);
+    expect(withRail.executors[1]).toEqual({ id: "codespar-test", evidence: "codespar_receipt", requires: ["platform.test_project", "platform.consumer_mandate", "platform.payouts"], blockedBy: [] });
+  });
+});
+
+describe("treeDigest", () => {
+  it("is stable, ignores what never ships, and moves when a shipped byte moves", () => {
+    const root = mkdtempSync(join(scratch, "tree-"));
+    cpSync(TEST_KIT, join(root, "kit"), { recursive: true });
+    const first = treeDigest(root, ["kit"]);
+    expect(first).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(treeDigest(root, ["kit"])).toBe(first);
+    writeFileSync(join(root, "kit", ".env"), "IGNORED=1\n");
+    for (const local of ["runs", ".codespar", "node_modules"]) {
+      mkdirSync(join(root, "kit", local));
+      writeFileSync(join(root, "kit", local, "x.json"), "{}\n");
+    }
+    expect(treeDigest(root, ["kit"])).toBe(first);
+    writeFileSync(join(root, "kit", "SYSTEM_PROMPT.md"), readFileSync(join(root, "kit", "SYSTEM_PROMPT.md"), "utf8") + "\n");
+    expect(treeDigest(root, ["kit"])).not.toBe(first);
+  });
+});
+
+describe("contract fixtures (playground-executavel/fixtures)", () => {
+  it("the catalog fixture is a valid catalog of the six kits", () => {
+    const catalog = HostedCatalogSchema.parse(json("catalog.json"));
+    expect(catalog.kits.map((k: HostedKitDescriptor) => k.id)).toEqual(["bills-agent", "checkout-agent", "collections-agent", "hello-agent", "supplier-payments-agent", "topup-agent"]);
+    for (const k of catalog.kits) expect(HostedKitDescriptorSchema.safeParse(k).success).toBe(true);
+    // topup is not a CodeSpar payment and never claims a CodeSpar receipt.
+    const topup = catalog.kits.find((k) => k.outcomeKinds.includes("pull"))!;
+    expect(topup.executors.every((e) => e.evidence !== "codespar_receipt")).toBe(true);
+  });
+
+  it("every event log is gapless, from one run, and valid event by event", () => {
+    for (const name of readdirSync(FIXTURES).filter((f) => f.endsWith(".events.json"))) {
+      const log = json(name) as { runId: string; events: HostedEvent[] };
+      expect(checkEventLog(log.events), name).toEqual([]);
+      expect(log.events.every((e) => e.runId === log.runId), name).toBe(true);
+    }
+  });
+
+  it("every snapshot is valid, and its cursor is the last event of its log", () => {
+    for (const name of readdirSync(FIXTURES).filter((f) => f.endsWith(".snapshot.json"))) {
+      const result = RunSnapshotSchema.safeParse(json(name));
+      expect(result.success, `${name}: ${result.success ? "" : JSON.stringify(result.error.issues.slice(0, 3))}`).toBe(true);
+    }
+    const bills = RunSnapshotSchema.parse(json("bills-awaiting-approval.snapshot.json"));
+    const billsLog = json("bills-awaiting-approval.events.json") as { events: HostedEvent[] };
+    expect(bills.cursor.seq).toBe(billsLog.events.length);
+    expect(bills.pending.map((p) => p.kind)).toEqual(["decision"]);
+    const supplier = RunSnapshotSchema.parse(json("supplier-batch-one-refused.snapshot.json"));
+    const supplierLog = json("supplier-batch-one-refused.events.json") as { events: HostedEvent[] };
+    expect(supplier.cursor.seq).toBe(supplierLog.events.length);
+    expect(supplier.batches[0]!.lines.map((l) => l.state)).toEqual(["settled", "failed", "settled"]);
+    expect(supplier.batches[0]!.settledMinor).toBe(supplier.executions.filter((e) => e.state === "settled").reduce((sum, e) => sum + e.totalMinor, 0));
+    const awaiting = RunSnapshotSchema.parse(json("supplier-batch-awaiting-decision.snapshot.json"));
+    expect(awaiting.pending.map((p) => p.kind)).toEqual(["batch_decision"]);
+  });
+
+  it("the reconnect answer starts right after the cursor the client had and ends at the snapshot's", () => {
+    const r = json("reconnect-after-cursor.json") as { request: { after: number }; response: { events: HostedEvent[]; cursor: { seq: number } } };
+    expect(checkEventLog(r.response.events, r.request.after)).toEqual([]);
+    expect(r.response.events.at(-1)!.seq).toBe(r.response.cursor.seq);
+  });
+
+  it("no fixture carries a payee key in the clear", () => {
+    const keys = ["financeiro@escola-aurora.example.com.br", "contas@insumos-atlantico.example.com.br", "financeiro@grafica-litoral.example.com.br", "+5511988880006"];
+    for (const name of readdirSync(FIXTURES).filter((f) => f.endsWith(".json"))) {
+      const text = readFileSync(join(FIXTURES, name), "utf8");
+      for (const key of keys) expect(text.includes(key), `${name} holds ${key}`).toBe(false);
+    }
+  });
+});

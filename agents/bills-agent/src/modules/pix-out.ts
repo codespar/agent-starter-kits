@@ -5,6 +5,7 @@
  * `list_bills` are reads.
  */
 import { daysUntil, isReplayedSettlement, type Execution, type ToolHandler } from "@codespar/agent-core";
+import type { KitConfig } from "@codespar/agent-runtime";
 import { formatBRL } from "../bills.js";
 import { BILLS, MONTH } from "../bills.js";
 import { INTEGRATED_BILLS, integratedProofFrom } from "./integrated-proof.js";
@@ -15,14 +16,15 @@ interface PayInput {
   total_minor?: unknown;
 }
 
-export const listBills: ToolHandler = async (_input, ctx) => {
+/** `config` is the run's configuration (`setup.config`): the integrated proof's bills replace the month's when it names one. */
+export const listBills = (config: KitConfig): ToolHandler => async (_input, ctx) => {
   const settled = ctx.engine.list({ state: "settled" });
   const paidAliases = new Set(settled.flatMap((e) => e.items.map((i) => i.alias)).filter(Boolean));
   const today = ctx.engine.today();
   return {
     month: MONTH,
     today,
-    bills: (integratedProofFrom(process.env) ? INTEGRATED_BILLS : BILLS).map((b) => ({ ...b, amount: formatBRL(b.amount_minor), days_until_due: daysUntil(today, b.due), paid_this_window: paidAliases.has(b.alias) })),
+    bills: (integratedProofFrom(config) ? INTEGRATED_BILLS : BILLS).map((b) => ({ ...b, amount: formatBRL(b.amount_minor), days_until_due: daysUntil(today, b.due), paid_this_window: paidAliases.has(b.alias) })),
     payees: ctx.engine.mandate.beneficiaries.map((b) => ({ alias: b.alias, name: b.name })),
   };
 };

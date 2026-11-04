@@ -1,0 +1,133 @@
+{
+  "v": 1,
+  "run": {
+    "id": "run_20261103T141500_hk_bills_7c1e",
+    "kit": {
+      "id": "bills-agent",
+      "version": "0.1.0",
+      "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
+      "packageDigest": "sha256:f6c00fbc68501bc8f79bdd783b2e799ca59290417f34664ff4ebbce351621a03"
+    },
+    "modelMode": "replay",
+    "executor": "simulator",
+    "approvalMode": "human",
+    "locale": "pt-BR",
+    "exampleId": "happy-path",
+    "inputRevision": "sha256:16d450bd8fec08e9e2f4b1026a33907a21d41ae4456bca70cb391a421c480ac4",
+    "status": "awaiting_decision",
+    "createdAt": "2026-11-03T14:15:00.000Z",
+    "updatedAt": "2026-11-03T14:15:02.060Z"
+  },
+  "cursor": {
+    "seq": 10
+  },
+  "pending": [
+    {
+      "kind": "decision",
+      "executionId": "exe_4f1a9c0d2b7e5a61",
+      "binding": {
+        "itemsHash": "sha256:8fbc7dd769e48628af454f014cc283cd181c25679f13dec7ca1ef1704087c86a",
+        "totalMinor": 185000,
+        "currency": "BRL",
+        "mandateId": "mdt_example_bills_0001",
+        "mandateVersion": 1,
+        "batchHash": null,
+        "batchIndex": null,
+        "compositionHash": null
+      },
+      "items": [
+        {
+          "beneficiary": "Escola Aurora",
+          "payeeMasked": "fi***@escola-aurora.example.com.br",
+          "alias": "escola",
+          "amountMinor": 185000,
+          "description": "mensalidade outubro",
+          "dueDate": null
+        }
+      ],
+      "rule": {
+        "approvalMode": "human",
+        "trigger": null,
+        "detail": null
+      },
+      "canApprove": true,
+      "blockingReasons": [],
+      "expiresAt": null
+    }
+  ],
+  "executions": [
+    {
+      "id": "exe_4f1a9c0d2b7e5a61",
+      "state": "awaiting_approval",
+      "reason": null,
+      "detail": null,
+      "approvalMode": "human",
+      "items": [
+        {
+          "beneficiary": "Escola Aurora",
+          "payeeMasked": "fi***@escola-aurora.example.com.br",
+          "alias": "escola",
+          "amountMinor": 185000,
+          "description": "mensalidade outubro",
+          "dueDate": null
+        }
+      ],
+      "totalMinor": 185000,
+      "currency": "BRL",
+      "itemsHash": "sha256:8fbc7dd769e48628af454f014cc283cd181c25679f13dec7ca1ef1704087c86a",
+      "batch": null,
+      "compositionHash": null,
+      "escalation": null,
+      "approvalId": null,
+      "approvedBy": null,
+      "attempts": [],
+      "evidence": [],
+      "history": [
+        {
+          "from": "drafted",
+          "to": "awaiting_approval",
+          "at": "2026-11-03T14:15:02.041Z",
+          "reason": null,
+          "actor": {
+            "type": "agent",
+            "agent": "bills-agent@0.1.0",
+            "onBehalfOf": "usr_demo_titular"
+          }
+        }
+      ],
+      "createdAt": "2026-11-03T14:15:02.040Z",
+      "updatedAt": "2026-11-03T14:15:02.041Z"
+    }
+  ],
+  "batches": [],
+  "turns": [
+    {
+      "turnId": "turn_1",
+      "index": 0,
+      "text": "pague a escola de outubro",
+      "reply": "Propus o pagamento da Escola Aurora, R$ 1.850,00 (mensalidade de outubro). O resultado está no terminal.",
+      "tools": [
+        {
+          "toolCallId": "tc_1",
+          "name": "list_bills",
+          "effect": "read",
+          "refused": false
+        },
+        {
+          "toolCallId": "tc_2",
+          "name": "codespar_pay",
+          "effect": "payment",
+          "refused": false
+        }
+      ],
+      "interrupted": false
+    }
+  ],
+  "notRun": [],
+  "replay": {
+    "exampleId": "happy-path",
+    "turnsTotal": 1,
+    "turnsDone": 1,
+    "nextTurnText": null
+  }
+}

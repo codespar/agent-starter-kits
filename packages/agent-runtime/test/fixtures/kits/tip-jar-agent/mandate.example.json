@@ -1,0 +1,20 @@
+{
+  "id": "mdt_example_tipjar_0001",
+  "version": 1,
+  "consumer_id": "usr_demo_tipper",
+  "agent_id": "tip-jar-agent",
+  "purpose": "Pay small tips to two named payees.",
+  "currency": "BRL",
+  "cap_minor": 20000,
+  "per_tx_cap_minor": 5000,
+  "periodic_cap": { "window": "month", "cap_minor": 10000 },
+  "merchant_pin_kind": "pix-key",
+  "merchant_allowlist": ["barista@cafe.example.com.br", "+5511977770001"],
+  "beneficiaries": [
+    { "alias": "barista", "name": "Café Central (barista)", "payee": "barista@cafe.example.com.br" },
+    { "alias": "courier", "name": "Courier", "payee": "+5511977770001" }
+  ],
+  "status": "active",
+  "expires_at": "2027-09-23T00:00:00.000Z",
+  "source": "example"
+}

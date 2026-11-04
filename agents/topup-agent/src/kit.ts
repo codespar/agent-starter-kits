@@ -39,6 +39,8 @@ function mandateFor(base: Mandate, limits: SweepingLimits, creditorId?: string):
 
 const kit: AgentKit = {
   settlement: "await-payer",
+  // A pull from the person's own bank, not a charge a payer settles and not a CodeSpar payment: no CodeSpar receipt exists for it.
+  hosted: { outcomeKinds: ["answer", "pull"] },
   scenarioRail: "stub",
   // The live rail is Iniciador's sandbox; buildRail requires its credentials and never calls the CodeSpar API.
   apiRailKey: "none",

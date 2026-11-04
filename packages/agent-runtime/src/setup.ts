@@ -44,7 +44,7 @@ import { AnthropicRuntime } from "@codespar/agent-core/providers/anthropic";
 import { GeminiRuntime } from "@codespar/agent-core/providers/gemini";
 import type { ApiClient } from "@codespar/sdk";
 import { envName, type Agent } from "./agent.js";
-import type { AgentKit, KitStrings, RailKind, SandboxPayer, Settlement } from "./kit.js";
+import type { AgentKit, KitConfig, KitStrings, RailKind, SandboxPayer, Settlement } from "./kit.js";
 
 /** The `.env.example` placeholder counts as no key: a copied example must replay, not call Anthropic with a fake key. */
 export const ANTHROPIC_KEY_PLACEHOLDER = "sk-ant-your_key_here";
@@ -129,6 +129,8 @@ export interface Setup {
    * in one language is not told its outcome in the other.
    */
   locale: Locale;
+  /** What the kit reads by name instead of `process.env` (`KitConfig`). On a terminal it is the environment `setup` was given. */
+  config: KitConfig;
   /** The kit's words in `locale`. */
   readonly strings: KitStrings;
   /** The words every agent shares, in `locale`. */
@@ -276,6 +278,7 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
     handlers: {},
     tools,
     locale,
+    config: env,
     get strings() {
       return agent.kit.strings[this.locale];
     },

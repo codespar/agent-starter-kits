@@ -51,7 +51,7 @@ const invoiceRails = new WeakMap<Setup, InvoiceRail>();
 function invoiceRail(s: Setup): InvoiceRail {
   let rail = invoiceRails.get(s);
   if (!rail) {
-    const scripted = process.env[envName(s.agent, "STUB_ISSUER")] as StubIssuerBehaviour | undefined;
+    const scripted = s.config[envName(s.agent, "STUB_ISSUER")] as StubIssuerBehaviour | undefined;
     rail = s.api ? new CodeSparInvoiceRail(s.api) : new StubInvoiceRail(s.store, scripted);
     invoiceRails.set(s, rail);
   }
@@ -84,6 +84,8 @@ async function placeOrder(s: Setup, customer: string, lines: Array<{ sku: string
 
 const kit: AgentKit = {
   settlement: "await-payer",
+  // A sale: the order the attendant confirms and the charge it issues are two outcomes, each with its own state.
+  hosted: { outcomeKinds: ["answer", "order", "charge"] },
   scenarioRail: "requested",
   executeOnApproval: false,
 
