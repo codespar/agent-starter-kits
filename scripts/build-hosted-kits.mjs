@@ -23,6 +23,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const OUT = resolve(ROOT, argv.includes("--out") ? argv[argv.indexOf("--out") + 1] : "build/hosted-kits");
 const INTERNAL = ["@codespar/agent-core", "@codespar/agent-runtime"];
+/**
+ * The model SDKs a terminal uses. A host passes its own model (ModelPort) and never loads them: the providers import them on
+ * their first step, not at import. So they ship as optional peers, and the API installs nothing of them.
+ */
+const OPTIONAL_PEERS = ["@anthropic-ai/sdk", "@google/genai"];
 /** What never ships from an agent's directory: local state, runs, tests, evals, its npm and tsc files, and its TypeScript (shipped compiled). */
 const NOT_SHIPPED = new Set(["node_modules", ".codespar", "runs", "test", "evals", "package.json", "tsconfig.json"]);
 
@@ -86,7 +91,7 @@ import { loadHostedCatalog as loadAt, openHostedKit as openAt } from "@codespar/
 export * from "@codespar/agent-runtime";
 const ROOT = dirname(fileURLToPath(import.meta.url));
 /** This artifact's catalog, every kit's digest recomputed from the installed files. */
-export const loadHostedCatalog = () => loadAt(ROOT);
+export const loadHostedCatalog = (reader) => loadAt(ROOT, reader);
 /** One kit of this artifact, by id and the digest a run was created with. */
 export const openHostedKit = (catalog, id, packageDigest) => openAt(ROOT, catalog, id, packageDigest);
 `,
@@ -94,8 +99,8 @@ export const openHostedKit = (catalog, id, packageDigest) => openAt(ROOT, catalo
 writeFileSync(
   join(PKG, "host.d.ts"),
   `export * from "@codespar/agent-runtime";
-import type { HostedCatalog, HostedKit } from "@codespar/agent-runtime";
-export declare function loadHostedCatalog(): HostedCatalog;
+import type { CatalogReader, HostedCatalog, HostedKit } from "@codespar/agent-runtime";
+export declare function loadHostedCatalog(reader?: CatalogReader): HostedCatalog;
 export declare function openHostedKit(catalog: HostedCatalog, id: string, packageDigest: string): Promise<HostedKit>;
 `,
 );
@@ -111,7 +116,11 @@ writeFileSync(
       exports: { "./host": { types: "./host.d.ts", default: "./host.js" }, "./catalog.json": "./catalog.json" },
       engines: { node: ">=22.13" },
       // The two internal packages are listed AND bundled: npm installs the copies inside the tarball, never a registry version.
-      dependencies: Object.fromEntries([...Object.entries(dependencies), ...INTERNAL.map((name) => [name, readJson(join(PKG, "node_modules", name, "package.json")).version])].sort(([a], [b]) => (a < b ? -1 : 1))),
+      dependencies: Object.fromEntries(
+        [...Object.entries(dependencies).filter(([name]) => !OPTIONAL_PEERS.includes(name)), ...INTERNAL.map((name) => [name, readJson(join(PKG, "node_modules", name, "package.json")).version])].sort(([a], [b]) => (a < b ? -1 : 1)),
+      ),
+      peerDependencies: Object.fromEntries(OPTIONAL_PEERS.filter((name) => dependencies[name]).map((name) => [name, dependencies[name]])),
+      peerDependenciesMeta: Object.fromEntries(OPTIONAL_PEERS.filter((name) => dependencies[name]).map((name) => [name, { optional: true }])),
       bundleDependencies: INTERNAL,
       repository: { type: "git", url: "https://github.com/codespar/agent-starter-kits" },
       codespar: { commit },

@@ -20,11 +20,17 @@ export function artifactDigest(root: string, id: string): string {
   return treeDigest(root, [`kits/${id}`, ...ARTIFACT_SHARED]);
 }
 
+/** What a host's tests replace: where the catalog text comes from, and how a kit's installed digest is computed. */
+export interface CatalogReader {
+  readCatalog?: () => string;
+  digestOf?: (id: string) => string;
+}
+
 /** The catalog of the artifact at `root`, refused whole when any kit's files are not the ones the build hashed. */
-export function loadHostedCatalog(root: string): HostedCatalog {
-  const catalog = HostedCatalogSchema.parse(JSON.parse(readFileSync(join(root, "catalog.json"), "utf8")));
+export function loadHostedCatalog(root: string, reader: CatalogReader = {}): HostedCatalog {
+  const catalog = HostedCatalogSchema.parse(JSON.parse(reader.readCatalog ? reader.readCatalog() : readFileSync(join(root, "catalog.json"), "utf8")));
   for (const kit of catalog.kits) {
-    const found = artifactDigest(root, kit.id);
+    const found = reader.digestOf ? reader.digestOf(kit.id) : artifactDigest(root, kit.id);
     if (found !== kit.source.packageDigest) throw new HostedRefusal("digest_mismatch", `${kit.id}: the catalog says ${kit.source.packageDigest}, the installed files are ${found}`);
   }
   return catalog;

@@ -39,6 +39,22 @@ function memoryState() {
   };
 }
 
+// The API installs the artifact without the model SDKs (optional peers) and must still run every kit.
+for (const sdk of ["@anthropic-ai/sdk", "@google/genai"]) {
+  let found = true;
+  try { await import(sdk); } catch { found = false; }
+  if (found) { console.log("FAIL the hosted install pulled " + sdk); process.exit(1); }
+}
+
+function memoryProposals() {
+  const states = new Map();
+  return {
+    states,
+    async submit(request) { const id = "prop_" + request.attemptId; if (!states.has(id)) states.set(id, { state: "awaiting_approval", receiptId: null, failureCode: null }); return { proposalId: id, state: states.get(id).state }; },
+    async read(id) { return states.get(id); },
+  };
+}
+
 const catalog = loadHostedCatalog();
 let failures = 0;
 for (const descriptor of catalog.kits) {
@@ -64,6 +80,30 @@ for (const descriptor of catalog.kits) {
   } catch (err) {
     failures += 1;
     console.log("FAIL " + descriptor.id + ": " + (err instanceof Error ? err.message : String(err)));
+  }
+}
+// codespar-test: every runnable kit drafts proposals and pays nothing; a paid proposal reads back settled.
+for (const descriptor of catalog.kits) {
+  const executor = descriptor.executors.find((e) => e.id === "codespar-test");
+  if (!executor || executor.blockedBy.length > 0) continue;
+  const state = memoryState();
+  const proposals = memoryProposals();
+  const ports = { identity: { actor: async () => actor }, state, approval: { signer, authorize: async () => ({ ok: true }) }, rail: { executor: "codespar-test", proposals }, model: { mode: "replay" }, clock: () => new Date("2026-09-23T14:00:00-03:00") };
+  try {
+    const kit = await openHostedKit(catalog, descriptor.id, descriptor.source.packageDigest);
+    const example = descriptor.examples.find((e) => e.replay && e.id === "happy-path") ?? descriptor.examples.find((e) => e.replay);
+    const run = await createHostedRun(kit, ports, { commandId: "create", modelMode: "replay", executor: "codespar-test", options: { exampleId: example.id } });
+    for (let n = 0; n < example.turns.length; n += 1) await run.turn({ commandId: "turn-" + n, exampleTurn: n });
+    let snapshot = await run.snapshot();
+    const waiting = snapshot.pending.filter((p) => p.kind === "payment_proposal");
+    if (waiting.length === 0) throw new Error("no proposal drafted: " + JSON.stringify(snapshot.pending));
+    for (const p of waiting) proposals.states.set(p.proposalId, { state: "succeeded", receiptId: "rcpt_smoke_" + p.proposalId, failureCode: null });
+    snapshot = await run.resume({ commandId: "resume" });
+    if (snapshot.executions.some((e) => e.state !== "settled")) throw new Error("not settled after the proposals were paid: " + snapshot.executions.map((e) => e.state).join(", "));
+    console.log("ok   " + descriptor.id + " [codespar-test] " + waiting.length + " proposal(s) paid by the platform, " + snapshot.executions.length + " settled");
+  } catch (err) {
+    failures += 1;
+    console.log("FAIL " + descriptor.id + " [codespar-test]: " + (err instanceof Error ? err.message : String(err)));
   }
 }
 process.exit(failures ? 1 : 0);
