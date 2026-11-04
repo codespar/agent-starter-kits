@@ -152,8 +152,10 @@ describe("hosted, on the simulator, from each kit's own example", () => {
     expect(new Set(proposals.submitted.map((r) => r.attemptId)).size).toBe(3);
     expect(proposals.submitted.every((r) => r.batchHash !== null)).toBe(true);
     expect(s.batches[0]!.lines.map((l) => l.state)).toEqual(["executing", "executing", "executing"]);
-    const p0 = s.pending[0]!;
-    if (p0.kind !== "payment_proposal") throw new Error("expected a proposal");
+    // Line 0's proposal, found by its execution: pendings come in the store's order, not the list's.
+    const line0 = s.batches[0]!.lines[0]!.executionId;
+    const p0 = s.pending.find((p) => p.kind === "payment_proposal" && p.executionId === line0);
+    if (!p0 || p0.kind !== "payment_proposal") throw new Error("expected line 0's proposal");
     proposals.pay(p0.proposalId, "rcpt_platform_line_0");
     const after = valid(await run.resume({ commandId: "r" }));
     expect(after.batches[0]!.lines.map((l) => l.state)).toEqual(["settled", "executing", "executing"]);

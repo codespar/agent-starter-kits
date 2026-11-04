@@ -12,6 +12,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { loadManifest, loadToolsFile, parseTranscript } from "@codespar/agent-core";
 import { loadAgent } from "../src/agent.js";
 import { describeKit, discoverAgentDirs } from "../src/hosted/catalog.js";
+import { PLATFORM_GAPS } from "../src/hosted/contract.js";
 import { listScenarios, loadScenario } from "../src/scenarios.js";
 import { setup } from "../src/setup.js";
 
@@ -107,7 +108,8 @@ describe.each(ALL.map((dir) => [dir.split("/").pop()!, dir]))("%s", (_name, dir)
     expect(d.supportedExecutors[0]).toBe("simulator");
     const moves = [...tools.meta_tools, ...tools.local_tools].some((t) => t.effect === "payment" || t.effect === "charge");
     expect(d.needsMandate).toBe(moves);
-    for (const e of d.executors) for (const capability of e.blockedBy) expect(manifest.maturity[capability]).toBe("blocked");
+    // A blocked executor names a capability the manifest marks blocked, or a platform gap the contract lists; nothing else.
+    for (const e of d.executors) for (const capability of e.blockedBy) expect(manifest.maturity[capability] === "blocked" || PLATFORM_GAPS.includes(capability), capability).toBe(true);
     // codespar-test: money on the CodeSpar API, as platform proposals (CONTRATO.md v1.1); a kit on another rail has none.
     expect(d.supportedExecutors.includes("codespar-test")).toBe(moves && agent.kit.apiRailKey !== "none");
   });
