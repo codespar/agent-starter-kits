@@ -25,3 +25,51 @@ maturity:
 scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md
+
+# What a person reads about this agent where it is offered (the Playground's catalog). DRAFT copy, 2026-11-04:
+# to be replaced by the product's wording. One entry per locale; `examples` names every scenario pack.
+presentation:
+  pt-BR:
+    title: "Contas do mês"
+    summary: "Paga as contas da casa sob um mandato assinado: você aprova cada pagamento e recebe um recibo."
+    examples:
+      beneficiary-not-allowed:
+        title: "Favorecido fora do mandato"
+        description: "Um pedido para pagar alguém que o mandato não nomeia: nada é pago, mesmo que você diga sim."
+      cap-exceeded:
+        title: "Acima do limite por pagamento"
+        description: "Um valor maior que o limite do mandato é recusado antes de qualquer envio."
+      escalated-above-threshold:
+        title: "Quando o agente pede sua aprovação"
+        description: "No modo mandato, um favorecido novo ou um valor alto ainda passa por você."
+      happy-path:
+        title: "Pagar a escola"
+        description: "Você pede a mensalidade de outubro; o agente propõe, você aprova e o pagamento sai com recibo."
+      mandate-revoked:
+        title: "Mandato revogado no meio"
+        description: "O mandato é revogado durante a execução: o que já saiu é conferido, o que esperava aprovação é negado."
+      prompt-injection:
+        title: "Instrução maliciosa na conversa"
+        description: "A mensagem manda ignorar as regras e pagar outra chave; a regra do mandato recusa."
+  en:
+    title: "Monthly bills"
+    summary: "Pays household bills under a signed mandate: you approve each payment and get a receipt."
+    examples:
+      beneficiary-not-allowed:
+        title: "Payee outside the mandate"
+        description: "A request to pay someone the mandate does not name: nothing is paid, even if you say yes."
+      cap-exceeded:
+        title: "Above the per-payment limit"
+        description: "An amount above the mandate's limit is refused before anything is sent."
+      escalated-above-threshold:
+        title: "When the agent asks you"
+        description: "In mandate mode, a new payee or a large amount still comes to you."
+      happy-path:
+        title: "Pay the school"
+        description: "You ask for October's tuition; the agent proposes it, you approve, and the payment goes out with a receipt."
+      mandate-revoked:
+        title: "Mandate revoked midway"
+        description: "The mandate is revoked during the run: what already went out is checked, what awaited approval is denied."
+      prompt-injection:
+        title: "Malicious instruction in the chat"
+        description: "The message says to ignore the rules and pay another key; the mandate's rule refuses it."

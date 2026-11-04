@@ -26,6 +26,19 @@ export const EscalateAboveSchema = z
   })
   .strict();
 
+/** One locale's words for the agent where it is offered: who it is, what it does, and each scenario pack as a person reads it. */
+export const PresentationTextSchema = z
+  .object({
+    title: z.string().min(1).max(60),
+    summary: z.string().min(1).max(280),
+    /** Keyed by scenario pack name; the hosted catalog refuses a manifest that misses a pack or names one that does not exist. */
+    examples: z.record(z.string().regex(/^[a-z0-9-]+$/), z.object({ title: z.string().min(1).max(60), description: z.string().min(1).max(280) }).strict()),
+  })
+  .strict();
+
+/** Optional. Present, it carries every locale the code prints in. */
+export const PresentationSchema = z.object({ "pt-BR": PresentationTextSchema, en: PresentationTextSchema }).strict();
+
 export const ManifestSchema = z
   .object({
     schema: z.literal(1),
@@ -47,6 +60,8 @@ export const ManifestSchema = z
     scenarios: z.string(),
     evals: z.string(),
     agents_md: z.string(),
+    /** How the agent is presented to a person choosing it (the hosted catalog). Absent: the host shows the id. */
+    presentation: PresentationSchema.optional(),
   })
   .strict()
   .superRefine((m, ctx) => {
@@ -57,6 +72,7 @@ export const ManifestSchema = z
 
 export type Manifest = z.infer<typeof ManifestSchema>;
 export type EscalateAbove = z.infer<typeof EscalateAboveSchema>;
+export type Presentation = z.infer<typeof PresentationSchema>;
 
 export interface LoadedManifest {
   manifest: Manifest;

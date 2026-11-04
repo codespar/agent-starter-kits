@@ -63,6 +63,20 @@ describe("buildCatalog", () => {
     expect(() => describeKit(lying, { root: ROOT, commit: COMMIT, shared: SHARED })).toThrow(/not backed by any tool/);
   });
 
+  it("carries a kit's presentation, and refuses one that misses an example or names a pack that does not exist", async () => {
+    const agent = await loadAgent(TEST_KIT);
+    expect(describeKit(agent, { root: ROOT, commit: COMMIT, shared: SHARED }).presentation).toBeNull();
+    const dir = readOnlyCopy();
+    const yaml = readFileSync(join(dir, "agent.yaml"), "utf8");
+    const words = (example: string) => `    title: "Gorjeta"\n    summary: "Paga uma gorjeta."\n    examples:\n      ${example}:\n        title: "Gorjeta ao barista"\n        description: "Dez reais ao barista."\n`;
+    writeFileSync(join(dir, "agent.yaml"), `${yaml}presentation:\n  pt-BR:\n${words("happy-path")}  en:\n${words("happy-path")}`);
+    const presented = describeKit({ ...agent, dir }, { root: ROOT, commit: COMMIT, shared: SHARED });
+    expect(presented.presentation!["pt-BR"]).toEqual({ title: "Gorjeta", summary: "Paga uma gorjeta." });
+    expect(presented.examples[0]!.presentation!.en).toEqual({ title: "Gorjeta ao barista", description: "Dez reais ao barista." });
+    writeFileSync(join(dir, "agent.yaml"), `${yaml}presentation:\n  pt-BR:\n${words("other-pack")}  en:\n${words("other-pack")}`);
+    expect(() => describeKit({ ...agent, dir }, { root: ROOT, commit: COMMIT, shared: SHARED })).toThrow(/no words for example happy-path/);
+  });
+
   it("offers codespar-test to a kit whose money moves on the CodeSpar API, and to no other", async () => {
     const agent = await loadAgent(TEST_KIT);
     const onApi = describeKit(agent, { root: ROOT, commit: COMMIT, shared: SHARED });

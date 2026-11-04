@@ -50,7 +50,7 @@ import { envName, type Agent } from "../agent.js";
 import type { KitConfig, RailBuild, RailKind } from "../kit.js";
 import { isAwaitingPayer } from "../poll.js";
 import { loadScenario } from "../scenarios.js";
-import { ProposalPaymentRail, type ProposalRail } from "./proposals.js";
+import { isFenced, ProposalPaymentRail, type ProposalRail } from "./proposals.js";
 import { assembleSetup, loadAgentFiles, type Setup } from "../setup.js";
 import { decideByGesture, followUp, handleExecution, type BatchGestureRecord } from "../terminal.js";
 import { RUN_ID } from "./contract.js";
@@ -88,7 +88,8 @@ export interface IdentityPort {
 export interface StatePort {
   load(runId: string): Promise<{ image: RunImage; revision: number } | undefined>;
   /** `binding_changed`: the host already holds another binding for an execution this save asks approval for; nothing of the save was kept. */
-  save(runId: string, image: RunImage, newEvents: readonly HostedEvent[], expectedRevision: number): Promise<{ ok: true; revision: number } | { ok: false; reason: "revision_conflict" | "binding_changed" }>;
+  /** `lease_lost` / `fenced`: another process owns the run now (or `save` throws `FencedError`); this one stops without writing. */
+  save(runId: string, image: RunImage, newEvents: readonly HostedEvent[], expectedRevision: number): Promise<{ ok: true; revision: number } | { ok: false; reason: "revision_conflict" | "binding_changed" | "lease_lost" | "fenced" }>;
   events(runId: string, after: number): Promise<HostedEvent[]>;
 }
 
@@ -184,6 +185,7 @@ export type HostedRefusalCode =
   | "decision_stale"
   | "decide_on_proposal"
   | "binding_changed"
+  | "fenced"
   | "not_awaiting_approval"
   | "not_awaiting_payer"
   | "not_authorized"
@@ -354,7 +356,7 @@ export class HostedRun {
     } else {
       // The kit's policy runs on the host's mandate (or its own example) and the local status gate; the platform runs its own gate on the proposal.
       railKind = "api";
-      built = { rail: new ProposalPaymentRail(rail.proposals, store), mandate: rail.mandate ?? loadMandate(files.manifest.resolvePath(files.manifest.manifest.mandate_schema)) };
+      built = { rail: new ProposalPaymentRail(this.guarded(rail.proposals), store), mandate: rail.mandate ?? loadMandate(files.manifest.resolvePath(files.manifest.manifest.mandate_schema)) };
     }
     const bundle = ProofBundle.inMemory(this.image.runId, this.files);
     bundle.learnPayees(built.mandate);
@@ -767,18 +769,41 @@ export class HostedRun {
     try {
       saved = await this.ports.state.save(image.runId, image, this.unsaved, this.revision);
     } catch (err) {
-      this.dead = err instanceof Error ? err : new Error(String(err));
+      this.dead = isFenced(err) ? this.fenced(err) : err instanceof Error ? err : new Error(String(err));
       throw this.dead;
     }
     if (!saved.ok) {
       this.dead =
         saved.reason === "binding_changed"
           ? new HostedRefusal("binding_changed", `the host holds another binding for an execution of run ${image.runId}; nothing of this save was kept`)
-          : new HostedRefusal("revision_conflict", `run ${image.runId} changed under this process; reopen it`);
+          : saved.reason === "lease_lost" || saved.reason === "fenced"
+            ? this.fenced({ reason: saved.reason })
+            : new HostedRefusal("revision_conflict", `run ${image.runId} changed under this process; reopen it`);
       throw this.dead;
     }
     this.revision = saved.revision;
     this.unsaved = [];
+  }
+
+  private fenced(err: { reason?: string }): HostedRefusal {
+    return new HostedRefusal("fenced", `${err.reason ?? "fenced"}: another process owns run ${this.image.runId}; this one stopped without writing`);
+  }
+
+  /** The host's proposal port, with a fence turned into this run's end: whatever the kit or the engine does with the error, nothing more is written or sent from here. */
+  private guarded(proposals: ProposalRail): ProposalRail {
+    const guard = async <T>(call: () => Promise<T>): Promise<T> => {
+      if (this.dead) throw this.dead;
+      try {
+        return await call();
+      } catch (err) {
+        if (isFenced(err)) {
+          this.dead = this.fenced(err);
+          throw this.dead;
+        }
+        throw err;
+      }
+    };
+    return { submit: (request) => guard(() => proposals.submit(request)), read: (proposalId) => guard(() => proposals.read(proposalId)) };
   }
 
   /** Engine rows since the last projection, as contract events. The engine's log is the source; these are its view. */
@@ -874,6 +899,7 @@ export class HostedRun {
   }
 
   private emit<T extends HostedEventType>(type: T, source: HostedEvent["source"], data: HostedEvent<T>["data"], ref: HostedEvent["ref"] = {}, at?: string): void {
+    if (this.dead) throw this.dead;
     this.image.seq += 1;
     const event = { v: 1 as const, runId: this.image.runId, seq: this.image.seq, at: at ?? this.now().toISOString(), type, source, ...(ref && Object.keys(ref).length > 0 ? { ref } : {}), data } as HostedEvent;
     this.unsaved.push(event);

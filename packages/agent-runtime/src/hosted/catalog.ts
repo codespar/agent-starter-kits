@@ -79,16 +79,25 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
   const moves = effects.has("payment") || effects.has("charge");
   const maturity = m.maturity;
 
+  const words = m.presentation;
   const examples = listScenarios(agent).map((name) => {
     const scenario = loadScenario(agent, name);
+    const pt = words?.["pt-BR"].examples[name];
+    const en = words?.en.examples[name];
+    if (words && (!pt || !en)) throw new Error(`${m.name}: presentation has no words for example ${name} in ${!pt ? "pt-BR" : "en"}`);
     return {
       id: scenario.name,
       description: scenario.description,
       approvalModes: scenario.modes,
       turns: scenario.turns.map((t) => ({ input: t.input })) as [{ input: string }, ...Array<{ input: string }>],
       replay: existsSync(resolve(agent.dir, "scenarios", scenario.transcript)),
+      presentation: pt && en ? { "pt-BR": { title: pt.title, description: pt.description }, en: { title: en.title, description: en.description } } : null,
     };
   });
+  if (words) {
+    const names = new Set(examples.map((e) => e.id));
+    for (const locale of ["pt-BR", "en"] as const) for (const named of Object.keys(words[locale].examples)) if (!names.has(named)) throw new Error(`${m.name}: presentation (${locale}) names ${named}, which is not a scenario pack`);
+  }
 
   // The executors: the kit's own stub always. `codespar-test` for a kit whose money moves on the CodeSpar API: there the kit
   // drafts a platform proposal per attempt and a person pays it (CONTRATO.md v1.1); a kit on another rail has none.
@@ -149,6 +158,7 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
     tools,
     locales: ["pt-BR", "en"],
     defaultLocale: m.locale ?? "pt-BR",
+    presentation: words ? { "pt-BR": { title: words["pt-BR"].title, summary: words["pt-BR"].summary }, en: { title: words.en.title, summary: words.en.summary } } : null,
     exampleIds,
     examples,
   };

@@ -87,6 +87,8 @@ export const HostedKitDescriptorSchema = z
     tools: z.array(z.object({ name: z.string(), effect: ToolEffectSchema }).strict()),
     locales: z.array(LocaleNameSchema).nonempty(),
     defaultLocale: LocaleNameSchema,
+    /** The kit's own words per locale (`agent.yaml` `presentation`), or null when it declares none. */
+    presentation: z.object({ "pt-BR": z.object({ title: z.string(), summary: z.string() }).strict(), en: z.object({ title: z.string(), summary: z.string() }).strict() }).strict().nullable(),
     exampleIds: z.array(z.string()),
     examples: z.array(
       z
@@ -97,6 +99,10 @@ export const HostedKitDescriptorSchema = z
           /** What the person typed in each recorded turn, in order; `input` as in the scenario pack. */
           turns: z.array(z.object({ input: z.string() }).strict()).nonempty(),
           replay: z.boolean(),
+          presentation: z
+            .object({ "pt-BR": z.object({ title: z.string(), description: z.string() }).strict(), en: z.object({ title: z.string(), description: z.string() }).strict() })
+            .strict()
+            .nullable(),
         })
         .strict(),
     ),

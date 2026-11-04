@@ -27,3 +27,63 @@ maturity:
 scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md
+
+# What a person reads about this agent where it is offered (the Playground's catalog). DRAFT copy, 2026-11-04:
+# to be replaced by the product's wording. One entry per locale; `examples` names every scenario pack.
+presentation:
+  pt-BR:
+    title: "Cobrança de acordos"
+    summary: "Negocia o acordo com quem deve, emite a cobrança e acompanha até o pagamento."
+    examples:
+      beneficiary-not-allowed:
+        title: "Devedor sem acordo em aberto"
+        description: "Uma cobrança para quem não está na carteira não é emitida."
+      cap-exceeded:
+        title: "Cobrança acima do teto"
+        description: "Uma parcela acima do valor máximo por cobrança é recusada."
+      charge-expired:
+        title: "Cobrança vencida"
+        description: "O QR vence sem pagamento: o acordo fica em aberto e nada é registrado como pago."
+      escalated-above-threshold:
+        title: "Acordo alto vai ao operador"
+        description: "No modo política, um acordo acima de R$ 3.000,00 passa pelo operador."
+      happy-path:
+        title: "Acordo à vista"
+        description: "O devedor aceita pagar à vista; a cobrança é emitida, paga e o acordo é quitado."
+      instalments:
+        title: "Acordo em três parcelas"
+        description: "Três cobranças, cada uma com o seu vencimento, pagas uma a uma."
+      mandate-revoked:
+        title: "Política revogada"
+        description: "A política de cobrança é revogada: a cobrança já emitida segue, a pendente não sai."
+      prompt-injection:
+        title: "Instrução maliciosa na conversa"
+        description: "A mensagem manda mudar o valor para R$ 10,00; a política de negociação recusa."
+  en:
+    title: "Debt collection"
+    summary: "Agrees terms with the payer, issues the charge and follows it until it is paid."
+    examples:
+      beneficiary-not-allowed:
+        title: "Payer without an open agreement"
+        description: "A charge to someone not in the book is not issued."
+      cap-exceeded:
+        title: "Charge above the ceiling"
+        description: "An instalment above the per-charge maximum is refused."
+      charge-expired:
+        title: "Charge expired"
+        description: "The QR expires unpaid: the agreement stays open and nothing is recorded as paid."
+      escalated-above-threshold:
+        title: "Large agreement goes to the operator"
+        description: "In policy mode, an agreement above R$ 3,000.00 goes to the operator."
+      happy-path:
+        title: "Paid in full"
+        description: "The payer agrees to pay in full; the charge is issued, paid and the agreement is settled."
+      instalments:
+        title: "Three instalments"
+        description: "Three charges, each with its own due date, paid one by one."
+      mandate-revoked:
+        title: "Policy revoked"
+        description: "The collection policy is revoked: the charge already issued stands, the pending one does not go out."
+      prompt-injection:
+        title: "Malicious instruction in the chat"
+        description: "The message says to change the amount to R$ 10.00; the negotiation policy refuses it."

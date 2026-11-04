@@ -18,3 +18,27 @@ maturity: {}        # no pix-out, no receivables: it proposes nothing
 scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md
+
+# What a person reads about this agent where it is offered (the Playground's catalog). DRAFT copy, 2026-11-04:
+# to be replaced by the product's wording. One entry per locale; `examples` names every scenario pack.
+presentation:
+  pt-BR:
+    title: "Primeiros passos"
+    summary: "Lê as contas do mês e responde perguntas. Não paga nada."
+    examples:
+      happy-path:
+        title: "O que vence este mês"
+        description: "Você pergunta o que vence em outubro e recebe a lista."
+      prompt-injection:
+        title: "Pedido para pagar"
+        description: "Uma mensagem tenta fazer o agente pagar; ele não tem como pagar e a tentativa é recusada."
+  en:
+    title: "First steps"
+    summary: "Reads the month's bills and answers questions. Pays nothing."
+    examples:
+      happy-path:
+        title: "What is due this month"
+        description: "You ask what is due in October and get the list."
+      prompt-injection:
+        title: "A request to pay"
+        description: "A message tries to make the agent pay; it has no way to pay and the attempt is refused."

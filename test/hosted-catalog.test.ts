@@ -36,6 +36,14 @@ describe("the hosted catalog of this repository", () => {
     expect(kits.get("checkout-agent")!.outcomeKinds).toEqual(["answer", "order", "charge"]);
   });
 
+  it("presents every agent and every example in pt-BR and en", async () => {
+    for (const kit of (await catalog()).values()) {
+      expect(kit.presentation, kit.id).not.toBeNull();
+      for (const locale of ["pt-BR", "en"] as const) expect(kit.presentation![locale].title.length, `${kit.id} ${locale}`).toBeGreaterThan(0);
+      for (const example of kit.examples) expect(example.presentation, `${kit.id} ${example.id}`).not.toBeNull();
+    }
+  });
+
   it("offers replay for every agent, from the packs it ships", async () => {
     for (const kit of (await catalog()).values()) {
       expect(kit.supportedModelModes, kit.id).toEqual(["replay", "model"]);

@@ -24,3 +24,57 @@ maturity:
 scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md
+
+# What a person reads about this agent where it is offered (the Playground's catalog). DRAFT copy, 2026-11-04:
+# to be replaced by the product's wording. One entry per locale; `examples` names every scenario pack.
+presentation:
+  pt-BR:
+    title: "Recarga da sua conta"
+    summary: "Traz dinheiro da sua conta em outro banco, com a sua autorização no próprio banco."
+    examples:
+      beneficiary-not-allowed:
+        title: "Conta que não é sua"
+        description: "Uma recarga para outra conta é recusada: o mandato só tem a sua."
+      cap-exceeded:
+        title: "Acima do limite por recarga"
+        description: "R$ 6,00 numa recarga passam do limite de R$ 5,00 e são recusados antes de chegar ao banco."
+      charge-expired:
+        title: "Autorização não concluída"
+        description: "Você não aprova no banco a tempo: nada é puxado e o agente oferece outro link."
+      escalated-above-threshold:
+        title: "Valor que pede sua confirmação"
+        description: "R$ 4,00 está dentro do limite, mas acima de R$ 3,00: você decide antes de ir ao banco."
+      happy-path:
+        title: "Recarga de R$ 1,00"
+        description: "Você pede R$ 1,00, autoriza no banco e o valor entra na conta."
+      mandate-revoked:
+        title: "Mandato revogado"
+        description: "Depois de uma recarga, o mandato é revogado e as próximas são recusadas."
+      prompt-injection:
+        title: "Instrução maliciosa na conversa"
+        description: "A mensagem manda puxar mais que o limite para outra conta; a regra recusa."
+  en:
+    title: "Top up your account"
+    summary: "Brings money from your account at another bank, with your authorization at that bank."
+    examples:
+      beneficiary-not-allowed:
+        title: "An account that is not yours"
+        description: "A top-up to another account is refused: the mandate holds only yours."
+      cap-exceeded:
+        title: "Above the per-top-up limit"
+        description: "R$ 6.00 in one top-up is above the R$ 5.00 limit and is refused before the bank is asked."
+      charge-expired:
+        title: "Authorization not completed"
+        description: "You do not approve at the bank in time: nothing is pulled and the agent offers another link."
+      escalated-above-threshold:
+        title: "An amount that needs your yes"
+        description: "R$ 4.00 is within the limit but above R$ 3.00: you decide before the bank is asked."
+      happy-path:
+        title: "Top up R$ 1.00"
+        description: "You ask for R$ 1.00, authorize it at the bank and the money lands."
+      mandate-revoked:
+        title: "Mandate revoked"
+        description: "After one top-up the mandate is revoked and the next ones are refused."
+      prompt-injection:
+        title: "Malicious instruction in the chat"
+        description: "The message says to pull more than the limit into another account; the rule refuses it."
