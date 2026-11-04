@@ -38,6 +38,7 @@ log say so (`fallback` in `channel.jsonl`).
 | Module | Maturity | Meaning |
 |---|---|---|
 | `sweeping-pull` | sandbox | Iniciador's sweeping sandbox (`consumer.sandbox.inic.dev`), trigger MANUAL, simulated bank (Banco de Testes / Mocktora: any user and password). No real money. The client refuses any other host. |
+| `jsr-pull` | sandbox | Iniciador JSR (Pix with a passkey) through the agentic MCP, same sandbox host and the same simulated bank. `--rail api` with `INICIADOR_RAIL=jsr`. No real money. |
 | `receipt-verification` | blocked | A pull is not a CodeSpar payment. No chain, no HMAC seal, no Ed25519 signature exists for it; the local record (`runs/<run-id>/receipts/`) is just that. What someone outside can check is the Pix end-to-end id, at the banks. |
 
 The default rail is an offline fixture (`FixtureSweepingApi`): same rail, same
@@ -64,6 +65,7 @@ The run's proof bundle has the same masking as every other agent's ([`docs/OPEN_
 | `npm run eval` | The section 9 suite plus every scenario, replay provider, no network. |
 | `npm start -- --channel whatsapp --conversation recarga --scripted --simulate-payer` | The conversation over the local WhatsApp emulator (`npm run whatsapp:emulator` at the repo root), offline fixture. |
 | `npm start -- --channel whatsapp --conversation recarga --rail api --wait 300` | The demo against the Iniciador sandbox (below). |
+| `INICIADOR_RAIL=jsr npm start -- --channel whatsapp --conversation recarga --rail api --wait 900` | The same demo with the biometric pull (JSR, below). |
 | `npm run poll -- --channel whatsapp --conversation recarga` | Back to a conversation whose pull completed after the run stopped looking. |
 | `npm run inspect <run-id>` | The run's bundle as a timeline. |
 
@@ -84,6 +86,54 @@ Type the person's turns (`oi, quero colocar R$ 1 na minha conta`, then `sim`),
 open the link the moment it arrives, log in with any user and password, pick
 the account and tap Autorizar. The run looks every 2 seconds; a pull the
 `--wait` did not see complete is left to `npm run poll`.
+
+## The biometric pull (JSR)
+
+A second rail for the same top-up: Iniciador's JSR, Pix with a passkey,
+through their agentic MCP (`src/iniciador-mcp.ts`, `src/modules/jsr-pull.ts`).
+There is no sweeping authorization at the bank. The person registers a
+passkey once, on Iniciador's hosted page, and signs each pull there with the
+phone's biometrics. The local mandate still caps the amount and pins the one
+account, and the rail refuses any other payee and any amount above the limit
+per pull before it calls anything.
+
+One approved execution can send the person two pages, each once:
+
+1. **Cadastrar biometria** (`consent_step: enroll`). Sent only when the person has no COMPLETED enrollment at that bank. The link expires about a minute after it is made, so it is made when the approved execution is dispatched.
+2. **Confirmar biometria** (`consent_step: sign`). The payment, created once the enrollment is COMPLETED. The person has about 10 minutes, then the bank ends it REJECTED (`TIMEOUT_CONSENTIMENTO`), which the agent reports as an expired link.
+
+The payment request goes out at most once. A marker is written to state.db
+before it, and an answer that never arrives (MCP down, a timeout, a 5xx) is
+`uncertain` with `needs_human` and is never sent again. A status read that
+times out is only `uncertain`; the next look reads again. The end-to-end id
+comes from the one REST read the MCP does not answer
+(`GET /enrollments/payments/{id}/status`).
+
+**Variables** (by name; the values live in the shell or the agent's `.env`, never in a tracked file):
+
+| Variable | |
+|---|---|
+| `INICIADOR_RAIL=jsr` | Picks this rail. Without `--rail api` it runs on the offline fixture. |
+| `INICIADOR_CLIENT_ID`, `INICIADOR_CLIENT_SECRET` | The sandbox credentials, the same as sweeping. |
+| `INICIADOR_TEST_TAX_ID` | The person's CPF. Never in a message, an event or the console. |
+| `INICIADOR_PARTICIPANT_ID` | The test bank, as for sweeping. |
+| `INICIADOR_CREDITOR_NAME`, `INICIADOR_CREDITOR_ISPB`, `INICIADOR_CREDITOR_ISSUER`, `INICIADOR_CREDITOR_NUMBER`, `INICIADOR_CREDITOR_ACCOUNT_TYPE` | The creditor, inline: the person's own account at the receiving bank. It enters the mandate as a digest (`creditorPayeeId`), so the account number never sits in a snapshot or an event. |
+| `INICIADOR_CREDITOR_TAX_ID` | Optional; defaults to `INICIADOR_TEST_TAX_ID` (the same person on both sides). |
+| `INICIADOR_TEST_USER_NAME` | Optional; the name Iniciador shows on its pages. |
+| `INICIADOR_JSR_ENROLL=always` | Optional; register a new passkey even when one is COMPLETED. The MCP binds a payment to the most recent COMPLETED enrollment, so the new one is the one the person signs with. Use it for a take on a phone that does not hold the older passkey. |
+| `INICIADOR_BASE_URL` | Optional; the client refuses anything that is not the sandbox or `127.0.0.1`. |
+
+`--rail api` with `INICIADOR_RAIL=jsr` fails at start and names every variable
+in the list above that is missing (all but the optional ones).
+
+**Offline.** `INICIADOR_RAIL=jsr npm start` (no `--rail api`) runs the same
+rail on `FixtureJsrApi`: no network, state in state.db. The person registers
+the passkey and signs at the first look; `TOPUP_STUB_PAYER=expires` lets the payment expire unsigned instead.
+`test/jsr-pull.test.ts` drives the rail on the fixture, on a scripted API and
+on the MCP client over a fake `fetch`.
+
+On a phone, step by step: `runbook.md`, "the biometric pull (JSR) on a phone".
+What is not settled yet with Iniciador: [`docs/OPEN_QUESTIONS.md`](../../docs/OPEN_QUESTIONS.md).
 
 ## Going to production
 
