@@ -349,6 +349,15 @@ export function manualRiskSignals(stateDir: string): () => RiskSignals {
   };
 }
 
+/**
+ * The offline fixture's riskSignals: a fixed device, kept nowhere. The fixture
+ * correlates nothing by device, and a simulated run (a hosted one included)
+ * writes no file of its own.
+ */
+export function fixtureRiskSignals(): RiskSignals {
+  return { type: "MANUAL", deviceId: "fixture-device", osVersion: "6.8.0", userTimeZoneOffset: "-03", language: "pt", screenDimensions: { height: 1080, width: 1920 }, accountTenure: "2026-10-21" };
+}
+
 export type FixtureFate = "approves" | "expires" | "rejects" | "never";
 
 interface FixtureAuth {

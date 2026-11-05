@@ -49,7 +49,7 @@ export interface TerminalOptions {
 
 /** One gesture per batch ref: the list it was taken on, and the positions vetoed. */
 export type BatchGestures = Map<string, BatchGestureRecord>;
-type BatchGestureRecord = { batch_hash: string; count: number; vetoed: Set<number> };
+export type BatchGestureRecord = { batch_hash: string; count: number; vetoed: Set<number> };
 
 export function describeExecution(execution: Execution, setup: Setup): string[] {
   return setup.kit.describeExecution(execution, setup);
@@ -145,7 +145,7 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
  * this line's own artifact, which carries the `batch_hash` the gesture was
  * taken on — that is what makes the gesture attested rather than asserted.
  */
-function decideByGesture(execution: Execution, gesture: BatchGestureRecord, setup: Setup, approver: TerminalOptions["approver"]): Execution {
+export function decideByGesture(execution: Execution, gesture: BatchGestureRecord, setup: Setup, approver: TerminalOptions["approver"]): Execution {
   const engine = setup.engine;
   const { batch_hash, index, count } = execution.batch!;
   if (batch_hash !== gesture.batch_hash || count !== gesture.count) {

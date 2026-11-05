@@ -12,6 +12,8 @@ export * from "./adversarial.js";
 export * from "./inspect.js";
 export * from "./hosted/contract.js";
 export * from "./hosted/catalog.js";
+export * from "./hosted/run.js";
+export * from "./hosted/proposals.js";
 export { main } from "./cli.js";
 export { checkStrings } from "./commands/check.js";
 export { pollWhatsApp, type PollWhatsAppOptions } from "./commands/poll-whatsapp.js";

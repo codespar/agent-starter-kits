@@ -32,16 +32,16 @@
               "payeeMasked": "co***@insumos-atlantico.example.com.br",
               "alias": "insumos",
               "amountMinor": 125000,
-              "description": "NF 8820, matéria-prima",
-              "dueDate": null
+              "description": "Fornecedores de outubro: NF 8820, matéria-prima",
+              "dueDate": "2026-10-10"
             }
           ],
           "totalMinor": 125000,
           "currency": "BRL",
-          "itemsHash": "sha256:e6e0e9e925f2ab4fd21a40a0c5b6c24c5e3b3018cfc61b5fd032ecd9727d3ea3",
+          "itemsHash": "sha256:b9a4ff87a02851faea95d431ad544831cd14faa57bd1357dca843541752e64e9",
           "batch": {
             "ref": "fornecedores-2026-10",
-            "batchHash": "sha256:49049a0e5aefd6fa79177d64a25475b8a0ace1325be7652101647b325e49840d",
+            "batchHash": "sha256:3212437cc740ba7b3625b4881fd896bced79852b32f7f326c9bece877a919230",
             "index": 1,
             "count": 3
           },
@@ -92,12 +92,12 @@
         },
         "data": {
           "binding": {
-            "itemsHash": "sha256:e6e0e9e925f2ab4fd21a40a0c5b6c24c5e3b3018cfc61b5fd032ecd9727d3ea3",
+            "itemsHash": "sha256:b9a4ff87a02851faea95d431ad544831cd14faa57bd1357dca843541752e64e9",
             "totalMinor": 125000,
             "currency": "BRL",
             "mandateId": "mdt_example_supplier_0001",
             "mandateVersion": 1,
-            "batchHash": "sha256:49049a0e5aefd6fa79177d64a25475b8a0ace1325be7652101647b325e49840d",
+            "batchHash": "sha256:3212437cc740ba7b3625b4881fd896bced79852b32f7f326c9bece877a919230",
             "batchIndex": 1,
             "compositionHash": null
           },
@@ -135,16 +135,16 @@
               "payeeMasked": "+551***0006",
               "alias": "logistica",
               "amountMinor": 76000,
-              "description": "NF 1290, fretes de setembro",
-              "dueDate": null
+              "description": "Fornecedores de outubro: NF 1290, fretes de setembro",
+              "dueDate": "2026-10-10"
             }
           ],
           "totalMinor": 76000,
           "currency": "BRL",
-          "itemsHash": "sha256:6f976ac6b8b36a32baca04947cec060d17dfc97f64adc01188d1fe18d4fd06de",
+          "itemsHash": "sha256:a928c4e99cfc091818bf70115376a0ce47bea5d02305934497e8a9e0d6a0801b",
           "batch": {
             "ref": "fornecedores-2026-10",
-            "batchHash": "sha256:49049a0e5aefd6fa79177d64a25475b8a0ace1325be7652101647b325e49840d",
+            "batchHash": "sha256:3212437cc740ba7b3625b4881fd896bced79852b32f7f326c9bece877a919230",
             "index": 2,
             "count": 3
           },
@@ -195,12 +195,12 @@
         },
         "data": {
           "binding": {
-            "itemsHash": "sha256:6f976ac6b8b36a32baca04947cec060d17dfc97f64adc01188d1fe18d4fd06de",
+            "itemsHash": "sha256:a928c4e99cfc091818bf70115376a0ce47bea5d02305934497e8a9e0d6a0801b",
             "totalMinor": 76000,
             "currency": "BRL",
             "mandateId": "mdt_example_supplier_0001",
             "mandateVersion": 1,
-            "batchHash": "sha256:49049a0e5aefd6fa79177d64a25475b8a0ace1325be7652101647b325e49840d",
+            "batchHash": "sha256:3212437cc740ba7b3625b4881fd896bced79852b32f7f326c9bece877a919230",
             "batchIndex": 2,
             "compositionHash": null
           },
@@ -261,7 +261,7 @@
           "batchRef": "fornecedores-2026-10"
         },
         "data": {
-          "batchHash": "sha256:49049a0e5aefd6fa79177d64a25475b8a0ace1325be7652101647b325e49840d",
+          "batchHash": "sha256:3212437cc740ba7b3625b4881fd896bced79852b32f7f326c9bece877a919230",
           "count": 3,
           "approved": [
             0,
@@ -373,7 +373,7 @@
         "ref": {
           "executionId": "exe_0b6e2d17c9a4f380",
           "attemptId": "att_b0eb935b8dc099aa443fdd33705c2c8e_0",
-          "receiptId": "rcp_stub_28c0a7561ecfa05c"
+          "receiptId": "rcpt_stub_2e87b66b3e4552f3"
         },
         "data": {
           "from": "executing",
@@ -397,7 +397,7 @@
         "ref": {
           "executionId": "exe_0b6e2d17c9a4f380",
           "attemptId": "att_b0eb935b8dc099aa443fdd33705c2c8e_0",
-          "receiptId": "rcp_stub_28c0a7561ecfa05c"
+          "receiptId": "rcpt_stub_2e87b66b3e4552f3"
         },
         "data": {
           "state": "settled",
@@ -405,8 +405,8 @@
           "evidence": [
             {
               "kind": "simulated",
-              "id": "rcp_stub_28c0a7561ecfa05c",
-              "detail": "stub rail receipt; not a CodeSpar receipt"
+              "id": "rcpt_stub_2e87b66b3e4552f3",
+              "detail": "simulator: not a CodeSpar receipt"
             }
           ]
         }
@@ -513,7 +513,7 @@
           "from": "executing",
           "to": "failed",
           "reason": "rail_failed",
-          "detail": "payee_refused: the stub rail refuses this payee",
+          "detail": "psp_dispatch_failed: stub: provider refused payee co***@insumos-atlantico.example.com.br",
           "actor": {
             "type": "agent",
             "agent": "supplier-payments-agent@0.1.0",
@@ -539,7 +539,7 @@
             {
               "kind": "simulated",
               "id": "att_6fc142a1522612b85fed24d52a50efe3_0",
-              "detail": "refused by the rail; nothing moved"
+              "detail": "psp_dispatch_failed: stub: provider refused payee co***@insumos-atlantico.example.com.br"
             }
           ]
         }
@@ -641,7 +641,7 @@
         "ref": {
           "executionId": "exe_e7a4c2950d1b3f68",
           "attemptId": "att_74217d3a39264c45591e3d82b6f98512_0",
-          "receiptId": "rcp_stub_3a2a5b06a9de513c"
+          "receiptId": "rcpt_stub_346815415f2b082c"
         },
         "data": {
           "from": "executing",
@@ -665,7 +665,7 @@
         "ref": {
           "executionId": "exe_e7a4c2950d1b3f68",
           "attemptId": "att_74217d3a39264c45591e3d82b6f98512_0",
-          "receiptId": "rcp_stub_3a2a5b06a9de513c"
+          "receiptId": "rcpt_stub_346815415f2b082c"
         },
         "data": {
           "state": "settled",
@@ -673,8 +673,8 @@
           "evidence": [
             {
               "kind": "simulated",
-              "id": "rcp_stub_3a2a5b06a9de513c",
-              "detail": "stub rail receipt; not a CodeSpar receipt"
+              "id": "rcpt_stub_346815415f2b082c",
+              "detail": "simulator: not a CodeSpar receipt"
             }
           ]
         }

@@ -273,23 +273,6 @@ export interface AgentKit {
   /** The one line `eval` prints per scenario run and per adversarial case. */
   evalScenarioLine?(check: ScenarioCheck): string;
   evalAdversarialLine?(result: AdversarialResult): string;
-  /**
-   * Hosted only: the kit's own CodeSpar rail over a client the HOST scoped to
-   * one Test project, and the mandate the host bound the run to. This is the
-   * `codespar-test` executor of the hosted catalog; a kit without it has no
-   * such executor there, and a host never falls back to the stub for it.
-   * Never called on a terminal.
-   */
-  hostedRail?(ctx: HostedRailContext): RailBuild;
   /** What the hosted catalog cannot derive from `tools.json`. Validated against the tool effects. */
   hosted?: { outcomeKinds?: readonly OutcomeKind[] };
-}
-
-export interface HostedRailContext {
-  client: ApiClient;
-  mandate: Mandate;
-  store: StateStore;
-  manifest: LoadedManifest;
-  now: (() => Date) | undefined;
-  config: KitConfig;
 }

@@ -92,6 +92,15 @@ export interface EngineDeps {
   clock?: () => Date;
   /** The kit's own envelope check, run at every gate after the mandate's. */
   policyExtension?: PolicyExtension | undefined;
+  /**
+   * Awaited before every call to `rail.pay`, after the outbox row says `sent`.
+   * A host whose state lives outside this process persists it here, so the
+   * record that an attempt may have left exists before the attempt does; if
+   * this throws, nothing is sent and the execution stays `executing` with its
+   * outbox `sent`, which `reconcile` resolves and never re-sends. Absent on a
+   * terminal, where `state.db` is already on disk.
+   */
+  beforeDispatch?: ((execution: Execution, attemptId: string) => Promise<void>) | undefined;
 }
 
 /** What the deterministic policy says about an execution at one of its three gates. */
@@ -455,6 +464,7 @@ export class ExecutionEngine {
       let payment = presented;
       // The dispatch line is the request. `idempotency_key` is what makes a retry the same payment, so the bundle names it next to the attempt.
       this.record("rail.dispatch", execution.id, { attempt_id: payment.attempt_id, payee: payment.payee, amount: payment.amount_minor, rail: this.deps.rail.name, idempotency_key: execution.idempotency_key });
+      await this.deps.beforeDispatch?.(execution, payment.attempt_id);
       let outcome = await this.deps.rail.pay(payment);
       this.record("rail.outcome", execution.id, { attempt_id: payment.attempt_id, status: outcome.status, ...railAnswer(outcome) });
       // A batch line whose derived id the rail holds as failed-with-no-money
@@ -470,6 +480,7 @@ export class ExecutionEngine {
         this.deps.store.saveExecution({ ...execution, outcomes, attempt_generations: { ...generations }, updated_at: this.clock().toISOString() });
         payment = { ...payment, attempt_id: next };
         this.record("rail.dispatch", execution.id, { attempt_id: payment.attempt_id, payee: payment.payee, amount: payment.amount_minor, rail: this.deps.rail.name, idempotency_key: execution.idempotency_key });
+        await this.deps.beforeDispatch?.(execution, payment.attempt_id);
         outcome = await this.deps.rail.pay(payment);
         this.record("rail.outcome", execution.id, { attempt_id: payment.attempt_id, status: outcome.status, ...railAnswer(outcome) });
       }

@@ -86,6 +86,23 @@ export interface AgentLoopOptions {
   /** A hard stop on tool round-trips per turn, so a looping model cannot run forever. */
   maxSteps?: number;
   clock?: () => Date;
+  /**
+   * The conversation so far, when the loop continues one another process
+   * started (a hosted run reopened after a restart). The loop takes it as it
+   * is; it never re-sends the last user message to make up for a lost turn.
+   */
+  history?: readonly ConversationMessage[] | undefined;
+  /** The reply language the conversation had reached, with `history`. */
+  language?: ReplyLanguage | undefined;
+  /** Told about each tool call and each finished step; a host emits its events and persists its state from here. */
+  observer?: LoopObserver | undefined;
+}
+
+export interface LoopObserver {
+  toolStarted?(call: ToolCall): void;
+  toolCompleted?(call: ToolCall, result: { refused: boolean; content: unknown }): void;
+  /** After the model's output and every tool result of that output are in `history`. Awaited before the next step. */
+  stepCompleted?(): Promise<void>;
 }
 
 export interface TurnResult {
@@ -108,10 +125,17 @@ export class AgentLoop {
     this.allowed = allowedToolNames(options.tools);
     this.specs = toolSpecs(options.tools);
     this.clock = options.clock ?? (() => new Date());
+    if (options.history) this.messages.push(...options.history);
+    this.language = options.language;
   }
 
   get history(): readonly ConversationMessage[] {
     return this.messages;
+  }
+
+  /** The language the next turn will default to when the person's text gives no lead of its own. */
+  get replyLanguage(): ReplyLanguage | undefined {
+    return this.language;
   }
 
   async turn(userText: string): Promise<TurnResult> {
@@ -140,11 +164,14 @@ export class AgentLoop {
       bundle.transcript({ at: this.now(), kind: "assistant_step", tool_calls: out });
 
       for (const call of out) {
+        this.options.observer?.toolStarted?.(call);
         const result = await this.dispatch(call, executions, notRun);
         calls.push({ name: call.name, refused: result.refused });
         this.messages.push({ role: "tool", tool_call_id: call.id, name: call.name, content: JSON.stringify(result.content), ...(result.refused ? { is_error: true } : {}) });
         bundle.transcript({ at: this.now(), kind: "tool_result", tool_call_id: call.id, name: call.name, refused: result.refused, content: result.content });
+        this.options.observer?.toolCompleted?.(call, result);
       }
+      await this.options.observer?.stepCompleted?.();
     }
 
     const text = "I stopped: too many tool steps in one turn. Nothing was paid beyond what the trail shows.";
