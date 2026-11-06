@@ -6,14 +6,14 @@
       "id": "supplier-payments-agent",
       "version": "0.1.0",
       "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-      "packageDigest": "sha256:08d292dbd99e45cf8b609cdfb64875cc7f43180ee227db896a7f8e4f082ef6ae"
+      "packageDigest": "sha256:7419b066c88541412ed98894719d51d6000adb05789e11bb515cb12d1977a38b"
     },
     "modelMode": "replay",
     "executor": "simulator",
     "approvalMode": "human",
     "locale": "pt-BR",
     "exampleId": "partial-batch-failure",
-    "inputRevision": "sha256:07f914f31a7e63b7c8fbb779e4c51f2207af2c7fe232a2df2fb29602f2674256",
+    "inputRevision": "sha256:65c5f16a48673f2250dddcf7073590fedffbe5470a43cd781830e2654fe64498",
     "status": "awaiting_decision",
     "createdAt": "2026-11-03T14:20:00.000Z",
     "updatedAt": "2026-11-03T14:20:03.100Z"

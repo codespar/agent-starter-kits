@@ -8,7 +8,7 @@ import { hmacSigner, type AgentRuntime, type ConversationMessage, type Reply, ty
 import { loadAgent } from "../src/agent.js";
 import { describeKit } from "../src/hosted/catalog.js";
 import type { HostedEvent } from "../src/hosted/contract.js";
-import type { ProposalRail, ProposalState } from "../src/hosted/proposals.js";
+import { FencedError, type ProposalRail, type ProposalState } from "../src/hosted/proposals.js";
 import type { ApprovalPort, HostedActor, HostedKit, HostedPorts, IdentityPort, ModelPort, RailPort, RunImage, StatePort } from "../src/hosted/run.js";
 
 export const ACTOR: HostedActor = { userId: "user_fixture_owner", orgId: "org_fixture", projectId: "prj_fixture", environment: "test" };
@@ -20,6 +20,17 @@ export class MemoryState implements StatePort {
   saves = 0;
   /** Set to n: the n-th save from now throws, and nothing of it is kept. */
   dieOnSave: number | undefined;
+  /** The lease epoch the host holds now. A process whose epoch is older is refused, as the host's lease would refuse it. */
+  epoch = 1;
+
+  /** This store as a process holding `epoch` sees it: its saves are refused with `lease_lost` once a newer epoch took the run. */
+  forEpoch(epoch: number): StatePort {
+    return {
+      load: (runId) => this.load(runId),
+      save: async (runId, image, newEvents, expected) => (epoch < this.epoch ? { ok: false as const, reason: "lease_lost" as const } : this.save(runId, image, newEvents, expected)),
+      events: (runId, after) => this.events(runId, after),
+    };
+  }
 
   async load(runId: string) {
     const row = this.rows.get(runId);
@@ -68,6 +79,18 @@ export class FakeProposals implements ProposalRail {
   pay(proposalId: string, receiptId: string): void {
     this.states.set(proposalId, { state: "succeeded", receiptId, failureCode: null });
   }
+  /** The proposal port as a process holding `epoch` sees it: fenced once `fencedBelow` is above that epoch. */
+  fencedBelow = 0;
+  forEpoch(epoch: number): ProposalRail {
+    const fence = () => {
+      if (epoch < this.fencedBelow) throw new FencedError("lease_lost");
+    };
+    return {
+      submit: async (request) => (fence(), this.submit(request)),
+      read: async (proposalId) => (fence(), this.read(proposalId)),
+    };
+  }
+
   /** Aprovações or the person refused it. */
   deny(proposalId: string): void {
     this.states.set(proposalId, { state: "denied", receiptId: null, failureCode: null });

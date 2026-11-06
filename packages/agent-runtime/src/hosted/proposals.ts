@@ -13,6 +13,24 @@
  */
 import type { ChargeInstrument, PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt, StateStore } from "@codespar/agent-core";
 
+/**
+ * The host's refusal of a process that no longer holds the run: another one took the lease (`lease_lost`), or the host fenced
+ * this epoch (`fenced`). Thrown by `ProposalRail` (and by `StatePort.save`, or answered as its `reason`). A run that meets it
+ * stops at once: no retry, no further event, no further effect. Only the new owner continues.
+ */
+export class FencedError extends Error {
+  readonly code = "fenced";
+  constructor(readonly reason: "lease_lost" | "fenced" = "fenced") {
+    super(`fenced: ${reason}; this process no longer owns the run`);
+    this.name = "FencedError";
+  }
+}
+
+/** A fence from the host, whichever copy of this module raised it. */
+export function isFenced(err: unknown): err is { reason?: string } {
+  return err instanceof FencedError || (err instanceof Error && (err.name === "FencedError" || (err as { code?: unknown }).code === "fenced"));
+}
+
 export type ProposalState = "drafted" | "awaiting_approval" | "executing" | "succeeded" | "failed" | "denied";
 
 /** What the host offers for `codespar-test`. Both calls are the host's; neither pays. */
@@ -53,12 +71,16 @@ export class ProposalPaymentRail implements PaymentRail {
       const { proposalId, state } = await this.proposals.submit(this.request(payment));
       return this.answer(proposalId, { state, receiptId: null, failureCode: null });
     } catch (err) {
+      // A fence is not an unknown answer: the process stops, and the new owner looks at the attempt.
+      if (isFenced(err)) throw err;
       // Whether the host drafted it is unknown; a look submits again under the same attempt, which drafts nothing twice.
       return { status: "uncertain", code: "proposal_submit_unknown", message: err instanceof Error ? err.message : String(err) };
     }
   }
 
   async lookup(_attemptId: string, payment: RailPayment, transactionId?: string): Promise<RailLookup> {
+    // Without the id (a submit whose answer was lost), the same attempt is submitted again: the host answers the proposal it
+    // already drafted for that attempt, never a new one.
     const proposalId = transactionId ?? (await this.proposals.submit(this.request(payment))).proposalId;
     return this.answer(proposalId, await this.proposals.read(proposalId));
   }

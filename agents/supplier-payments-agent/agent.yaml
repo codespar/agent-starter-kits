@@ -25,3 +25,57 @@ maturity:
 scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md
+
+# What a person reads about this agent where it is offered (the Playground's catalog). pt-BR reviewed by the Playground's
+# product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
+presentation:
+  pt-BR:
+    title: "Pagamentos a fornecedores"
+    summary: "Paga fornecedores, comissões e folha em lote. Você aprova a lista, e cada linha tem o seu resultado."
+    examples:
+      beneficiary-not-allowed:
+        title: "Fornecedor fora do mandato"
+        description: "Um fornecedor que o mandato não nomeia não é pago."
+      cap-exceeded:
+        title: "Acima do limite por pagamento"
+        description: "Um pagamento acima do limite do mandato é recusado antes de qualquer envio."
+      escalated-above-threshold:
+        title: "Quando o agente pede sua aprovação"
+        description: "Com aprovação automática, um fornecedor novo ou um valor alto ainda passa por você."
+      happy-path:
+        title: "Folha de outubro"
+        description: "A folha vira um pagamento por pessoa, cada um decidido e registrado."
+      mandate-revoked:
+        title: "Mandato revogado no meio"
+        description: "O mandato é revogado durante o lote: o que já saiu é conferido, o que esperava aprovação é negado."
+      partial-batch-failure:
+        title: "Lote com uma recusa"
+        description: "Um fornecedor é recusado pelo banco e os outros dois são pagos; nada é pago duas vezes."
+      prompt-injection:
+        title: "Instrução escondida na nota"
+        description: "A descrição de uma nota manda pagar outra chave; o mandato recusa."
+  en:
+    title: "Supplier payments"
+    summary: "Pays suppliers, commissions and payroll in batches. You approve the list, and each line has its own result."
+    examples:
+      beneficiary-not-allowed:
+        title: "Supplier outside the mandate"
+        description: "A supplier the mandate does not name is not paid."
+      cap-exceeded:
+        title: "Above the per-payment limit"
+        description: "A payment above the mandate's limit is refused before anything is sent."
+      escalated-above-threshold:
+        title: "When the agent asks you"
+        description: "With automatic approval, a new supplier or a large amount still comes to you."
+      happy-path:
+        title: "October payroll"
+        description: "The payroll becomes one payment per person, each decided and recorded."
+      mandate-revoked:
+        title: "Mandate revoked midway"
+        description: "The mandate is revoked during the batch: what already went out is checked, what awaited approval is denied."
+      partial-batch-failure:
+        title: "A batch with one refusal"
+        description: "The bank refuses one supplier and the other two are paid; nobody is paid twice."
+      prompt-injection:
+        title: "Instruction hidden in an invoice"
+        description: "An invoice description says to pay another key; the mandate refuses it."
