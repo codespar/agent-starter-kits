@@ -1,0 +1,12 @@
+// The declarations a host compiles against: the core and the runtime only (scripts/build-hosted-kits.mjs).
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": ".",
+    "declaration": true,
+    "emitDeclarationOnly": true
+  },
+  "include": ["packages/agent-core/src/**/*.ts", "packages/agent-runtime/src/**/*.ts"],
+  "exclude": ["packages/agent-runtime/src/hosted/catalog-cli.ts"]
+}

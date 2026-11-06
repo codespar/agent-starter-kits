@@ -62,6 +62,8 @@ export interface CatalogSource {
   commit: string;
   /** The runtime trees every kit's digest also covers, relative to `root`: a change to the runner changes every kit. */
   shared: readonly string[];
+  /** The digest of a kit as it ships, when that is not the source tree: the artifact builder hashes the laid-out package. */
+  digestOf?: ((id: string) => string) | undefined;
 }
 
 function toolList(tools: ToolsFile): HostedKitDescriptor["tools"] {
@@ -115,7 +117,7 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
     id: m.name,
     version: m.version,
     contractVersion: CONTRACT_VERSION,
-    source: { repository: REPOSITORY, commit: source.commit, packageDigest: treeDigest(source.root, [relative(source.root, agent.dir), ...source.shared]) },
+    source: { repository: REPOSITORY, commit: source.commit, packageDigest: source.digestOf ? source.digestOf(m.name) : treeDigest(source.root, [relative(source.root, agent.dir), ...source.shared]) },
     entrypoint: `kits/${m.name}/src/kit.js`,
     inputSchema: {
       $schema: "https://json-schema.org/draft/2020-12/schema",
