@@ -13,9 +13,11 @@ import type { SandboxPayer } from "./kit.js";
 export interface PollHooks {
   /**
    * A receivable became payable: show the payer how to pay. Called once per
-   * instalment, and AWAITED — on a console the lines are on the screen by the
-   * time the call returns, but on a channel the message still has to go out,
-   * and a payer told how to pay after the poll already closed was not told.
+   * instalment, or once per consent page when a pull hands the payer more
+   * than one in an attempt (`consent_step`: enroll, then sign), and
+   * AWAITED — on a console the lines are on the screen by the time the call
+   * returns, but on a channel the message still has to go out, and a payer
+   * told how to pay after the poll already closed was not told.
    */
   onInstrument?: (execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument) => void | Promise<void>;
   /** The execution reached a terminal state. Called once. */
@@ -91,7 +93,7 @@ export async function pollUntilClosed(engine: ExecutionEngine, executionId: stri
   const present = async (e: Execution) => {
     for (const outcome of e.outcomes) {
       if (outcome.status !== "accepted" || !outcome.instrument?.payable || !outcome.transaction_id) continue;
-      if (!engine.markShown(e.id, outcome.attempt_id)) continue;
+      if (!engine.markShown(e.id, outcome.attempt_id, outcome.instrument.consent_step)) continue;
       await options.onInstrument?.(e, outcome.index + 1, outcome.transaction_id, outcome.instrument);
     }
   };

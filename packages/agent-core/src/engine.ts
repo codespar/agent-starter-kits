@@ -26,7 +26,7 @@ import { sameApprovalHash } from "./receipt-chain.js";
 import type { MandateStatusReport, MandateStatusSource } from "./revocation.js";
 import { isTerminal, transition, type Execution, type ExecutionState, type RailAnswer } from "./state-machine.js";
 import type { StateStore } from "./state/store.js";
-import type { Actor, ApprovalArtifact, ApprovalMode, ExecutionBatch, ExecutionComposition, ExecutionItem, ExecutionReason, ItemOutcome } from "./types.js";
+import type { Actor, ApprovalArtifact, ApprovalMode, ChargeInstrument, ExecutionBatch, ExecutionComposition, ExecutionItem, ExecutionReason, ItemOutcome } from "./types.js";
 
 export interface ProposedItem {
   /** An alias from the mandate's named payees, or a raw payee key. */
@@ -576,15 +576,20 @@ export class ExecutionEngine {
     return kept;
   }
 
-  /** The instrument the payer is shown, logged once per observed state (registration flips `payable`; the log says when). */
+  /**
+   * The instrument the payer is shown, logged once per observed state (registration flips `payable`; the log says when). A
+   * `consent_step` is part of the state: a JSR pull's enroll page and sign page can share status and `payable`, and the log has to
+   * say the second page came. Without a step the id is the one it always was.
+   */
   private recordInstrument(executionId: string, attemptId: string, transactionId: string, instrument: ItemOutcome["instrument"]): void {
     if (!instrument) return;
+    const step = instrument.consent_step;
     const stored = this.deps.store.appendEvent({
       run_id: this.deps.runId,
       execution_id: executionId,
-      event_id: `instrument:${attemptId}:${instrument.status}:${instrument.payable ? "payable" : "not-payable"}`,
+      event_id: `instrument:${attemptId}:${instrument.status}:${instrument.payable ? "payable" : "not-payable"}${step ? `:${step}` : ""}`,
       type: "charge.instrument",
-      payload: { attempt_id: attemptId, charge_id: transactionId, status: instrument.status, payable: instrument.payable, has_pix: instrument.pix_copy_paste !== null, has_boleto: instrument.boleto_bank_line !== null, has_consent_url: Boolean(instrument.consent_url), due_date: instrument.due_date },
+      payload: { attempt_id: attemptId, charge_id: transactionId, status: instrument.status, payable: instrument.payable, has_pix: instrument.pix_copy_paste !== null, has_boleto: instrument.boleto_bank_line !== null, has_consent_url: Boolean(instrument.consent_url), ...(step ? { consent_step: step } : {}), due_date: instrument.due_date },
       at: this.clock().toISOString(),
     });
     if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
@@ -858,10 +863,12 @@ export class ExecutionEngine {
   /**
    * Once-only presentation: true the first time a given attempt's instrument
    * is marked shown, false afterwards, across restarts (it is a cursor in
-   * state.db, not memory). The debtor sees each QR once.
+   * state.db, not memory). The debtor sees each QR once. A `consent_step`
+   * (ChargeInstrument) is a page of its own within the attempt, shown once
+   * each; without one the key is the attempt's alone, as it always was.
    */
-  markShown(executionId: string, attemptId: string): boolean {
-    const key = `shown:${executionId}:${attemptId}`;
+  markShown(executionId: string, attemptId: string, consentStep?: ChargeInstrument["consent_step"]): boolean {
+    const key = `shown:${executionId}:${attemptId}${consentStep ? `:${consentStep}` : ""}`;
     if (this.deps.store.getCursor(key)) return false;
     this.deps.store.setCursor(key, this.clock().toISOString());
     return true;

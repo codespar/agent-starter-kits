@@ -11,7 +11,7 @@
  * approves on the simulated bank's page (Mocktora), by hand.
  */
 import { relative } from "node:path";
-import { CORE_STRINGS, formatBRL, loadMandate, railErrorOf, type Execution, type Mandate } from "@codespar/agent-core";
+import { consentWords, formatBRL, loadMandate, railErrorOf, type Execution, type Mandate } from "@codespar/agent-core";
 import { defineAgent, toldKey, type AgentKit, type SandboxPayer } from "@codespar/agent-runtime";
 import { HttpSweepingApi } from "./iniciador.js";
 import { FixtureSweepingApi, SweepingPullRail, fixtureRiskSignals, manualRiskSignals, sweepingLimits, type FixtureFate, type SweepingLimits } from "./modules/sweeping-pull.js";
@@ -179,12 +179,12 @@ whatsapp: --backend simulator|cloud-api  --conversation <name>  --scripted`,
     seconds: Math.round(((Date.now() - startedAt) / 1000) * 10) / 10,
   }),
 
-  /** The terminal's copy of what the WhatsApp channel sends: the amount, then the bank's link on a line of its own. */
+  /** The terminal's copy of what the WhatsApp channel sends: the amount, then the consent page's words and its link on a line of its own. */
   presentInstrument: (execution, _instalment, _authorizationId, instrument, tell, locale) => {
     if (!instrument.consent_url) return;
     tell("");
     tell(formatBRL(execution.total, locale));
-    tell(CORE_STRINGS[locale].consentLink);
+    tell(consentWords(instrument.consent_step, locale).lead);
     tell(instrument.consent_url);
     tell("");
   },
