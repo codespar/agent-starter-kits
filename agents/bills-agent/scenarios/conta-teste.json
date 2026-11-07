@@ -1,0 +1,14 @@
+{
+  "name": "conta-teste",
+  "description": "The first run in the integrated Test: the person asks to pay the platform's test receiver (alias conta-teste) R$ 10,00, inside the confirmed Playground mandate a host binds a codespar-test run to; there the code asks and the platform drafts the proposal the person pays. Under the example mandate (the simulator, and this pack in the scenario matrix) that receiver is not named, so the payment is refused, which is what the expectation pins.",
+  "modes": ["human", "mandate"],
+  "transcript": "./conta-teste.transcript.jsonl",
+  "turns": [
+    { "input": "pague a conta de teste de R$ 10,00", "decision": "approve" }
+  ],
+  "expect": {
+    "both": { "states": ["denied"], "reasons": ["beneficiary_not_allowed"], "receipts": 0, "settled_total": 0 },
+    "human": { "trails": [["awaiting_approval", "denied"]] },
+    "mandate": { "trails": [["denied"]] }
+  }
+}

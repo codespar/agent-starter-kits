@@ -101,9 +101,12 @@ export class FakeProposals implements ProposalRail {
 export class ScriptedRuntime implements AgentRuntime {
   readonly name = "scripted";
   readonly seen: ConversationMessage[][] = [];
+  /** The system prompt of each step, as the model received it. */
+  readonly systems: string[] = [];
   constructor(private readonly steps: Array<ToolCall[] | Reply>) {}
-  async step(input: { messages: ConversationMessage[] }): Promise<ToolCall[] | Reply> {
+  async step(input: { system: string; messages: ConversationMessage[] }): Promise<ToolCall[] | Reply> {
     this.seen.push(structuredClone(input.messages));
+    this.systems.push(input.system);
     const next = this.steps.shift();
     if (!next) throw new Error("the scripted model has nothing more to say");
     return next;

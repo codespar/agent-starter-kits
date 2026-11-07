@@ -12,7 +12,7 @@
  * supplier payment that is not part of a run.
  */
 import { daysUntil, isReplayedSettlement, type ToolHandler } from "@codespar/agent-core";
-import { BATCHES, MONTH, batchTotal, findBatch, formatBRL } from "../payables.js";
+import { MONTH, batchTotal, batchesFor, findBatch, formatBRL } from "../payables.js";
 import { lineStatus, runBatch } from "./batch-payout.js";
 
 interface PayInput {
@@ -27,7 +27,7 @@ export const listPayables: ToolHandler = async (_input, ctx) => {
   return {
     month: MONTH,
     today,
-    batches: BATCHES.map((b) => ({
+    batches: batchesFor(ctx.engine.mandate, today).map((b) => ({
       batch_ref: b.ref,
       kind: b.kind,
       label: b.label,
@@ -71,7 +71,7 @@ export const codesparPay: ToolHandler = async (raw, ctx) => {
   if (input.batch_ref !== undefined) {
     if (typeof input.batch_ref !== "string" || !input.batch_ref.trim()) throw new Error("codespar_pay: batch_ref must be a batch_ref from list_payables");
     refuseTamperedBatch(input);
-    const batch = findBatch(input.batch_ref.trim());
+    const batch = findBatch(input.batch_ref.trim(), ctx.engine.mandate, ctx.engine.today());
     if (!batch) throw new Error(`codespar_pay: unknown batch_ref ${input.batch_ref}; list_payables names the batches of the month`);
     const report = await runBatch(batch, ctx);
     return { ...report, paid: report.failed.length === 0 && report.settled_minor > 0 };

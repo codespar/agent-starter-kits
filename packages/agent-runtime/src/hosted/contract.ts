@@ -91,6 +91,8 @@ export const HostedKitDescriptorSchema = z
     presentation: z.object({ "pt-BR": z.object({ title: z.string(), summary: z.string() }).strict(), en: z.object({ title: z.string(), summary: z.string() }).strict() }).strict().nullable(),
     /** The first experiment the kit recommends (`presentation.recommended`): an example it replays on the simulator. `rank` 1 is offered first. */
     recommended: z.object({ example: z.string(), rank: z.number().int().min(1) }).strict().nullable(),
+    /** Every first experiment the kit recommends, per executor. `recommended` above is the simulator's entry of this list. */
+    recommendations: z.array(z.object({ example: z.string(), rank: z.number().int().min(1), executor: ExecutorIdSchema }).strict()),
     exampleIds: z.array(z.string()),
     examples: z.array(
       z
@@ -120,6 +122,13 @@ export const HostedKitDescriptorSchema = z
     if (JSON.stringify(d.exampleIds) !== JSON.stringify(d.examples.map((e) => e.id))) issue("exampleIds must list examples[].id in order", ["exampleIds"]);
     if (d.supportedModelModes.includes("replay") && !d.examples.some((e) => e.replay)) issue("replay needs an example with a transcript", ["supportedModelModes"]);
     if (d.recommended && !d.examples.some((e) => e.id === d.recommended!.example && e.replay)) issue("the recommended example must be one of the kit's examples, with a recorded transcript", ["recommended"]);
+    const simulatorPick = d.recommendations.find((r) => r.executor === "simulator");
+    if (JSON.stringify(d.recommended) !== JSON.stringify(simulatorPick ? { example: simulatorPick.example, rank: simulatorPick.rank } : null)) issue("recommended is the simulator's entry of recommendations", ["recommended"]);
+    for (const [i, r] of d.recommendations.entries()) {
+      if (!d.examples.some((e) => e.id === r.example && e.replay)) issue("a recommended example must be one of the kit's examples, with a recorded transcript", ["recommendations", i]);
+      const executor = d.executors.find((e) => e.id === r.executor);
+      if (!executor || executor.blockedBy.length > 0) issue(`a recommendation on ${r.executor} needs that executor, unblocked`, ["recommendations", i]);
+    }
     const moves = d.tools.some((t) => t.effect === "payment" || t.effect === "charge");
     if (d.needsMandate !== moves) issue("needsMandate is true exactly when a payment or charge tool exists", ["needsMandate"]);
     if ((d.settlement === "none") !== !moves) issue('settlement is "none" exactly when no payment or charge tool exists', ["settlement"]);
@@ -145,8 +154,8 @@ export const HostedCatalogSchema = z
     const ids = c.kits.map((k) => k.id);
     if (JSON.stringify(ids) !== JSON.stringify([...ids].sort())) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "kits sorted by id", path: ["kits"] });
     if (new Set(ids).size !== ids.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate kit id", path: ["kits"] });
-    const ranks = c.kits.flatMap((k) => (k.recommended ? [k.recommended.rank] : []));
-    if (new Set(ranks).size !== ranks.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "two kits recommend a first experiment at the same rank", path: ["kits"] });
+    const ranks = c.kits.flatMap((k) => k.recommendations.map((r) => `${r.executor}:${r.rank}`));
+    if (new Set(ranks).size !== ranks.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "two kits recommend a first experiment at the same rank on the same executor", path: ["kits"] });
     for (const [i, k] of c.kits.entries()) if (k.source.commit !== c.artifact.commit) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "every kit comes from the artifact's commit", path: ["kits", i, "source", "commit"] });
   });
 

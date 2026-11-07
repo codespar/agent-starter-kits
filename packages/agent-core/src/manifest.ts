@@ -37,6 +37,14 @@ export const PresentationTextSchema = z
   .strict();
 
 /**
+ * A first experiment the host may offer. `executor` absent is the simulator; `codespar-test` names a pack that pays only under
+ * the mandate a host binds a Test run to (the platform's test receivers), and is offered only there.
+ */
+export const RecommendationSchema = z
+  .object({ example: z.string().regex(/^[a-z0-9-]+$/), rank: z.number().int().min(1).max(99).optional(), executor: z.enum(["simulator", "codespar-test"]).optional() })
+  .strict();
+
+/**
  * Optional. Present, it carries every locale the code prints in, and may name the scenario pack a host should offer as the
  * first experiment (`recommended`). `rank` orders recommendations across kits: 1 first.
  */
@@ -44,7 +52,7 @@ export const PresentationSchema = z
   .object({
     "pt-BR": PresentationTextSchema,
     en: PresentationTextSchema,
-    recommended: z.object({ example: z.string().regex(/^[a-z0-9-]+$/), rank: z.number().int().min(1).max(99).optional() }).strict().optional(),
+    recommended: z.union([RecommendationSchema, z.array(RecommendationSchema).nonempty()]).optional(),
   })
   .strict();
 
