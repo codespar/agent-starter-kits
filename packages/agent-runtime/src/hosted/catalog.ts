@@ -9,7 +9,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
-import { canonicalJson, loadManifest, loadToolsFile, type LoadedManifest, type ToolsFile } from "@codespar/agent-core";
+import { canonicalJson, loadManifest, loadToolsFile, type ToolsFile } from "@codespar/agent-core";
 import { loadAgent, type Agent } from "../agent.js";
 import { listScenarios, loadScenario } from "../scenarios.js";
 import {
@@ -97,8 +97,10 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
   if (words) {
     const names = new Set(examples.map((e) => e.id));
     for (const locale of ["pt-BR", "en"] as const) for (const named of Object.keys(words[locale].examples)) if (!names.has(named)) throw new Error(`${m.name}: presentation (${locale}) names ${named}, which is not a scenario pack`);
-    for (const recommended of recommendationsOf(words)) {
-      if (!examples.some((e) => e.id === recommended.example && e.replay)) throw new Error(`${m.name}: presentation.recommended names ${recommended.example}, which is not a scenario pack with a recorded transcript`);
+    const recommended = words.recommended;
+    if (recommended && !examples.some((e) => e.id === recommended.example && e.replay)) throw new Error(`${m.name}: presentation.recommended names ${recommended.example}, which is not a scenario pack with a recorded transcript`);
+    for (const run of words.recommendedRuns ?? []) {
+      if (!examples.some((e) => e.id === run.example)) throw new Error(`${m.name}: presentation.recommendedRuns names ${run.example}, which is not a scenario pack`);
     }
   }
 
@@ -162,11 +164,8 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
     locales: ["pt-BR", "en"],
     defaultLocale: m.locale ?? "pt-BR",
     presentation: words ? { "pt-BR": { title: words["pt-BR"].title, summary: words["pt-BR"].summary }, en: { title: words.en.title, summary: words.en.summary } } : null,
-    recommended: (() => {
-      const pick = recommendationsOf(words).find((r) => r.executor === "simulator");
-      return pick ? { example: pick.example, rank: pick.rank } : null;
-    })(),
-    recommendations: recommendationsOf(words),
+    recommended: words?.recommended ? { example: words.recommended.example, rank: words.recommended.rank ?? 1 } : null,
+    recommendedRuns: (words?.recommendedRuns ?? []).map((r) => ({ executor: r.executor, modelMode: r.modelMode, example: r.example, rank: r.rank })),
     exampleIds,
     examples,
   };
@@ -180,13 +179,6 @@ function checkDeclaredOutcomes(d: HostedKitDescriptor, effects: Set<string>): vo
     const ok = kind === "answer" || (kind === "payment" && effects.has("payment")) || ((kind === "charge" || kind === "order" || kind === "pull") && effects.has("charge"));
     if (!ok) throw new Error(`${d.id}: outcome kind ${kind} is not backed by any tool in tools.json`);
   }
-}
-
-/** The manifest's recommendations as a list, each with its rank (default 1) and executor (default the simulator). */
-function recommendationsOf(words: LoadedManifest["manifest"]["presentation"]): Array<{ example: string; rank: number; executor: ExecutorId }> {
-  const declared = words?.recommended;
-  if (!declared) return [];
-  return (Array.isArray(declared) ? declared : [declared]).map((r) => ({ example: r.example, rank: r.rank ?? 1, executor: r.executor ?? "simulator" }));
 }
 
 /** Every directory under `agentsDir` that holds an `agent.yaml`, sorted. */

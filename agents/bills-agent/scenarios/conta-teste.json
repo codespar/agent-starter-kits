@@ -4,7 +4,7 @@
   "modes": ["human", "mandate"],
   "transcript": "./conta-teste.transcript.jsonl",
   "turns": [
-    { "input": "pague a conta de teste de R$ 10,00", "decision": "approve" }
+    { "input": "pague R$ 10,00 à conta-teste", "decision": "approve" }
   ],
   "expect": {
     "both": { "states": ["denied"], "reasons": ["beneficiary_not_allowed"], "receipts": 0, "settled_total": 0 },

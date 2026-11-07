@@ -90,18 +90,24 @@ describe("a Test run under the mandate the host confirmed, with a model", () => 
     for (const line of batches[0]!.lines) expect(line.amount_minor).toBeLessThanOrEqual(mandate.per_tx_cap_minor);
   });
 
-  it("the recommended Test example (bills conta-teste) replays to one platform proposal under that mandate", async () => {
-    const proposals = new FakeProposals();
-    const state = new MemoryState();
+  it("the recommended Test run (bills conta-teste, model): its first input reaches the model, and one R$ 10,00 proposal is drafted", async () => {
     const kit = await kitOf("bills-agent");
-    expect(kit.descriptor.recommendations).toContainEqual({ example: "conta-teste", rank: 1, executor: "codespar-test" });
-    const run = await createHostedRun(kit, ports({ state, rail: { executor: "codespar-test", proposals, mandate: playgroundMandate("bills-agent") } }), {
+    expect(kit.descriptor.recommendedRuns).toEqual([{ executor: "codespar-test", modelMode: "model", example: "conta-teste", rank: 1 }]);
+    expect(kit.descriptor.recommended).toEqual({ example: "happy-path", rank: 1 });
+    const proposals = new FakeProposals();
+    const model = new ScriptedRuntime([
+      [{ id: "tc_1", name: "list_bills", input: {} }],
+      [{ id: "tc_2", name: "codespar_pay", input: { action: "pix", items: [{ payee: "conta-teste", amount_minor: 1000, description: "conta de teste" }], total_minor: 1000 } }],
+      { text: "Propus R$ 10,00 à conta de teste; falta você pagar a proposta." },
+    ]);
+    const run = await createHostedRun(kit, ports({ state: new MemoryState(), rail: { executor: "codespar-test", proposals, mandate: playgroundMandate("bills-agent") }, model: { mode: "model", runtime: model } }), {
       commandId: "c",
-      modelMode: "replay",
+      modelMode: "model",
       executor: "codespar-test",
       options: { exampleId: "conta-teste" },
     });
     await run.turn({ commandId: "t", exampleTurn: 0 });
+    expect(model.seen[0]!.at(-1)).toEqual({ role: "user", content: "pague R$ 10,00 à conta-teste" });
     const s = await run.snapshot();
     expect(s.pending.map((p) => p.kind)).toEqual(["payment_proposal"]);
     expect(proposals.submitted).toHaveLength(1);

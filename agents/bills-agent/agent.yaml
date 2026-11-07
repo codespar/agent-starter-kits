@@ -30,13 +30,16 @@ agents_md: ./AGENTS.md
 # product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
 presentation:
   # The first experiment the Playground offers: it replays on the simulator with no account, key or mandate of the person's.
-  # In the integrated Test (codespar-test) the run is bound to the platform's test receivers: `conta-teste` pays within that mandate.
   recommended:
-    - example: happy-path
+    example: happy-path
+    rank: 1
+  # In the integrated Test (codespar-test, with a model) the run is bound to the platform's test receivers; `conta-teste`'s
+  # first input pays one of them within that mandate's caps.
+  recommendedRuns:
+    - executor: codespar-test
+      modelMode: model
+      example: conta-teste
       rank: 1
-    - example: conta-teste
-      rank: 1
-      executor: codespar-test
   pt-BR:
     title: "Contas do mês"
     summary: "Paga as contas da casa dentro dos limites que você definiu. Você aprova cada pagamento."

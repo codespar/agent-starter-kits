@@ -14,7 +14,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:b42955b8986384761c4a420fdad8bf0ae71c2bdb326fc6752716d30512c0e470"
+        "packageDigest": "sha256:b0823b622df9bf04db1c7ac8d0f44d45372743a1b0e8208d5b979518345edb76"
       },
       "entrypoint": "kits/bills-agent/src/kit.js",
       "inputSchema": {
@@ -142,16 +142,12 @@
         "example": "happy-path",
         "rank": 1
       },
-      "recommendations": [
+      "recommendedRuns": [
         {
-          "example": "happy-path",
-          "rank": 1,
-          "executor": "simulator"
-        },
-        {
+          "executor": "codespar-test",
+          "modelMode": "model",
           "example": "conta-teste",
-          "rank": 1,
-          "executor": "codespar-test"
+          "rank": 1
         }
       ],
       "exampleIds": [
@@ -221,7 +217,7 @@
           ],
           "turns": [
             {
-              "input": "pague a conta de teste de R$ 10,00"
+              "input": "pague R$ 10,00 à conta-teste"
             }
           ],
           "replay": true,
@@ -497,7 +493,7 @@
         }
       },
       "recommended": null,
-      "recommendations": [],
+      "recommendedRuns": [],
       "exampleIds": [
         "beneficiary-not-allowed",
         "cap-exceeded",
@@ -1016,7 +1012,7 @@
         }
       },
       "recommended": null,
-      "recommendations": [],
+      "recommendedRuns": [],
       "exampleIds": [
         "beneficiary-not-allowed",
         "cap-exceeded",
@@ -1336,7 +1332,7 @@
         }
       },
       "recommended": null,
-      "recommendations": [],
+      "recommendedRuns": [],
       "exampleIds": [
         "happy-path",
         "prompt-injection"
@@ -1522,7 +1518,7 @@
         }
       },
       "recommended": null,
-      "recommendations": [],
+      "recommendedRuns": [],
       "exampleIds": [
         "beneficiary-not-allowed",
         "cap-exceeded",
@@ -1832,7 +1828,7 @@
         }
       },
       "recommended": null,
-      "recommendations": [],
+      "recommendedRuns": [],
       "exampleIds": [
         "beneficiary-not-allowed",
         "cap-exceeded",

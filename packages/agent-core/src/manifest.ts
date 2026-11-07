@@ -37,11 +37,11 @@ export const PresentationTextSchema = z
   .strict();
 
 /**
- * A first experiment the host may offer. `executor` absent is the simulator; `codespar-test` names a pack that pays only under
- * the mandate a host binds a Test run to (the platform's test receivers), and is offered only there.
+ * A first run the host offers on an executor and model mode other than the simulator's replay: in the integrated Test, the
+ * model sends the pack's first recorded input under the mandate the host binds the run to.
  */
-export const RecommendationSchema = z
-  .object({ example: z.string().regex(/^[a-z0-9-]+$/), rank: z.number().int().min(1).max(99).optional(), executor: z.enum(["simulator", "codespar-test"]).optional() })
+export const RecommendedRunSchema = z
+  .object({ executor: z.literal("codespar-test"), modelMode: z.literal("model"), example: z.string().regex(/^[a-z0-9-]+$/), rank: z.number().int().min(1).max(99) })
   .strict();
 
 /**
@@ -52,7 +52,8 @@ export const PresentationSchema = z
   .object({
     "pt-BR": PresentationTextSchema,
     en: PresentationTextSchema,
-    recommended: z.union([RecommendationSchema, z.array(RecommendationSchema).nonempty()]).optional(),
+    recommended: z.object({ example: z.string().regex(/^[a-z0-9-]+$/), rank: z.number().int().min(1).max(99).optional() }).strict().optional(),
+    recommendedRuns: z.array(RecommendedRunSchema).optional(),
   })
   .strict();
 
