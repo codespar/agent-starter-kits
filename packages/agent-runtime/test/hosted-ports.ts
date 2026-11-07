@@ -4,7 +4,7 @@
  * available on demand. Nothing here is a production adapter.
  */
 import { randomBytes } from "node:crypto";
-import { hmacSigner, type AgentRuntime, type ConversationMessage, type Reply, type ToolCall } from "@codespar/agent-core";
+import { hmacSigner, type AgentRuntime, type ConversationMessage, type Reply, type ToolCall, type ToolSpec } from "@codespar/agent-core";
 import { loadAgent } from "../src/agent.js";
 import { describeKit } from "../src/hosted/catalog.js";
 import type { HostedEvent } from "../src/hosted/contract.js";
@@ -103,10 +103,13 @@ export class ScriptedRuntime implements AgentRuntime {
   readonly seen: ConversationMessage[][] = [];
   /** The system prompt of each step, as the model received it. */
   readonly systems: string[] = [];
+  /** The tools of each step, as the model received them. */
+  readonly tools: ToolSpec[][] = [];
   constructor(private readonly steps: Array<ToolCall[] | Reply>) {}
-  async step(input: { system: string; messages: ConversationMessage[] }): Promise<ToolCall[] | Reply> {
+  async step(input: { system: string; messages: ConversationMessage[] }, tools: ToolSpec[] = []): Promise<ToolCall[] | Reply> {
     this.seen.push(structuredClone(input.messages));
     this.systems.push(input.system);
+    this.tools.push(structuredClone(tools));
     const next = this.steps.shift();
     if (!next) throw new Error("the scripted model has nothing more to say");
     return next;

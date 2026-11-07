@@ -6,14 +6,14 @@
       "id": "bills-agent",
       "version": "0.1.0",
       "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-      "packageDigest": "sha256:b0823b622df9bf04db1c7ac8d0f44d45372743a1b0e8208d5b979518345edb76"
+      "packageDigest": "sha256:932424049f7d014b375f55890d1e2cb8c223a65f9739d489b5e9329cb8a25893"
     },
     "modelMode": "replay",
     "executor": "simulator",
     "approvalMode": "human",
     "locale": "pt-BR",
     "exampleId": "happy-path",
-    "inputRevision": "sha256:ce09d2355ad2b8b9c9fd8ab93de04b95a20bac23078fee185062e5499aed19c8",
+    "inputRevision": "sha256:cb4044d9ba4a8fe4f83ae4322705ebe41dd95d1ac3149a056e8cda41bf3d8736",
     "status": "awaiting_decision",
     "createdAt": "2026-11-03T14:15:00.000Z",
     "updatedAt": "2026-11-03T14:15:02.060Z"

@@ -5,6 +5,7 @@
  * payees that mandate can pay, or a real model refuses everything before any
  * tool runs (pkr_2Z9EIHQEt8XYavuO, 07/11). The replays stay as recorded.
  */
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Mandate } from "@codespar/agent-core";
@@ -64,6 +65,10 @@ describe("a Test run under the mandate the host confirmed, with a model", () => 
     expect(system).toContain("R$ 30,00");
     expect(system).toContain("R$ 100,00");
     expect(system).not.toMatch(EXAMPLE_PAYEES);
+    // The tool descriptions the model reads point at list_bills and the mandate in effect, and name no example payee.
+    const described = Object.fromEntries(model.tools[0]!.map((t) => [t.name, t.description]));
+    for (const name of ["codespar_pay", "list_bills"]) expect(described[name], name).not.toMatch(EXAMPLE_PAYEES);
+    expect(described["codespar_pay"]).toContain("mandate in effect");
 
     const bills = toolResult(model, "list_bills")["bills"] as Array<{ alias: string; amount_minor: number }>;
     expect(bills.map((b) => b.alias)).toEqual(["conta-teste", "conta-teste-projeto"]);
@@ -83,6 +88,8 @@ describe("a Test run under the mandate the host confirmed, with a model", () => 
     });
     await run.turn({ commandId: "t", text: "o que temos para pagar?" });
     expect(model.systems[0]).toContain("`conta-teste`");
+    const described = Object.fromEntries(model.tools[0]!.map((t) => [t.name, t.description]));
+    for (const name of ["codespar_pay", "list_payables"]) expect(described[name], name).not.toMatch(EXAMPLE_PAYEES);
     const batches = toolResult(model, "list_payables")["batches"] as Array<{ batch_ref: string; total_minor: number; lines: Array<{ alias: string; amount_minor: number }> }>;
     expect(batches).toHaveLength(1);
     expect(batches[0]!.lines.map((l) => l.alias)).toEqual(["conta-teste", "conta-teste-projeto"]);
@@ -119,6 +126,9 @@ describe("a Test run under the mandate the host confirmed, with a model", () => 
     const run = await createHostedRun(await kitOf("bills-agent"), ports({ model: { mode: "model", runtime: model } }), { commandId: "c", modelMode: "model", executor: "simulator", options: {} });
     await run.turn({ commandId: "t", text: "quais contas vencem?" });
     expect(model.systems[0]).toContain("`escola`");
+    // The tools are the file's, word for word: the only change under the example mandate is the generic codespar_pay text.
+    const file = JSON.parse(readFileSync(join(ROOT, "agents/bills-agent/tools.json"), "utf8")) as { meta_tools: Array<{ name: string; description: string }>; local_tools: Array<{ name: string; description: string }> };
+    expect(model.tools[0]!.map((t) => [t.name, t.description])).toEqual([...file.meta_tools, ...file.local_tools].map((t) => [t.name, t.description]));
     const bills = toolResult(model, "list_bills")["bills"] as Array<{ alias: string; amount_minor: number }>;
     expect(bills.map((b) => b.alias)).toEqual(["escola", "mercado", "funcionaria", "contas"]);
     expect(bills[0]!.amount_minor).toBe(185000);

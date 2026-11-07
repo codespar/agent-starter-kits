@@ -14,7 +14,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:b0823b622df9bf04db1c7ac8d0f44d45372743a1b0e8208d5b979518345edb76"
+        "packageDigest": "sha256:932424049f7d014b375f55890d1e2cb8c223a65f9739d489b5e9329cb8a25893"
       },
       "entrypoint": "kits/bills-agent/src/kit.js",
       "inputSchema": {
