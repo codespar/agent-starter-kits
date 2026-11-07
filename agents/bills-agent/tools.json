@@ -3,7 +3,7 @@
     {
       "name": "codespar_pay",
       "effect": "payment",
-      "description": "Propose one or more Pix payments to named payees of the month. This does NOT pay: it creates an execution in `drafted` that the core checks against the mandate and, depending on the approval mode, asks the person or runs. Use the payee alias from list_bills (escola, mercado, funcionaria, contas). Amounts are in BRL cents.",
+      "description": "Propose one or more Pix payments to named payees of the month. This does NOT pay: it creates an execution in `drafted` that the core checks against the mandate and, depending on the approval mode, asks the person or runs. Use a payee alias exactly as list_bills returns it; the payees are the ones of the mandate in effect for this run. Amounts are in BRL cents.",
       "input_schema": {
         "type": "object",
         "properties": {

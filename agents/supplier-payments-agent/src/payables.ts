@@ -8,6 +8,8 @@
  * what makes a batch un-fractionable: the model names which batch to run,
  * and the code is what says who is in it and for how much.
  */
+import { windowCap, type Mandate } from "@codespar/agent-core";
+
 export interface PayableLine {
   alias: string;
   name: string;
@@ -60,8 +62,33 @@ export const BATCHES: Batch[] = [
   },
 ];
 
-export function findBatch(ref: string): Batch | undefined {
-  return BATCHES.find((b) => b.ref === ref);
+/** What one line may ask under a mandate that is not the example's: R$ 10,00, or less when a cap of the mandate is lower. */
+export const MANDATE_LINE_MINOR = 1000;
+
+/**
+ * The month's batches under `mandate`. The fixture when the mandate names any payee of it (the example, the organization's
+ * own envelope made from it). Under a mandate that names none of them (the platform's Test receivers a host binds a run to),
+ * one batch with a line per payee the mandate does name, the whole batch within its caps and due `today`: what a run can
+ * actually pay, instead of three batches the mandate refuses line by line.
+ */
+export function batchesFor(mandate: Mandate, today: string): Batch[] {
+  const named = new Set(mandate.beneficiaries.map((p) => p.alias));
+  if (BATCHES.some((b) => b.lines.some((l) => named.has(l.alias)))) return BATCHES;
+  const each = Math.min(MANDATE_LINE_MINOR, mandate.per_tx_cap_minor, Math.floor(windowCap(mandate) / Math.max(1, mandate.beneficiaries.length)));
+  return [
+    {
+      ref: `teste-${MONTH}`,
+      kind: "fornecedores",
+      label: "Pagamento de teste",
+      due: today,
+      lines: mandate.beneficiaries.map((p) => ({ alias: p.alias, name: p.name, amount_minor: each, reference: "pagamento de teste" })),
+    },
+  ];
+}
+
+/** A batch by its ref: the fixture's, or, with a mandate, the batches that mandate can pay (`batchesFor`). */
+export function findBatch(ref: string, mandate?: Mandate, today?: string): Batch | undefined {
+  return (mandate && today ? batchesFor(mandate, today) : BATCHES).find((b) => b.ref === ref);
 }
 
 export function batchTotal(batch: Batch): number {

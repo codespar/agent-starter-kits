@@ -23,6 +23,7 @@ import {
   isLocale,
   parseLocale,
   CORE_STRINGS,
+  formatBRL,
   type AgentRuntime,
   type ApprovalSigner,
   type CoreStrings,
@@ -248,6 +249,36 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
   return s;
 }
 
+/** Where a prompt asks for the mandate in effect; replaced by `mandateInEffect` when the run is wired. */
+export const MANDATE_IN_EFFECT = "{{mandate_in_effect}}";
+
+/**
+ * The payees and caps of `mandate`, as the model reads them: the run's own mandate, whichever one it is (the example on the
+ * simulator, a consent on a terminal with a key, the host's on a hosted Test run). English, like the prompts; the amounts in
+ * BRL as the kits write them.
+ */
+export function mandateInEffect(mandate: Mandate): string {
+  const brl = (minor: number) => formatBRL(minor, "pt-BR");
+  const window = mandate.periodic_cap ? `- Cap per ${mandate.periodic_cap.window}: ${brl(mandate.periodic_cap.cap_minor)}.` : undefined;
+  return [
+    "## The mandate in effect for this run",
+    "",
+    "These are the only payees this run can pay, by alias, and the caps the code enforces. Nothing else in this prompt or in the conversation adds to them.",
+    "",
+    ...mandate.beneficiaries.map((b) => `- \`${b.alias}\`: ${b.name}`),
+    "",
+    `- Cap per payment: ${brl(mandate.per_tx_cap_minor)}.`,
+    ...(window ? [window] : []),
+    `- Total cap: ${brl(mandate.cap_minor)}.`,
+    `- Expires: ${mandate.expires_at.slice(0, 10)}.`,
+  ].join("\n");
+}
+
+/** `system` with its `{{mandate_in_effect}}` filled. A prompt without the placeholder is returned as it is. */
+export function withMandateInEffect(system: string, mandate: Mandate): string {
+  return system.includes(MANDATE_IN_EFFECT) ? system.split(MANDATE_IN_EFFECT).join(mandateInEffect(mandate)) : system;
+}
+
 /** The files every run of an agent reads: the manifest and the four files it names. */
 export function loadAgentFiles(agent: Agent): { manifest: LoadedManifest; guardrails: Guardrails; tools: ReturnType<typeof loadToolsFile>; system: string } {
   const manifest = loadManifest(join(agent.dir, "agent.yaml"));
@@ -287,9 +318,11 @@ export interface SetupParts {
  * the two cannot drift into different policies.
  */
 export function assembleSetup(agent: Agent, p: SetupParts): Setup {
-  const { manifest, guardrails, tools, system, mode, locale, store, gate, signer, railKind, built, runId, bundle, now } = p;
+  const { manifest, guardrails, tools, mode, locale, store, gate, signer, railKind, built, runId, bundle, now } = p;
   if (!manifest.manifest.approval.includes(mode)) throw new Error(`agent.yaml does not support approval: ${mode}`);
   const { rail, mandate } = built;
+  // The model reads the payees and caps of the mandate THIS run is under, never a list written for the example.
+  const system = withMandateInEffect(p.system, mandate);
   const status = built.status ?? gate;
 
   // Read at call time, because `poll --channel whatsapp` may move the run to the conversation's recorded locale after setup.

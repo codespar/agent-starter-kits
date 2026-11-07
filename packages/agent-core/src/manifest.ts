@@ -37,6 +37,14 @@ export const PresentationTextSchema = z
   .strict();
 
 /**
+ * A first run the host offers on an executor and model mode other than the simulator's replay: in the integrated Test, the
+ * model sends the pack's first recorded input under the mandate the host binds the run to.
+ */
+export const RecommendedRunSchema = z
+  .object({ executor: z.literal("codespar-test"), modelMode: z.literal("model"), example: z.string().regex(/^[a-z0-9-]+$/), rank: z.number().int().min(1).max(99) })
+  .strict();
+
+/**
  * Optional. Present, it carries every locale the code prints in, and may name the scenario pack a host should offer as the
  * first experiment (`recommended`). `rank` orders recommendations across kits: 1 first.
  */
@@ -45,6 +53,7 @@ export const PresentationSchema = z
     "pt-BR": PresentationTextSchema,
     en: PresentationTextSchema,
     recommended: z.object({ example: z.string().regex(/^[a-z0-9-]+$/), rank: z.number().int().min(1).max(99).optional() }).strict().optional(),
+    recommendedRuns: z.array(RecommendedRunSchema).optional(),
   })
   .strict();
 

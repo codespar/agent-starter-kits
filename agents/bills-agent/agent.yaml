@@ -33,10 +33,20 @@ presentation:
   recommended:
     example: happy-path
     rank: 1
+  # In the integrated Test (codespar-test, with a model) the run is bound to the platform's test receivers; `conta-teste`'s
+  # first input pays one of them within that mandate's caps.
+  recommendedRuns:
+    - executor: codespar-test
+      modelMode: model
+      example: conta-teste
+      rank: 1
   pt-BR:
     title: "Contas do mês"
     summary: "Paga as contas da casa dentro dos limites que você definiu. Você aprova cada pagamento."
     examples:
+      conta-teste:
+        title: "Pagar a conta de teste"
+        description: "No Test integrado, você pede R$ 10,00 ao recebedor de teste da plataforma; o agente propõe e você paga a proposta. No simulador, esse recebedor não está no mandato de exemplo e o pagamento é recusado."
       beneficiary-not-allowed:
         title: "Favorecido fora do mandato"
         description: "Um pedido para pagar alguém que o mandato não nomeia: nada é pago, mesmo que você diga sim."
@@ -59,6 +69,9 @@ presentation:
     title: "Monthly bills"
     summary: "Pays household bills within the limits you set. You approve each payment."
     examples:
+      conta-teste:
+        title: "Pay the test account"
+        description: "In the integrated Test you ask for R$ 10.00 to the platform's test receiver; the agent proposes it and you pay the proposal. In the simulator that receiver is not in the example mandate and the payment is refused."
       beneficiary-not-allowed:
         title: "Payee outside the mandate"
         description: "A request to pay someone the mandate does not name: nothing is paid, even if you say yes."

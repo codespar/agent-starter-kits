@@ -14,8 +14,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { fixedClock, type Execution } from "@codespar/agent-core";
-import { setup, type Setup } from "@codespar/agent-runtime";
+import { fixedClock, loadMandate, type Execution } from "@codespar/agent-core";
+import { setup, withMandateInEffect, type Setup } from "@codespar/agent-runtime";
 import { agent } from "../src/kit.js";
 
 // Every directory this file makes under the system temp dir is removed when the file ends: one left behind per test adds up across runs.
@@ -75,7 +75,8 @@ async function oneTurn(text: string): Promise<SentRequest[]> {
   return sent;
 }
 
-const PROMPT = readFileSync(join(agent.dir, "SYSTEM_PROMPT.md"), "utf8");
+// The file, with the mandate this run is under (the example's) filled where it asks for it.
+const PROMPT = withMandateInEffect(readFileSync(join(agent.dir, "SYSTEM_PROMPT.md"), "utf8"), loadMandate(join(agent.dir, "mandate.example.json")));
 
 afterEach(() => vi.unstubAllGlobals());
 

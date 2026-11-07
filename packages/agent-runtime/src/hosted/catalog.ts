@@ -99,6 +99,9 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
     for (const locale of ["pt-BR", "en"] as const) for (const named of Object.keys(words[locale].examples)) if (!names.has(named)) throw new Error(`${m.name}: presentation (${locale}) names ${named}, which is not a scenario pack`);
     const recommended = words.recommended;
     if (recommended && !examples.some((e) => e.id === recommended.example && e.replay)) throw new Error(`${m.name}: presentation.recommended names ${recommended.example}, which is not a scenario pack with a recorded transcript`);
+    for (const run of words.recommendedRuns ?? []) {
+      if (!examples.some((e) => e.id === run.example)) throw new Error(`${m.name}: presentation.recommendedRuns names ${run.example}, which is not a scenario pack`);
+    }
   }
 
   // The executors: the kit's own stub always. `codespar-test` for a kit whose money moves on the CodeSpar API: there the kit
@@ -162,6 +165,7 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
     defaultLocale: m.locale ?? "pt-BR",
     presentation: words ? { "pt-BR": { title: words["pt-BR"].title, summary: words["pt-BR"].summary }, en: { title: words.en.title, summary: words.en.summary } } : null,
     recommended: words?.recommended ? { example: words.recommended.example, rank: words.recommended.rank ?? 1 } : null,
+    recommendedRuns: (words?.recommendedRuns ?? []).map((r) => ({ executor: r.executor, modelMode: r.modelMode, example: r.example, rank: r.rank })),
     exampleIds,
     examples,
   };
