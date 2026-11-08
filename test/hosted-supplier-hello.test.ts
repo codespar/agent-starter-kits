@@ -115,6 +115,10 @@ describe("Primeiros passos (hello-agent) on the integrated Test", () => {
     expect(toolResult(model, "codespar_account")).toMatchObject({ available: true, view: "balance", accountExists: true, currencies: [{ currency: "BRL", availableMinor: 24000 }] });
     // The limit is capped at 10 before it reaches the host.
     expect(reads.calls).toEqual(["balance", "proposals:10"]);
+    // Every payee the model reads is masked, even one the host failed to mask.
+    const listed = model.seen.flat().filter((m) => m.role === "tool" && m.name === "codespar_account").map((m) => (m as { content: string }).content);
+    expect(listed.join("\n")).not.toContain("pagador@banco.example.com.br");
+    expect(listed.join("\n")).toContain("pa***@banco.example.com.br");
     expect(proposals.submitted).toEqual([]);
     const s = await run.snapshot();
     expect(s.executions).toEqual([]);

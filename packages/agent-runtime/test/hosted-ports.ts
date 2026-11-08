@@ -116,7 +116,11 @@ export class FakeReads implements PlatformReads {
   }
   async proposals(limit: number) {
     this.calls.push(`proposals:${limit}`);
-    return [{ id: "prp_fixture", state: "succeeded", amountMinor: 1000, currency: "BRL", payeeMasked: "ab***cd", createdAt: "2026-11-07T19:05:00.000Z", receiptId: "rcpt_fixture" }];
+    return [
+      { id: "prp_fixture", state: "succeeded", amountMinor: 1000, currency: "BRL", payeeMasked: "ab***cd", createdAt: "2026-11-07T19:05:00.000Z", receiptId: "rcpt_fixture" },
+      // A host that failed to mask: the kit must not pass the key on.
+      { id: "prp_leak", state: "drafted", amountMinor: 1000, currency: "BRL", payeeMasked: "pagador@banco.example.com.br", createdAt: "2026-11-07T19:06:00.000Z", receiptId: null },
+    ];
   }
 }
 
