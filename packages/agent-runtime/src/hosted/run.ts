@@ -112,9 +112,13 @@ export interface ApprovalPort {
  */
 export type RailPort = { executor: "simulator" } | { executor: "codespar-test"; proposals: ProposalRail; charges?: ChargeProposalRail; mandate?: Mandate; reads?: PlatformReads };
 
-/** Whether the kit charges (a receivable its payer pays) rather than pays out: on codespar-test its attempts are receive proposals. */
+/**
+ * Whether the kit's codespar-test executor charges through the platform's receive proposals (v1.6): it requires
+ * `platform.charges`. Keyed on the executor, not the tool effect: a `charge` tool on another rail (topup's consent pull)
+ * is not a receive proposal.
+ */
 export function chargesOf(descriptor: HostedKitDescriptor): boolean {
-  return descriptor.tools.some((t) => t.effect === "charge");
+  return descriptor.executors.some((e) => e.id === "codespar-test" && e.requires.includes("platform.charges"));
 }
 
 /**
