@@ -115,6 +115,17 @@ export type RailPort =
   | { executor: "codespar-test"; proposals: ProposalRail; mandate?: Mandate; reads?: PlatformReads }
   | { executor: "codespar-test"; pulls: PullRail; mandate: Mandate };
 
+/**
+ * The consent's mandate names one account, the person's own, under the host's alias. The kit names that account by its own
+ * alias (its example mandate's one beneficiary), so the alias is the kit's and everything else (payee, caps, status) the host's.
+ */
+function withOwnAlias(consent: Mandate, example: Mandate): Mandate {
+  const [own] = consent.beneficiaries;
+  const [mine] = example.beneficiaries;
+  if (!own || !mine || consent.beneficiaries.length !== 1 || example.beneficiaries.length !== 1) return consent;
+  return { ...consent, beneficiaries: [{ ...own, alias: mine.alias }] };
+}
+
 /** Whether a kit's `codespar-test` executor sends pulls under the person's consent (`platform.consent_pulls`) instead of drafting proposals. */
 export function pullsOnPlatform(descriptor: HostedKitDescriptor): boolean {
   return descriptor.executors.some((e) => e.id === "codespar-test" && e.requires.includes("platform.consent_pulls"));
@@ -377,7 +388,7 @@ export class HostedRun {
     } else if ("pulls" in rail) {
       // The kit's policy runs on the consent's mandate; the platform checks the consent, its limits and the payee again before it sends.
       railKind = "api";
-      built = { rail: new PlatformPullRail(this.guardedPulls(rail.pulls), store), mandate: rail.mandate };
+      built = { rail: new PlatformPullRail(this.guardedPulls(rail.pulls), store), mandate: withOwnAlias(rail.mandate, loadMandate(files.manifest.resolvePath(files.manifest.manifest.mandate_schema))) };
     } else {
       // The kit's policy runs on the host's mandate (or its own example) and the local status gate; the platform runs its own gate on the proposal.
       railKind = "api";

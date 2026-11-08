@@ -34,7 +34,8 @@ function consentMandate(): Mandate {
     per_tx_cap_minor: 10000,
     merchant_pin_kind: "merchant-id",
     merchant_allowlist: [OWN_ACCOUNT],
-    beneficiaries: [{ alias: "minha-conta", name: "Sua conta de teste", payee: OWN_ACCOUNT }],
+    // The host's alias for the project's own account; the run names it by the kit's own alias (minha-conta).
+    beneficiaries: [{ alias: "conta-propria", name: "Sua conta de teste", payee: OWN_ACCOUNT }],
     status: "active",
     expires_at: "2027-11-08T00:00:00.000Z",
     source: "consent",
