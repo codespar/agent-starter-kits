@@ -55,6 +55,18 @@ function memoryProposals() {
   };
 }
 
+// The platform's receive proposals for a charging kit (CONTRATO v1.6), in memory: a simulation of the host's port, never a provider.
+function memoryCharges() {
+  const states = new Map();
+  return {
+    states,
+    async submit(request) { const id = "prop_" + request.attemptId; if (!states.has(id)) states.set(id, { state: "drafted", receiptId: null, failureCode: null, charge: null, paid: false }); return { proposalId: id, state: states.get(id).state }; },
+    async read(id) { const s = states.get(id); if (s.paid && s.state === "executing") Object.assign(s, { state: "succeeded", receiptId: "clr_smoke_" + id }); return { state: s.state, receiptId: s.receiptId, failureCode: s.failureCode, charge: s.charge }; },
+    async payInTest(id) { const s = states.get(id); if (!s || s.state !== "executing") return { ok: false, code: "charge_not_sent", detail: id }; s.paid = true; return { ok: true, detail: "smoke payer" }; },
+    send(id) { Object.assign(states.get(id), { state: "executing", charge: { payable: true, pixCopyPaste: "00020101smoke", dueDate: null } }); },
+  };
+}
+
 const catalog = loadHostedCatalog();
 let failures = 0;
 for (const descriptor of catalog.kits) {
@@ -88,7 +100,9 @@ for (const descriptor of catalog.kits) {
   if (!executor || executor.blockedBy.length > 0) continue;
   const state = memoryState();
   const proposals = memoryProposals();
-  const ports = { identity: { actor: async () => actor }, state, approval: { signer, authorize: async () => ({ ok: true }) }, rail: { executor: "codespar-test", proposals }, model: { mode: "replay" }, clock: () => new Date("2026-09-23T14:00:00-03:00") };
+  const charges = memoryCharges();
+  const charging = executor.requires.includes("platform.charges");
+  const ports = { identity: { actor: async () => actor }, state, approval: { signer, authorize: async () => ({ ok: true }) }, rail: { executor: "codespar-test", proposals, charges }, model: { mode: "replay" }, clock: () => new Date("2026-09-23T14:00:00-03:00") };
   try {
     const kit = await openHostedKit(catalog, descriptor.id, descriptor.source.packageDigest);
     const example = descriptor.examples.find((e) => e.replay && e.id === "happy-path") ?? descriptor.examples.find((e) => e.replay);
@@ -97,10 +111,19 @@ for (const descriptor of catalog.kits) {
     let snapshot = await run.snapshot();
     const waiting = snapshot.pending.filter((p) => p.kind === "payment_proposal");
     if (waiting.length === 0) throw new Error("no proposal drafted: " + JSON.stringify(snapshot.pending));
-    for (const p of waiting) proposals.states.set(p.proposalId, { state: "succeeded", receiptId: "rcpt_smoke_" + p.proposalId, failureCode: null });
-    snapshot = await run.resume({ commandId: "resume" });
+    if (charging) {
+      // A person sends each charge; then the Test payer pays it, and the run reads it settled.
+      for (const p of waiting) charges.send(p.proposalId);
+      snapshot = await run.resume({ commandId: "resume-sent" });
+      const payers = snapshot.pending.filter((p) => p.kind === "payer" && p.simulatable);
+      if (payers.length !== waiting.length) throw new Error("a sent charge is not waiting for its payer: " + JSON.stringify(snapshot.pending));
+      for (const [i, executionId] of [...new Set(payers.map((p) => p.executionId))].entries()) snapshot = await run.simulatePayer({ commandId: "pay-" + i, executionId, behaviour: "pays" });
+    } else {
+      for (const p of waiting) proposals.states.set(p.proposalId, { state: "succeeded", receiptId: "rcpt_smoke_" + p.proposalId, failureCode: null });
+      snapshot = await run.resume({ commandId: "resume" });
+    }
     if (snapshot.executions.some((e) => e.state !== "settled")) throw new Error("not settled after the proposals were paid: " + snapshot.executions.map((e) => e.state).join(", "));
-    console.log("ok   " + descriptor.id + " [codespar-test] " + waiting.length + " proposal(s) paid by the platform, " + snapshot.executions.length + " settled");
+    console.log("ok   " + descriptor.id + " [codespar-test] " + waiting.length + (charging ? " charge proposal(s) sent and paid by the test payer (simulated port), " : " proposal(s) paid by the platform, ") + snapshot.executions.length + " settled");
   } catch (err) {
     failures += 1;
     console.log("FAIL " + descriptor.id + " [codespar-test]: " + (err instanceof Error ? err.message : String(err)));

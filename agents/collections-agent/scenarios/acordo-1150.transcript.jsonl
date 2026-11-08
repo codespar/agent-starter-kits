@@ -1,0 +1,4 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "list_agreements", "input": {}}]}
+{"kind": "assistant_step", "reply": "Oi, Bruno! Aqui é o atendimento da loja sobre o pedido #1150, R$ 30,00 em aberto. Posso fechar à vista com 10% de desconto, R$ 27,00, vencendo hoje (23/09). Pode ser?"}
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_2", "name": "codespar_charge", "input": {"action": "create", "agreement": "acordo-1150", "instalments": [{"amount_minor": 2700, "due_date": "2026-09-23"}], "total_minor": 2700}}]}
+{"kind": "assistant_step", "reply": "Recebemos, acordo quitado. Obrigada, Bruno! O pedido #1150 está encerrado."}

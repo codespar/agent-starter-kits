@@ -273,6 +273,11 @@ export interface AgentKit {
   /** The one line `eval` prints per scenario run and per adversarial case. */
   evalScenarioLine?(check: ScenarioCheck): string;
   evalAdversarialLine?(result: AdversarialResult): string;
-  /** What the hosted catalog cannot derive from `tools.json`. Validated against the tool effects. */
-  hosted?: { outcomeKinds?: readonly OutcomeKind[] };
+  /**
+   * What the hosted catalog cannot derive from `tools.json`. `outcomeKinds` is validated against the tool effects.
+   * `platformServes` names the `maturity` capabilities that, on `codespar-test`, are the platform's own operation reached
+   * through its proposals (a charge: a receive proposal the platform issues and its payer pays), not this kit's API rail;
+   * their `blocked` in `agent.yaml` speaks for the standalone rail and does not block that executor (CONTRATO v1.6).
+   */
+  hosted?: { outcomeKinds?: readonly OutcomeKind[]; platformServes?: readonly string[] };
 }

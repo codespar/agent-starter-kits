@@ -33,6 +33,10 @@ import { STRINGS } from "./strings.js";
 const kit: AgentKit = {
   settlement: "await-payer",
   scenarioRail: "requested",
+  // bolepix-receivables is lifted ONLY for the codespar-test executor, which goes through the platform's charge port (a
+  // receive proposal the platform issues as a Collect charge at the provider's sandbox). The kit's standalone `--rail api`
+  // (`POST /v1/charges`) stays blocked in agent.yaml while ent#1816 is open (CONTRATO v1.6).
+  hosted: { platformServes: ["bolepix-receivables"] },
 
   labels: {
     defaultUser: "usr_operator",
@@ -110,7 +114,7 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
     };
   },
 
-  handlers: (setup) => makeHandlers(loadEnvelope(setup.guardrails), () => setup.locale),
+  handlers: (setup) => makeHandlers(loadEnvelope(setup.guardrails), () => setup.locale, setup.rail),
   policyExtension: ({ guardrails, locale }) => envelopePolicy(loadEnvelope(guardrails), locale),
 
   describeExecution: (execution, setup) => {

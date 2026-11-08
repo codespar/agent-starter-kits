@@ -8,7 +8,7 @@ import { hmacSigner, type AgentRuntime, type ConversationMessage, type Reply, ty
 import { loadAgent } from "../src/agent.js";
 import { describeKit } from "../src/hosted/catalog.js";
 import type { HostedEvent } from "../src/hosted/contract.js";
-import { FencedError, type ProposalRail, type ProposalState } from "../src/hosted/proposals.js";
+import { FencedError, type ChargeProposalRail, type ChargeView, type ProposalRail, type ProposalState } from "../src/hosted/proposals.js";
 import type { ApprovalPort, HostedActor, HostedKit, HostedPorts, IdentityPort, ModelPort, RailPort, RunImage, StatePort } from "../src/hosted/run.js";
 
 export const ACTOR: HostedActor = { userId: "user_fixture_owner", orgId: "org_fixture", projectId: "prj_fixture", environment: "test" };
@@ -99,6 +99,51 @@ export class FakeProposals implements ProposalRail {
   /** Aprovações or the person refused it. */
   deny(proposalId: string): void {
     this.states.set(proposalId, { state: "denied", receiptId: null, failureCode: null });
+  }
+}
+
+/**
+ * The platform's charge proposals as the host would offer them, IN MEMORY: a simulation for this suite, never a provider. One
+ * receive proposal per attempt, by id; sent and paid only when a test says so, the way a person and the Test payer would.
+ */
+export class FakeCharges implements ChargeProposalRail {
+  readonly submitted: Array<Parameters<ChargeProposalRail["submit"]>[0]> = [];
+  readonly payments: string[] = [];
+  private readonly states = new Map<string, { state: ProposalState; receiptId: string | null; failureCode: string | null; charge: ChargeView | null; paid: boolean }>();
+  async submit(request: Parameters<ChargeProposalRail["submit"]>[0]) {
+    const proposalId = `prop_${request.attemptId}`;
+    if (!this.states.has(proposalId)) {
+      this.submitted.push(structuredClone(request));
+      this.states.set(proposalId, { state: "drafted", receiptId: null, failureCode: null, charge: null, paid: false });
+    }
+    return { proposalId, state: this.states.get(proposalId)!.state };
+  }
+  async read(proposalId: string) {
+    const found = this.states.get(proposalId);
+    if (!found) throw new Error(`no proposal ${proposalId}`);
+    // The payment the Test payer sent is seen at the next read, as the platform's confirmation would be.
+    if (found.paid && found.state === "executing") Object.assign(found, { state: "succeeded", receiptId: `clr_fake_${proposalId}` });
+    const { paid: _paid, ...read } = found;
+    return structuredClone(read);
+  }
+  /** Set: the charge is still registering at the provider, and the Test payer cannot pay it yet. */
+  notReady = false;
+  async payInTest(proposalId: string) {
+    if (this.notReady) return { ok: false as const, code: "charge_not_payable_yet", detail: `${proposalId} waits for its copy-and-paste` };
+    const found = this.states.get(proposalId);
+    if (!found || found.state !== "executing") return { ok: false as const, code: "charge_not_sent", detail: `${proposalId} was not sent` };
+    if (!found.paid) this.payments.push(proposalId);
+    found.paid = true;
+    return { ok: true as const, detail: `fake test payer paid ${proposalId}` };
+  }
+  /** A verified person sent it on its card: the platform issued the charge, payable with this copy-and-paste. */
+  send(proposalId: string, copyPaste = "00020101fake-copy-paste"): void {
+    const found = this.states.get(proposalId)!;
+    Object.assign(found, { state: "executing", charge: { payable: true, pixCopyPaste: copyPaste, dueDate: null } });
+  }
+  /** The person declined it on its card. */
+  decline(proposalId: string): void {
+    Object.assign(this.states.get(proposalId)!, { state: "denied" });
   }
 }
 
