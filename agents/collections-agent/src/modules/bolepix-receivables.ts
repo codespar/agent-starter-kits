@@ -100,7 +100,7 @@ export function makeHandlers(envelope: Envelope, locale: () => Locale = () => "p
 }
 
 function describe(execution: import("@codespar/agent-core").Execution, rail: Pick<PaymentRail, "name">) {
-  // Hosted on codespar-test the charge is a platform proposal: a person sends it on its card, then the payer pays (v1.5).
+  // Hosted on codespar-test the charge is a platform proposal: a person sends it on its card, then the payer pays (v1.6).
   const awaiting = chargeProposalAwaiting(execution, rail);
   const charges = execution.outcomes.map((o) => ({
     instalment: o.index + 1,

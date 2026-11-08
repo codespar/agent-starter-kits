@@ -91,7 +91,7 @@ describe("buildCatalog", () => {
     expect(elsewhere.supportedExecutors).toEqual(["simulator"]);
   });
 
-  it("v1.5: a capability the platform serves on codespar-test does not block it, and one that is not in the manifest is refused", async () => {
+  it("v1.6: a capability the platform serves on codespar-test does not block it, and one that is not in the manifest is refused", async () => {
     const agent = await loadAgent(TEST_KIT);
     const dir = mkdtempSync(join(ROOT, "packages/agent-runtime/test/fixtures/kits/.served-"));
     cpSync(TEST_KIT, dir, { recursive: true });

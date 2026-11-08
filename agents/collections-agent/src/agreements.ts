@@ -20,6 +20,8 @@ export const AGREEMENTS: Agreement[] = [
   { alias: "acordo-1042", debtor: "Joana Ribeiro", first_name: "Joana", document: "11144477735", principal_minor: 120000, origin: "pedido #1042, duas parcelas em atraso", opened_at: "2026-08-15" },
   { alias: "acordo-1077", debtor: "Carlos Mendes", first_name: "Carlos", document: "52998224725", principal_minor: 600000, origin: "pedido #1077, fatura vencida em julho", opened_at: "2026-08-02" },
   { alias: "acordo-1103", debtor: "Ana Paula Souza", first_name: "Ana Paula", document: "39053344705", principal_minor: 45000, origin: "pedido #1103, saldo restante", opened_at: "2026-09-01" },
+  // The integrated Test's first run (acordo-1150): small enough for the platform's Test payer, within R$ 10–30.
+  { alias: "acordo-1150", debtor: "Bruno Alves", first_name: "Bruno", document: "71428563008", principal_minor: 3000, origin: "pedido #1150, taxa de entrega em aberto", opened_at: "2026-09-10" },
 ];
 
 export function agreementByAlias(alias: string): Agreement | undefined {

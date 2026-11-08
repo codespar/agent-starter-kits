@@ -14,7 +14,7 @@
     "max_discount_pct": 15,
     "max_instalments": 3,
     "due_date_window_days": 90,
-    "min_instalment_minor": 5000,
+    "min_instalment_minor": 1000,
     "collection_hours": "08:00-20:00"
   }
 }

@@ -87,8 +87,9 @@ const kit: AgentKit = {
   // A sale: the order the attendant confirms and the charge it issues are two outcomes, each with its own state.
   hosted: {
     outcomeKinds: ["answer", "order", "charge"],
-    // On codespar-test the charge is the platform's own (a receive proposal it issues at the provider's sandbox), not this
-    // kit's `POST /v1/charges`: the `blocked` in agent.yaml is about that standalone rail (CONTRATO v1.5).
+    // bolepix-receivables is lifted ONLY for the codespar-test executor, which goes through the platform's charge port (a
+    // receive proposal the platform issues as a Collect charge at the provider's sandbox). The kit's standalone `--rail api`
+    // (`POST /v1/charges`) stays blocked in agent.yaml while ent#1816 is open (CONTRATO v1.6).
     platformServes: ["bolepix-receivables"],
   },
   scenarioRail: "requested",
@@ -282,7 +283,7 @@ options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript 
   /**
    * Checkout §4: a paid order opens its NFS-e, an execution of its own that never moves the sale. Hosted on codespar-test
    * (the sale was a platform proposal) the channel has no invoice issuer: the stub issuer would be a simulation inside an
-   * integrated run, so nothing is issued and the bundle says so (CONTRATO v1.5).
+   * integrated run, so nothing is issued and the bundle says so (CONTRATO v1.6).
    */
   followUp: async (execution, setup, say) => {
     if (setup.rail.name === "codespar-proposal") {

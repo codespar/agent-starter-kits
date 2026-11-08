@@ -35,6 +35,8 @@ export const CATALOG: CatalogItem[] = [
   { sku: "pacote-10-aulas", title: "Pacote de 10 aulas de violão", category: "aula", price_minor: 39000, cost_minor: 30000, available: true, service_code: "8.02" },
   { sku: "avaliacao-inicial", title: "Avaliação inicial de nível", category: "avaliacao", price_minor: 8990, cost_minor: 3000, available: true, service_code: "8.02" },
   { sku: "consultoria-1h", title: "Consultoria de carreira musical (1 h)", category: "consultoria", price_minor: 20000, cost_minor: 9000, available: true, service_code: "17.01" },
+  // The integrated Test's first run (aula-experimental): small enough for the platform's Test payer, within R$ 10–30.
+  { sku: "aula-experimental", title: "Aula experimental de violão (30 min)", category: "aula", price_minor: 2500, cost_minor: 1000, available: true, service_code: "8.02" },
   { sku: "ingresso-recital", title: "Ingresso para o recital de dezembro", category: "ingresso", price_minor: 4500, cost_minor: 1500, available: true, stock: 4, service_code: "12.07" },
   { sku: "masterclass-producao", title: "Masterclass de produção musical", category: "masterclass", price_minor: 25000, cost_minor: 10000, available: false, service_code: "8.02" },
 ];
