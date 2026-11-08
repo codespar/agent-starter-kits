@@ -11,7 +11,23 @@
  * when the platform's policy parks it. `lookup` reads the proposal back and
  * answers what it became. The kit holds no client, no key and no way to pay.
  */
-import type { ChargeInstrument, PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt, StateStore } from "@codespar/agent-core";
+import type { ChargeInstrument, Execution, PaymentRail, RailLookup, RailOutcome, RailPayment, RailReceipt, StateStore } from "@codespar/agent-core";
+
+/** The approver channel of a kit approval the hosted run forwarded to a platform proposal: it approves the draft, never the payment. */
+export const PROPOSAL_FORWARD_CHANNEL = "platform-proposal";
+
+/** Whether the kit's approval of `execution` was a forward to a platform proposal (`codespar-test`), not a person's or the mandate's decision. */
+export function forwardedToProposal(execution: Execution): boolean {
+  return execution.history.some((h) => h.to === "approved" && h.actor.type === "human" && h.actor.channel === PROPOSAL_FORWARD_CHANNEL);
+}
+
+/**
+ * A payment that became a platform proposal and waits for a person to decide it (pay or decline, on its card). Nothing is
+ * approved or paid while this holds; a kit tells the model so instead of a state that reads as "approved, settling".
+ */
+export function awaitingProposalDecision(execution: Execution): boolean {
+  return execution.state === "executing" && execution.reason === "awaiting_settlement" && forwardedToProposal(execution);
+}
 
 /**
  * The host's refusal of a process that no longer holds the run: another one took the lease (`lease_lost`), or the host fenced

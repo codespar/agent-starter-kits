@@ -13,14 +13,14 @@
           "id": "bills-agent",
           "version": "0.1.0",
           "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-          "packageDigest": "sha256:932424049f7d014b375f55890d1e2cb8c223a65f9739d489b5e9329cb8a25893"
+          "packageDigest": "sha256:7002947bf2943609d97061f7f325811b93900a775fbbd1db20a1339ae85729d5"
         },
         "modelMode": "replay",
         "executor": "simulator",
         "approvalMode": "human",
         "locale": "pt-BR",
         "exampleId": "happy-path",
-        "inputRevision": "sha256:cb4044d9ba4a8fe4f83ae4322705ebe41dd95d1ac3149a056e8cda41bf3d8736"
+        "inputRevision": "sha256:fb53115c69da02a568eeb41a70913483a13743f7fc5d5b793f48cbee50c8a2b5"
       }
     },
     {
@@ -221,7 +221,7 @@
       },
       "data": {
         "turnId": "turn_1",
-        "text": "Propus o pagamento da Escola Aurora, R$ 1.850,00 (mensalidade de outubro). O resultado está no terminal.",
+        "text": "Propus o pagamento da Escola Aurora, R$ 1.850,00 (mensalidade de outubro). O resultado está no painel desta execução.",
         "truncated": false
       }
     }

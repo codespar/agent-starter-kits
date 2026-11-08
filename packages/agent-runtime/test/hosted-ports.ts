@@ -62,15 +62,20 @@ export class MemoryState implements StatePort {
 export class FakeProposals implements ProposalRail {
   readonly submitted: Array<Parameters<ProposalRail["submit"]>[0]> = [];
   private readonly states = new Map<string, { state: ProposalState; receiptId: string | null; failureCode: string | null }>();
+  /** The state a new proposal is drafted in: the platform answers `drafted` until the person opens it. */
+  initialState: ProposalState = "awaiting_approval";
+  /** Proposals whose next read fails the way a timeout does: a transient error, not an answer. */
+  readonly failNextRead = new Set<string>();
   async submit(request: Parameters<ProposalRail["submit"]>[0]) {
     const proposalId = `prop_${request.attemptId}`;
     if (!this.states.has(proposalId)) {
       this.submitted.push(structuredClone(request));
-      this.states.set(proposalId, { state: "awaiting_approval", receiptId: null, failureCode: null });
+      this.states.set(proposalId, { state: this.initialState, receiptId: null, failureCode: null });
     }
     return { proposalId, state: this.states.get(proposalId)!.state };
   }
   async read(proposalId: string) {
+    if (this.failNextRead.delete(proposalId)) throw new Error(`timeout reading ${proposalId}`);
     const found = this.states.get(proposalId);
     if (!found) throw new Error(`no proposal ${proposalId}`);
     return found;

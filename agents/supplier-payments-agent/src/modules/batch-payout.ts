@@ -55,6 +55,7 @@
  * cover.
  */
 import { batchHash, isReplayedSettlement, isTerminal, type BatchGesture, type Execution, type ExecutionItem, type ProposedItem, type ToolContext } from "@codespar/agent-core";
+import { awaitingProposalDecision } from "@codespar/agent-runtime";
 import { batchTotal, formatBRL, type Batch, type PayableLine } from "../payables.js";
 
 /** What happened to one line of the batch. `dispatch` is the part an operator reads first. */
@@ -82,7 +83,7 @@ export interface BatchLineReport {
    * execution is `settled` because the money is; the report does not say
    * `settled` because that would count the payment once per machine.
    */
-  dispatch: "settled" | "replayed" | "refused" | "awaiting_decision" | "uncertain" | "already_settled" | "in_progress" | "attempt_id_conflict";
+  dispatch: "settled" | "replayed" | "refused" | "awaiting_decision" | "awaiting_proposal_decision" | "uncertain" | "already_settled" | "in_progress" | "attempt_id_conflict";
   /** The receipt of the execution this line names, when it has one. For `replayed`, the receipt of the ORIGINAL payment. */
   receipt_id: string | null;
 }
@@ -122,6 +123,8 @@ export interface BatchReport {
   skipped: string[];
   /** Lines a person denied, by alias: a decision, reported, and a subset of `failed`. */
   denied: string[];
+  /** Lines that became platform proposals waiting for a person to pay or decline them (codespar-test), by alias. Not failed, not paid. */
+  awaiting_proposal_decision: string[];
   /** Present when the channel took ONE gesture for the whole list: what it approved and vetoed, by position. */
   gesture?: BatchGesture;
   total_minor: number;
@@ -205,6 +208,8 @@ function dispatchOf(execution: Execution): BatchLineReport["dispatch"] {
   if (execution.state === "settled") return "settled";
   if (heldForAnotherPayment(execution)) return "attempt_id_conflict";
   if (execution.state === "awaiting_approval") return "awaiting_decision";
+  // A platform proposal waiting for a person to pay or decline it (codespar-test): not approved, not paid, not uncertain.
+  if (awaitingProposalDecision(execution)) return "awaiting_proposal_decision";
   // Still `executing` after the channel ran it: the rail did not say. Never
   // re-sent here; `npm run reconcile` is what closes it.
   if (execution.state === "executing") return "uncertain";
@@ -396,6 +401,7 @@ function summarise(batch: Batch, presented: string, lines: BatchLineReport[], re
     failed: lines.filter((l) => l.dispatch === "refused" || l.dispatch === "uncertain" || l.dispatch === "attempt_id_conflict").map((l) => l.alias),
     skipped: lines.filter((l) => l.dispatch === "already_settled" || l.dispatch === "in_progress").map((l) => l.alias),
     denied: lines.filter((l) => l.state === "denied" && l.reason === "denied_by_approver").map((l) => l.alias),
+    awaiting_proposal_decision: lines.filter((l) => l.dispatch === "awaiting_proposal_decision").map((l) => l.alias),
     total_minor: total,
     total: formatBRL(total),
     ...(refused ? { refused } : {}),

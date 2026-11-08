@@ -12,6 +12,7 @@
  * supplier payment that is not part of a run.
  */
 import { daysUntil, isReplayedSettlement, type ToolHandler } from "@codespar/agent-core";
+import { awaitingProposalDecision } from "@codespar/agent-runtime";
 import { MONTH, batchTotal, batchesFor, findBatch, formatBRL } from "../payables.js";
 import { lineStatus, runBatch } from "./batch-payout.js";
 
@@ -101,6 +102,8 @@ export const codesparPay: ToolHandler = async (raw, ctx) => {
     items: execution.items.map((i) => ({ payee: i.beneficiary, amount: formatBRL(i.amount) })),
     ...(execution.reason ? { reason: execution.reason, detail: execution.detail } : {}),
     ...(execution.escalation ? { escalated_by: execution.escalation.trigger } : {}),
+    // A platform proposal waiting for the person (codespar-test): nothing is approved or paid yet, whatever the state reads like.
+    ...(awaitingProposalDecision(execution) ? { awaiting: "person_decision_on_proposal" } : {}),
     receipt_ids: execution.outcomes.filter((o) => o.receipt_id).map((o) => o.receipt_id),
     // Settled by an earlier presentation of the same attempt: the payment exists, and this call did not make it.
     replayed: isReplayedSettlement(execution),
