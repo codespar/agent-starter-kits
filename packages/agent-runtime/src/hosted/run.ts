@@ -107,7 +107,7 @@ export interface ApprovalPort {
  * `simulator`: the kit's own stub rail and example mandate, in the run's private store.
  * `codespar-test`: each attempt is a platform proposal drafted through `proposals`; a person pays it, the platform dispatches it.
  * The kit gets no client and no key. `mandate` is the one the host binds the kit's own policy to; absent, the kit's example.
- * `codespar-test` of a pull kit (CONTRATO v1.6): each attempt is a pull sent through `pulls` under the person's own consent at
+ * `codespar-test` of a pull kit (CONTRATO v1.7): each attempt is a pull sent through `pulls` under the person's own consent at
  * their bank, which they sign there. `mandate` is that consent's, built by the host; never the Playground's spending mandate.
  */
 export type RailPort =

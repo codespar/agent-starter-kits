@@ -102,7 +102,7 @@ for (const descriptor of catalog.kits) {
   try {
     const kit = await openHostedKit(catalog, descriptor.id, descriptor.source.packageDigest);
     if (executor.requires.includes("platform.consent_pulls")) {
-      // A pull kit (v1.6), against an IN-MEMORY stand-in of the host's pull port (a SIMULATION: no platform, no bank): the
+      // A pull kit (v1.7), against an IN-MEMORY stand-in of the host's pull port (a SIMULATION: no platform, no bank): the
       // kit's own example mandate, re-pointed at one consented account; one pull per attempt; signed only when this says so.
       const payee = "fs_smoke_own_account";
       const base = JSON.parse(readText(joinPath(kit.agent.dir, "mandate.example.json"), "utf8"));

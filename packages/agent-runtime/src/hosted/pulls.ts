@@ -1,5 +1,5 @@
 /**
- * The `codespar-test` executor of a pull kit (CONTRATO.md v1.6): the kit's
+ * The `codespar-test` executor of a pull kit (CONTRATO.md v1.7): the kit's
  * attempt becomes a pull the platform asks the person's own bank for, under
  * the consent the person gave at that bank (Pix com biometria, Iniciador's
  * sandbox in Test). The person signs each pull on the bank's page; the kit

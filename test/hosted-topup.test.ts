@@ -1,5 +1,5 @@
 /**
- * Recarga (topup-agent) on the integrated Test (CONTRATO v1.6), through the
+ * Recarga (topup-agent) on the integrated Test (CONTRATO v1.7), through the
  * hosted channel with a scripted model and IN-MEMORY ports: the pulls and the
  * state here are a SIMULATION of the host, not the platform and not the
  * provider's sandbox. What they prove is the kit's side: that a pull goes
@@ -106,6 +106,8 @@ describe("Recarga (topup-agent) on the integrated Test", () => {
     const presented = (state.log.get(run.runId) ?? []).filter((e) => e.type === "instrument.presented");
     expect(presented.map((e) => (e.data as { consentUrl: string | null }).consentUrl)).toEqual([null]);
     expect(JSON.stringify(state.log.get(run.runId))).not.toMatch(/https?:\/\//);
+    // Nor in the durable image (store, history, bundle): the bank's page lives only in the host's answer to a click.
+    expect(JSON.stringify((await state.load(run.runId))!.image)).not.toMatch(/https?:\/\//);
 
     pulls.sign(pullId!, "E44471172202611082256U8b4e759cc1");
     const settled = await run.resume({ commandId: "r-1" });

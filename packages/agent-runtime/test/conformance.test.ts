@@ -112,7 +112,7 @@ describe.each(ALL.map((dir) => [dir.split("/").pop()!, dir]))("%s", (_name, dir)
     for (const e of d.executors) for (const capability of e.blockedBy) expect(manifest.maturity[capability] === "blocked" || PLATFORM_GAPS.includes(capability), capability).toBe(true);
     // codespar-test: money on the CodeSpar API, as platform proposals (CONTRATO.md v1.1); a kit on another rail has none.
     // A read-only kit gets it when it reads the Test project through the host (CONTRATO v1.5), and then needs only the project.
-    // A pull kit gets it when the host sends its pulls under the person's own consent (CONTRATO v1.6), on any terminal rail.
+    // A pull kit gets it when the host sends its pulls under the person's own consent (CONTRATO v1.7), on any terminal rail.
     const consentPulls = moves && Boolean(agent.kit.hosted?.consentPulls);
     expect(d.supportedExecutors.includes("codespar-test")).toBe(consentPulls || ((moves || Boolean(agent.kit.hosted?.readsPlatform)) && agent.kit.apiRailKey !== "none"));
     if (consentPulls) expect(d.executors.find((e) => e.id === "codespar-test")).toMatchObject({ evidence: "rail_record", requires: ["platform.test_project", "platform.consent_pulls"] });

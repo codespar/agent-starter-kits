@@ -122,7 +122,7 @@ export class FakeReads implements PlatformReads {
 }
 
 /**
- * SIMULATION of the host's pull port (CONTRATO v1.6): one pull per attempt, by id, under a consent that exists or not. The
+ * SIMULATION of the host's pull port (CONTRATO v1.7): one pull per attempt, by id, under a consent that exists or not. The
  * person signs it, or lets it time out, only when a test says so. Never the platform, never a bank, never the provider's sandbox.
  */
 export class FakePulls implements PullRail {
