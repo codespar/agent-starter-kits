@@ -33,6 +33,13 @@ agents_md: ./AGENTS.md
 # What a person reads about this agent where it is offered (the Playground's catalog). pt-BR reviewed by the Playground's
 # product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
 presentation:
+  # In the integrated Test (codespar-test, with a model) the order's charge is a platform receive proposal: the person sends it
+  # on its card and the platform's Test payer pays it at the provider's sandbox (CONTRATO v1.5). `ingresso-recital` is R$ 45,00.
+  recommendedRuns:
+    - executor: codespar-test
+      modelMode: model
+      example: ingresso-recital
+      rank: 4
   pt-BR:
     title: "Vendas na conversa"
     summary: "Monta o carrinho com o preço do catálogo, confirma o pedido com o atendente e gera a cobrança para o cliente pagar."
@@ -61,6 +68,9 @@ presentation:
       happy-path:
         title: "Pacote de aulas"
         description: "A cliente pede o pacote de dez aulas e uma avaliação; o pedido é confirmado e a cobrança é paga."
+      ingresso-recital:
+        title: "Ingresso para o recital"
+        description: "A cliente pede um ingresso de R$ 45,00; o pedido é confirmado e a cobrança, com vencimento hoje, é paga."
       item-unavailable:
         title: "Item fora de venda"
         description: "Um item que não está à venda é recusado e o agente sugere uma alternativa."
@@ -107,6 +117,9 @@ presentation:
       happy-path:
         title: "Lesson package"
         description: "The customer asks for the ten-lesson package and an assessment; the order is confirmed and the charge is paid."
+      ingresso-recital:
+        title: "Recital ticket"
+        description: "The customer asks for one R$ 45.00 ticket; the order is confirmed and the charge, due today, is paid."
       item-unavailable:
         title: "Item not for sale"
         description: "An item that is not for sale is refused and the agent suggests an alternative."

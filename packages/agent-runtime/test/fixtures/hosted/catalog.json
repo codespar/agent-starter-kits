@@ -382,6 +382,7 @@
               "coupon-unknown",
               "escalated-above-threshold",
               "happy-path",
+              "ingresso-recital",
               "item-unavailable",
               "mandate-revoked",
               "nfse-failed",
@@ -441,10 +442,7 @@
             "platform.consumer_mandate",
             "platform.charges"
           ],
-          "blockedBy": [
-            "bolepix-receivables",
-            "platform.charge_proposals"
-          ]
+          "blockedBy": []
         }
       ],
       "outcomeKinds": [
@@ -493,7 +491,14 @@
         }
       },
       "recommended": null,
-      "recommendedRuns": [],
+      "recommendedRuns": [
+        {
+          "executor": "codespar-test",
+          "modelMode": "model",
+          "example": "ingresso-recital",
+          "rank": 4
+        }
+      ],
       "exampleIds": [
         "beneficiary-not-allowed",
         "cap-exceeded",
@@ -503,6 +508,7 @@
         "coupon-unknown",
         "escalated-above-threshold",
         "happy-path",
+        "ingresso-recital",
         "item-unavailable",
         "mandate-revoked",
         "nfse-failed",
@@ -725,6 +731,33 @@
           }
         },
         {
+          "id": "ingresso-recital",
+          "description": "The first run in the integrated Test: Beatriz asks for one ticket to the December recital; the code prices the cart (R$ 45,00); she accepts and asks to pay; the attendant confirms the order (human) or the sales policy does (mandate), and ONE bolepix due today is issued for it. On the simulator the stub rail issues and the stub payer pays; hosted on codespar-test the charge is a platform receive proposal the person sends, the platform issues at the provider's sandbox and its Test payer pays. Same trail in both modes.",
+          "approvalModes": [
+            "human",
+            "mandate"
+          ],
+          "turns": [
+            {
+              "input": "oi, sou a Beatriz. quero um ingresso para o recital de dezembro"
+            },
+            {
+              "input": "fechado, pode gerar o pagamento"
+            }
+          ],
+          "replay": true,
+          "presentation": {
+            "pt-BR": {
+              "title": "Ingresso para o recital",
+              "description": "A cliente pede um ingresso de R$ 45,00; o pedido é confirmado e a cobrança, com vencimento hoje, é paga."
+            },
+            "en": {
+              "title": "Recital ticket",
+              "description": "The customer asks for one R$ 45.00 ticket; the order is confirmed and the charge, due today, is paid."
+            }
+          }
+        },
+        {
           "id": "item-unavailable",
           "description": "A line of the catalog that is not for sale: validation_issues names it (item_unavailable), the agent offers an alternative, nothing is ordered or issued.",
           "approvalModes": [
@@ -912,6 +945,7 @@
           },
           "exampleId": {
             "enum": [
+              "acordo-1103",
               "beneficiary-not-allowed",
               "cap-exceeded",
               "charge-expired",
@@ -969,10 +1003,7 @@
             "platform.consumer_mandate",
             "platform.charges"
           ],
-          "blockedBy": [
-            "bolepix-receivables",
-            "platform.charge_proposals"
-          ]
+          "blockedBy": []
         }
       ],
       "outcomeKinds": [
@@ -1012,8 +1043,16 @@
         }
       },
       "recommended": null,
-      "recommendedRuns": [],
+      "recommendedRuns": [
+        {
+          "executor": "codespar-test",
+          "modelMode": "model",
+          "example": "acordo-1103",
+          "rank": 5
+        }
+      ],
       "exampleIds": [
+        "acordo-1103",
         "beneficiary-not-allowed",
         "cap-exceeded",
         "charge-expired",
@@ -1024,6 +1063,33 @@
         "prompt-injection"
       ],
       "examples": [
+        {
+          "id": "acordo-1103",
+          "description": "The first run in the integrated Test: the payer of agreement 1103 (R$ 450,00) asks about it and pays in full with the envelope's 10% discount, R$ 405,00 due today. On the simulator the stub rail issues and the stub payer pays; hosted on codespar-test the charge is a platform receive proposal the person sends, the platform issues at the provider's sandbox and its Test payer pays. Same trail in both modes.",
+          "approvalModes": [
+            "human",
+            "mandate"
+          ],
+          "turns": [
+            {
+              "input": "oi, sou a Ana Paula, recebi a mensagem sobre o acordo do pedido 1103"
+            },
+            {
+              "input": "fechado, pago à vista hoje"
+            }
+          ],
+          "replay": true,
+          "presentation": {
+            "pt-BR": {
+              "title": "Acordo à vista, hoje",
+              "description": "A devedora do acordo 1103 paga à vista com desconto; a cobrança vence hoje e é paga."
+            },
+            "en": {
+              "title": "Paid in full, today",
+              "description": "The payer of agreement 1103 pays in full with a discount; the charge is due today and is paid."
+            }
+          }
+        },
         {
           "id": "beneficiary-not-allowed",
           "description": "A payer with no open agreement in the book: the model that complies proposes a charge to an unknown debtor. In human the operator is told and cannot approve it; in mandate it is refused at draft. Never an execution.",

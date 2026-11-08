@@ -33,6 +33,9 @@ import { STRINGS } from "./strings.js";
 const kit: AgentKit = {
   settlement: "await-payer",
   scenarioRail: "requested",
+  // On codespar-test the receivable is the platform's own charge (a receive proposal it issues at the provider's sandbox), not
+  // this kit's `POST /v1/charges`: the `blocked` below in agent.yaml is about that standalone rail (CONTRATO v1.5).
+  hosted: { platformServes: ["bolepix-receivables"] },
 
   labels: {
     defaultUser: "usr_operator",
@@ -110,7 +113,7 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
     };
   },
 
-  handlers: (setup) => makeHandlers(loadEnvelope(setup.guardrails), () => setup.locale),
+  handlers: (setup) => makeHandlers(loadEnvelope(setup.guardrails), () => setup.locale, setup.rail),
   policyExtension: ({ guardrails, locale }) => envelopePolicy(loadEnvelope(guardrails), locale),
 
   describeExecution: (execution, setup) => {

@@ -22,7 +22,8 @@
  * No input carries an amount. `total_minor` is recorded and, with
  * `model_total_mismatch: refuse`, refuses a total the model got wrong.
  */
-import type { Execution, ExecutionEngine, Locale, Proposal, ToolHandler } from "@codespar/agent-core";
+import type { Execution, ExecutionEngine, Locale, PaymentRail, Proposal, ToolHandler } from "@codespar/agent-core";
+import { chargeProposalAwaiting } from "@codespar/agent-runtime";
 import { MERCHANT, formatBRL, formatDate } from "../catalog.js";
 import { localDate } from "../pricing.js";
 import { claimOrder, currentCart, orderOf, resolveCart, type Cart, type CartBook } from "./storefront-cart.js";
@@ -46,6 +47,8 @@ export interface OrderDeps {
   boundCustomer?: () => string | undefined;
   /** The run's locale, read at call time: an order's status message is worded in it. Default pt-BR. */
   locale?: () => Locale;
+  /** The run's rail: hosted on codespar-test the charge is a platform proposal a person sends first (CONTRATO v1.5). */
+  rail?: Pick<PaymentRail, "name">;
 }
 
 const OPEN = new Set(["awaiting_approval", "approved"]);
@@ -96,18 +99,18 @@ export function makeChargeHandlers(deps: OrderDeps): Record<string, ToolHandler>
     if (action === "status") {
       const { order, cart } = findOrder(ctx.engine, input);
       if (!order) return { found: false, message: cart ? text().noOrderForCart(cart.cart_id) : text().noOrder };
-      return { found: true, ...describe(order, cart) };
+      return { found: true, ...describe(order, cart, deps.rail) };
     }
 
     if (action === "issue") {
       const { order, cart } = findOrder(ctx.engine, input);
       if (!order) throw new Error("codespar_charge: no order to issue; create the order from the cart first (action=create)");
-      if (order.state !== "approved") return { ...describe(order, cart), message: messageFor(order, text()) };
+      if (order.state !== "approved") return { ...describe(order, cart, deps.rail), message: messageFor(order, text(), deps.rail) };
       // The cart may have moved since the order was approved; the order follows it, and the last gate compares.
       if (cart) followCart(cart, ctx.engine, deps);
       const executed = await ctx.engine.execute(order.id);
       const handled = await ctx.onExecution(executed);
-      return describe(handled, cart ?? undefined);
+      return { ...describe(handled, cart ?? undefined, deps.rail), message: messageFor(handled, text(), deps.rail) };
     }
 
     if (action !== "create") throw new Error(`codespar_charge: unsupported action ${String(action)}; this agent creates an order, issues its charge and reads it`);
@@ -127,7 +130,7 @@ export function makeChargeHandlers(deps: OrderDeps): Record<string, ToolHandler>
     if (existing && (OPEN.has(existing.state) || existing.state === "executing" || existing.state === "settled")) {
       if (OPEN.has(existing.state)) followCart(cart, ctx.engine, deps);
       const current = ctx.engine.get(existing.id)!;
-      return { ...describe(current, cart), message: text().alreadyOrdered(current.id) };
+      return { ...describe(current, cart, deps.rail), message: text().alreadyOrdered(current.id) };
     }
 
     const claimed = typeof input.total_minor === "number" ? input.total_minor : undefined;
@@ -139,13 +142,16 @@ export function makeChargeHandlers(deps: OrderDeps): Record<string, ToolHandler>
     }
     claimOrder(ctx.engine, cart, draft.execution.id);
     const decided = await ctx.onExecution(draft.execution);
-    return { ...describe(decided, cart), message: messageFor(decided, text()) };
+    return { ...describe(decided, cart, deps.rail), message: messageFor(decided, text(), deps.rail) };
   };
 
   return { codespar_charge: codesparCharge };
 }
 
-function messageFor(order: Execution, text: (typeof STRINGS)[Locale]): string {
+function messageFor(order: Execution, text: (typeof STRINGS)[Locale], rail?: Pick<PaymentRail, "name">): string {
+  const awaiting = rail ? chargeProposalAwaiting(order, rail) : null;
+  if (awaiting === "person_sends_charge_on_proposal") return text.orderChargeAwaitingSend;
+  if (awaiting === "payer_pays_charge") return text.orderChargeSent;
   switch (order.state) {
     case "approved":
       return text.orderApproved;
@@ -160,8 +166,10 @@ function messageFor(order: Execution, text: (typeof STRINGS)[Locale]): string {
   }
 }
 
-export function describe(order: Execution, cart: Cart | undefined) {
+export function describe(order: Execution, cart: Cart | undefined, rail?: Pick<PaymentRail, "name">) {
   const outcome = order.outcomes[0];
+  // Hosted on codespar-test the charge is a platform proposal: a person sends it on its card, then the customer pays (v1.5).
+  const awaiting = rail ? chargeProposalAwaiting(order, rail) : null;
   return {
     status: order.state,
     execution_id: order.id,
@@ -180,8 +188,10 @@ export function describe(order: Execution, cart: Cart | undefined) {
           ...(outcome.code ? { code: outcome.code } : {}),
         }
       : null,
-    issued: order.reason === "charge_reference_ambiguous" ? order.state === "failed" : order.outcomes.length > 0 && order.outcomes.every((o) => o.status !== "failed"),
+    // A charge proposal nobody sent yet is not issued: nothing reached the customer.
+    issued: awaiting === "person_sends_charge_on_proposal" ? false : order.reason === "charge_reference_ambiguous" ? order.state === "failed" : order.outcomes.length > 0 && order.outcomes.every((o) => o.status !== "failed"),
     paid: order.state === "settled",
     expired: order.state === "failed" && order.reason === "charge_expired",
+    ...(awaiting ? { awaiting } : {}),
   };
 }

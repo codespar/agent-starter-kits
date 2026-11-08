@@ -6,7 +6,8 @@
  * cobrança com vencimento per instalment, `idempotency_key` per attempt) is
  * built by the rail from the execution the core approved.
  */
-import type { Locale, ToolHandler } from "@codespar/agent-core";
+import type { Locale, PaymentRail, ToolHandler } from "@codespar/agent-core";
+import { chargeProposalAwaiting } from "@codespar/agent-runtime";
 import { AGREEMENTS, agreementByAlias, formatBRL, formatDate } from "../agreements.js";
 import type { Envelope } from "../envelope.js";
 import { STRINGS } from "../strings.js";
@@ -19,7 +20,7 @@ interface ChargeInput {
   execution_id?: unknown;
 }
 
-export function makeHandlers(envelope: Envelope, locale: () => Locale = () => "pt-BR"): Record<string, ToolHandler> {
+export function makeHandlers(envelope: Envelope, locale: () => Locale = () => "pt-BR", rail: Pick<PaymentRail, "name"> = { name: "stub-charge" }): Record<string, ToolHandler> {
   const listAgreements: ToolHandler = async (_input, ctx) => {
     const text = STRINGS[locale()];
     const settled = ctx.engine.list({ state: "settled" });
@@ -64,7 +65,7 @@ export function makeHandlers(envelope: Envelope, locale: () => Locale = () => "p
       if (typeof input.execution_id !== "string") throw new Error("codespar_charge: execution_id is required for action=status");
       const execution = ctx.engine.get(input.execution_id);
       if (!execution) return { found: false, message: "no execution with that id in this run" };
-      return { found: true, ...describe(execution) };
+      return { found: true, ...describe(execution, rail) };
     }
     if (action !== "create") throw new Error(`codespar_charge: unsupported action ${String(action)}; this agent only creates and reads receivables`);
     if (typeof input.agreement !== "string" || !input.agreement.trim()) throw new Error("codespar_charge: agreement must be an agreement alias from list_agreements");
@@ -92,13 +93,15 @@ export function makeHandlers(envelope: Envelope, locale: () => Locale = () => "p
       return { status: "refused", reason: draft.reason, message: draft.message, issued: false, paid: false };
     }
     const execution = await ctx.onExecution(draft.execution);
-    return describe(execution);
+    return describe(execution, rail);
   };
 
   return { codespar_charge: codesparCharge, list_agreements: listAgreements };
 }
 
-function describe(execution: import("@codespar/agent-core").Execution) {
+function describe(execution: import("@codespar/agent-core").Execution, rail: Pick<PaymentRail, "name">) {
+  // Hosted on codespar-test the charge is a platform proposal: a person sends it on its card, then the payer pays (v1.5).
+  const awaiting = chargeProposalAwaiting(execution, rail);
   const charges = execution.outcomes.map((o) => ({
     instalment: o.index + 1,
     charge_id: o.transaction_id ?? null,
@@ -115,9 +118,11 @@ function describe(execution: import("@codespar/agent-core").Execution) {
     ...(execution.reason ? { reason: execution.reason, detail: execution.detail } : {}),
     ...(execution.escalation ? { escalated_by: execution.escalation.trigger } : {}),
     charges,
-    issued: execution.reason === "charge_reference_ambiguous" ? execution.state === "failed" : charges.length > 0 && charges.every((c) => c.status !== "failed"),
+    // A charge proposal nobody sent yet is not issued: nothing reached the payer.
+    issued: awaiting === "person_sends_charge_on_proposal" ? false : execution.reason === "charge_reference_ambiguous" ? execution.state === "failed" : charges.length > 0 && charges.every((c) => c.status !== "failed"),
     ...(execution.reason === "charge_reference_ambiguous" ? { reconcile_before_reissue: true } : {}),
     paid: execution.state === "settled",
     expired: execution.state === "failed" && execution.reason === "charge_expired",
+    ...(awaiting ? { awaiting } : {}),
   };
 }
