@@ -51,6 +51,7 @@ import type { KitConfig, RailBuild, RailKind } from "../kit.js";
 import { isAwaitingPayer } from "../poll.js";
 import { loadScenario } from "../scenarios.js";
 import { isFenced, PROPOSAL_FORWARD_CHANNEL, ProposalPaymentRail, type ProposalRail } from "./proposals.js";
+import { PlatformPullRail, type PullRail } from "./pulls.js";
 import type { PlatformReads } from "./reads.js";
 import { assembleSetup, loadAgentFiles, type Setup } from "../setup.js";
 import { decideByGesture, followUp, handleExecution, type BatchGestureRecord } from "../terminal.js";
@@ -106,8 +107,18 @@ export interface ApprovalPort {
  * `simulator`: the kit's own stub rail and example mandate, in the run's private store.
  * `codespar-test`: each attempt is a platform proposal drafted through `proposals`; a person pays it, the platform dispatches it.
  * The kit gets no client and no key. `mandate` is the one the host binds the kit's own policy to; absent, the kit's example.
+ * `codespar-test` of a pull kit (CONTRATO v1.6): each attempt is a pull sent through `pulls` under the person's own consent at
+ * their bank, which they sign there. `mandate` is that consent's, built by the host; never the Playground's spending mandate.
  */
-export type RailPort = { executor: "simulator" } | { executor: "codespar-test"; proposals: ProposalRail; mandate?: Mandate; reads?: PlatformReads };
+export type RailPort =
+  | { executor: "simulator" }
+  | { executor: "codespar-test"; proposals: ProposalRail; mandate?: Mandate; reads?: PlatformReads }
+  | { executor: "codespar-test"; pulls: PullRail; mandate: Mandate };
+
+/** Whether a kit's `codespar-test` executor sends pulls under the person's consent (`platform.consent_pulls`) instead of drafting proposals. */
+export function pullsOnPlatform(descriptor: HostedKitDescriptor): boolean {
+  return descriptor.executors.some((e) => e.id === "codespar-test" && e.requires.includes("platform.consent_pulls"));
+}
 
 /** The model mode, pinned at create. `replay` is the example's own recorded transcript; `model` is the host's runtime, under its budgets. */
 export type ModelPort = { mode: "replay" } | { mode: "model"; runtime: AgentRuntime };
@@ -339,6 +350,11 @@ export class HostedRun {
     return this.image.runId;
   }
 
+  /** A `codespar-test` run whose attempts are platform proposals: the person decides on the proposal, never in the run. */
+  private get proposalRun(): boolean {
+    return this.image.binding.executor === "codespar-test" && !pullsOnPlatform(this.kit.descriptor);
+  }
+
   /** The kit, engine and handlers over this run's own store and bundle. The same `assembleSetup` a terminal run is wired by. */
   private wire(store: StateStore): Setup {
     const agent = this.kit.agent;
@@ -349,11 +365,19 @@ export class HostedRun {
     const rail = this.ports.rail;
     let railKind: RailKind;
     let built: RailBuild;
+    // A pull kit takes a pull port and nothing else; a proposal kit never gets one. A host that offers the other is refused, never adapted.
+    if (rail.executor === "codespar-test" && pullsOnPlatform(this.kit.descriptor) !== ("pulls" in rail)) {
+      throw new HostedRefusal("executor_unsupported", `${this.kit.descriptor.id} on codespar-test ${"pulls" in rail ? "drafts platform proposals" : "sends pulls under the person's consent"}; the host's rail port offers the other`);
+    }
     if (rail.executor === "simulator") {
       railKind = "stub";
       // In the Playground the person plays the counterparty too: the simulated payer acts when they say so (`simulatePayer`), never on its own.
       const stubRail = agent.settlement === "await-payer" ? { payer: "never" as const } : undefined;
       built = agent.kit.buildRail({ kind: "stub", env: config, agentDir: agent.dir, stateDir: NO_STATE_DIR, manifest: files.manifest, store, gate, now: clock, mandate: undefined, stubRail, envVar: (name) => config[envName(agent, name)] });
+    } else if ("pulls" in rail) {
+      // The kit's policy runs on the consent's mandate; the platform checks the consent, its limits and the payee again before it sends.
+      railKind = "api";
+      built = { rail: new PlatformPullRail(this.guardedPulls(rail.pulls), store), mandate: rail.mandate };
     } else {
       // The kit's policy runs on the host's mandate (or its own example) and the local status gate; the platform runs its own gate on the proposal.
       railKind = "api";
@@ -376,7 +400,7 @@ export class HostedRun {
       config,
       makeRuntime: () => this.runtime(),
       beforeDispatch: () => this.checkpoint(),
-      platformReads: rail.executor === "codespar-test" && rail.reads ? this.guardedReads(rail.reads) : undefined,
+      platformReads: rail.executor === "codespar-test" && "reads" in rail && rail.reads ? this.guardedReads(rail.reads) : undefined,
     });
   }
 
@@ -445,7 +469,7 @@ export class HostedRun {
    * proposal. The forward authorizes no payment and a blocked execution is still denied by the engine.
    */
   private forward(execution: Execution): Execution {
-    if (this.image.binding.executor !== "codespar-test" || execution.state !== "awaiting_approval") return execution;
+    if (!this.proposalRun || execution.state !== "awaiting_approval") return execution;
     this.project();
     const forwarded = this.setup.engine.approve(execution.id, { id: this.approver.id, channel: PROPOSAL_FORWARD_CHANNEL });
     this.decided(forwarded, "forward", "platform-proposal");
@@ -601,7 +625,7 @@ export class HostedRun {
     if (this.replayed(command.commandId, "decide", payload)) return this.snapshot();
     const actor = await this.actor();
     this.refuseIfStopped();
-    if (this.image.binding.executor === "codespar-test") throw new HostedRefusal("decide_on_proposal", "on codespar-test a person pays the platform proposal, or Aprovações decides it; the run decides nothing");
+    if (this.proposalRun) throw new HostedRefusal("decide_on_proposal", "on codespar-test a person pays the platform proposal, or Aprovações decides it; the run decides nothing");
     const engine = this.setup.engine;
     engine.expireStale();
     const execution = engine.get(command.executionId);
@@ -626,7 +650,7 @@ export class HostedRun {
     if (this.replayed(command.commandId, "decide_batch", payload)) return this.snapshot();
     const actor = await this.actor();
     this.refuseIfStopped();
-    if (this.image.binding.executor === "codespar-test") throw new HostedRefusal("decide_on_proposal", "on codespar-test a person pays the platform proposal, or Aprovações decides it; the run decides nothing");
+    if (this.proposalRun) throw new HostedRefusal("decide_on_proposal", "on codespar-test a person pays the platform proposal, or Aprovações decides it; the run decides nothing");
     const engine = this.setup.engine;
     engine.expireStale();
     const presented = this.image.batches[command.batchRef];
@@ -772,7 +796,7 @@ export class HostedRun {
       image.language = this.loop.replyLanguage ?? null;
     }
     if (this.replay) image.replayCursor = this.replay.consumed;
-    image.status = statusOf(image, this.setup.store);
+    image.status = statusOf(image, this.setup.store, this.proposalRun);
     image.updatedAt = this.now().toISOString();
     let saved: Awaited<ReturnType<StatePort["save"]>>;
     try {
@@ -813,6 +837,23 @@ export class HostedRun {
       }
     };
     return { submit: (request) => guard(() => proposals.submit(request)), read: (proposalId) => guard(() => proposals.read(proposalId)) };
+  }
+
+  /** The host's pull port, under the same fence: a pull or a look after the run was taken over ends this process, and nothing more is sent. */
+  private guardedPulls(pulls: PullRail): PullRail {
+    const guard = async <T>(call: () => Promise<T>): Promise<T> => {
+      if (this.dead) throw this.dead;
+      try {
+        return await call();
+      } catch (err) {
+        if (isFenced(err)) {
+          this.dead = this.fenced(err);
+          throw this.dead;
+        }
+        throw err;
+      }
+    };
+    return { submit: (request) => guard(() => pulls.submit(request)), read: (pullId) => guard(() => pulls.read(pullId)) };
   }
 
   /** The host's read port, under the same fence: a read after the run was taken over ends this process, like a save would. */
@@ -874,7 +915,7 @@ export class HostedRun {
         return;
       case "charge.instrument": {
         const outcome = execution?.outcomes.find((o) => o.attempt_id === payload["attempt_id"]);
-        if (this.image.binding.executor === "codespar-test") {
+        if (this.proposalRun) {
           const proposalId = String(payload["charge_id"]);
           this.emit("proposal.updated", "engine", { proposalId, attemptId: String(payload["attempt_id"]), state: String(payload["status"]) as "drafted" }, { ...ref, proposalId, attemptId: String(payload["attempt_id"]) }, row.at);
           return;
@@ -902,7 +943,7 @@ export class HostedRun {
         this.emit("outcome.pending", "engine", { kind: payload["needs_human"] ? "needs_human" : "uncertain", detail: this.redact(String(payload["detail"] ?? "")) ?? "" }, ref, row.at);
         return;
       case "execution.awaiting_settlement":
-        this.emit("outcome.pending", "engine", { kind: this.image.binding.executor === "codespar-test" ? "awaiting_proposal" : "awaiting_payer", detail: this.redact(String(payload["detail"] ?? "")) ?? "" }, ref, row.at);
+        this.emit("outcome.pending", "engine", { kind: this.proposalRun ? "awaiting_proposal" : "awaiting_payer", detail: this.redact(String(payload["detail"] ?? "")) ?? "" }, ref, row.at);
         return;
       default:
         return;
@@ -1035,7 +1076,10 @@ function evidenceOf(e: Execution, kind: EvidenceKind): EvidenceRef[] {
   if (kind === "none") return [];
   return e.outcomes.map((o) => {
     if (o.status === "settled") return { kind, id: o.receipt_id ?? o.transaction_id ?? o.attempt_id, detail: kind === "simulated" ? "simulator: not a CodeSpar receipt" : null };
-    if (o.status === "accepted") return { kind, id: o.transaction_id ?? o.attempt_id, detail: kind === "codespar_receipt" ? `platform proposal ${o.instrument?.status ?? "drafted"}; not paid` : "issued; the payer has not paid" };
+    if (o.status === "accepted") {
+      const detail = kind === "codespar_receipt" ? `platform proposal ${o.instrument?.status ?? "drafted"}; not paid` : kind === "rail_record" ? `pull ${o.instrument?.status ?? "pending"}; waiting for the person at their bank, nothing moved` : "issued; the payer has not paid";
+      return { kind, id: o.transaction_id ?? o.attempt_id, detail };
+    }
     return { kind, id: o.attempt_id, detail: o.error ?? o.code ?? "failed" };
   });
 }
@@ -1085,14 +1129,14 @@ function presentationView(batch: BatchPresentation): BatchView {
   };
 }
 
-function statusOf(image: RunImage, store: StateStore): RunStatus {
+function statusOf(image: RunImage, store: StateStore, proposals: boolean): RunStatus {
   if (image.stopped) return "stopped";
   if (image.inflight) return "running";
   const open = store.listExecutions({ state: ["awaiting_approval", "executing"] });
   if (open.some((e) => e.state === "awaiting_approval")) return "awaiting_decision";
   if (open.some((e) => e.state === "executing" && !isAwaitingPayer(e))) return "awaiting_reconciliation";
   // A proposal waits for a person to pay it: a decision, taken on the platform.
-  if (image.binding.executor === "codespar-test" && open.some((e) => e.state === "executing")) return "awaiting_decision";
+  if (proposals && open.some((e) => e.state === "executing")) return "awaiting_decision";
   if (open.some((e) => e.state === "executing")) return "awaiting_payer";
   return "idle";
 }
@@ -1104,7 +1148,8 @@ export function snapshotOf(image: RunImage, store: StateStore, descriptor: Hoste
   for (const e of store.listExecutions()) for (const i of e.items) mandatePayees.add(i.payee);
   const redact = redactorFor(mandatePayees);
   const executions = store.listExecutions();
-  const status = statusOf(image, store);
+  const proposals = image.binding.executor === "codespar-test" && !pullsOnPlatform(descriptor);
+  const status = statusOf(image, store, proposals);
   const pending: PendingAction[] = [];
   if (status !== "running" && status !== "stopped") {
     for (const e of executions.filter((x) => x.state === "awaiting_approval" && !x.batch)) {
@@ -1135,7 +1180,7 @@ export function snapshotOf(image: RunImage, store: StateStore, descriptor: Hoste
       }
       for (const o of e.outcomes) {
         if (o.status !== "accepted" || !o.transaction_id || !o.instrument) continue;
-        if (image.binding.executor === "codespar-test") {
+        if (proposals) {
           const state = o.instrument.status;
           pending.push({ kind: "payment_proposal", executionId: e.id, proposalId: o.transaction_id, proposalState: state === "awaiting_approval" || state === "executing" ? state : "drafted" });
           continue;

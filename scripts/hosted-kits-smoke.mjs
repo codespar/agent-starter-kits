@@ -15,6 +15,8 @@ import { join, resolve } from "node:path";
 
 const SMOKE = `
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { readFileSync as readText } from "node:fs";
+import { join as joinPath } from "node:path";
 import { checkEventLog, createHostedRun, loadHostedCatalog, openHostedKit, RunSnapshotSchema } from "@codespar/hosted-kits/host";
 
 const key = Buffer.from("hosted-kits-smoke-not-a-secret");
@@ -99,6 +101,36 @@ for (const descriptor of catalog.kits) {
   const ports = { identity: { actor: async () => actor }, state, approval: { signer, authorize: async () => ({ ok: true }) }, rail: { executor: "codespar-test", proposals, reads }, model: { mode: "replay" }, clock: () => new Date("2026-09-23T14:00:00-03:00") };
   try {
     const kit = await openHostedKit(catalog, descriptor.id, descriptor.source.packageDigest);
+    if (executor.requires.includes("platform.consent_pulls")) {
+      // A pull kit (v1.6), against an IN-MEMORY stand-in of the host's pull port (a SIMULATION: no platform, no bank): the
+      // kit's own example mandate, re-pointed at one consented account; one pull per attempt; signed only when this says so.
+      const payee = "fs_smoke_own_account";
+      const base = JSON.parse(readText(joinPath(kit.agent.dir, "mandate.example.json"), "utf8"));
+      const mandate = { ...base, id: "consent_smoke", source: "consent", merchant_allowlist: [payee], beneficiaries: [{ ...base.beneficiaries[0], payee }] };
+      const pulls = new Map();
+      const sent = [];
+      const pullPort = {
+        async submit(request) {
+          const id = "swp_" + request.attemptId.slice(-12);
+          if (request.payee !== payee) return { ok: false, code: "payee_not_consented", message: "one account only" };
+          if (!pulls.has(id)) { sent.push(id); pulls.set(id, { state: "pending", endToEndId: null, code: null, needsHuman: false, signatureTimedOut: false }); }
+          return { ok: true, pullId: id, state: pulls.get(id).state };
+        },
+        async read(id) { return pulls.get(id); },
+      };
+      const run = await createHostedRun(kit, { ...ports, rail: { executor: "codespar-test", pulls: pullPort, mandate } }, { commandId: "create", modelMode: "replay", executor: "codespar-test", options: { exampleId: "happy-path" } });
+      const example = descriptor.examples.find((e) => e.id === "happy-path");
+      for (let n = 0; n < example.turns.length; n += 1) await run.turn({ commandId: "turn-" + n, exampleTurn: n });
+      let snapshot = await run.snapshot();
+      const waiting = snapshot.pending.filter((p) => p.kind === "payer" && p.instrument.consentUrl === null && !p.simulatable);
+      if (waiting.length === 0 || proposals.states.size > 0) throw new Error("no pull waiting for the person, or a proposal drafted: " + JSON.stringify(snapshot.pending));
+      for (const id of sent) pulls.set(id, { state: "completed", endToEndId: "E00000000SMOKE" + id.slice(-8), code: null, needsHuman: false, signatureTimedOut: false });
+      snapshot = await run.resume({ commandId: "resume" });
+      await run.resume({ commandId: "resume-again" });
+      if (snapshot.executions.some((e) => e.state !== "settled") || sent.length !== waiting.length) throw new Error("not settled once each after the pulls were signed: " + snapshot.executions.map((e) => e.state).join(", ") + ", " + sent.length + " sent");
+      console.log("ok   " + descriptor.id + " [codespar-test] " + sent.length + " pull(s) under the consent, signed in the in-memory stand-in of the platform (SIMULATION), " + snapshot.executions.length + " settled, 0 proposals");
+      continue;
+    }
     if (!descriptor.needsMandate) {
       // A read-only kit: its recommended example reads through the port, and nothing is proposed or executed.
       const exampleId = descriptor.recommendedRuns[0]?.example ?? "happy-path";

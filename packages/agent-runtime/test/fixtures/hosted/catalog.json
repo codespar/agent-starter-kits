@@ -1859,13 +1859,23 @@
         "model"
       ],
       "supportedExecutors": [
-        "simulator"
+        "simulator",
+        "codespar-test"
       ],
       "executors": [
         {
           "id": "simulator",
           "evidence": "simulated",
           "requires": [],
+          "blockedBy": []
+        },
+        {
+          "id": "codespar-test",
+          "evidence": "rail_record",
+          "requires": [
+            "platform.test_project",
+            "platform.consent_pulls"
+          ],
           "blockedBy": []
         }
       ],
@@ -1906,7 +1916,14 @@
         }
       },
       "recommended": null,
-      "recommendedRuns": [],
+      "recommendedRuns": [
+        {
+          "executor": "codespar-test",
+          "modelMode": "model",
+          "example": "happy-path",
+          "rank": 6
+        }
+      ],
       "exampleIds": [
         "beneficiary-not-allowed",
         "cap-exceeded",

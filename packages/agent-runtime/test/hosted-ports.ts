@@ -10,6 +10,7 @@ import { describeKit } from "../src/hosted/catalog.js";
 import type { HostedEvent } from "../src/hosted/contract.js";
 import { FencedError, type ProposalRail, type ProposalState } from "../src/hosted/proposals.js";
 import type { PlatformReads } from "../src/hosted/reads.js";
+import type { PullRail, PullRead } from "../src/hosted/pulls.js";
 import type { ApprovalPort, HostedActor, HostedKit, HostedPorts, IdentityPort, ModelPort, RailPort, RunImage, StatePort } from "../src/hosted/run.js";
 
 export const ACTOR: HostedActor = { userId: "user_fixture_owner", orgId: "org_fixture", projectId: "prj_fixture", environment: "test" };
@@ -117,6 +118,53 @@ export class FakeReads implements PlatformReads {
   async proposals(limit: number) {
     this.calls.push(`proposals:${limit}`);
     return [{ id: "prp_fixture", state: "succeeded", amountMinor: 1000, currency: "BRL", payeeMasked: "ab***cd", createdAt: "2026-11-07T19:05:00.000Z", receiptId: "rcpt_fixture" }];
+  }
+}
+
+/**
+ * SIMULATION of the host's pull port (CONTRATO v1.6): one pull per attempt, by id, under a consent that exists or not. The
+ * person signs it, or lets it time out, only when a test says so. Never the platform, never a bank, never the provider's sandbox.
+ */
+export class FakePulls implements PullRail {
+  readonly sent: Array<Parameters<PullRail["submit"]>[0]> = [];
+  readonly submits: string[] = [];
+  private readonly pulls = new Map<string, PullRead>();
+  /** Whether the person registered their consent at the bank. */
+  consent = true;
+  /** The one account the consent pulls into. */
+  constructor(readonly payee: string) {}
+  /** The next submit sends the pull and then loses the answer, the way a timeout after the bank accepted would. */
+  loseNextAnswer = false;
+  async submit(request: Parameters<PullRail["submit"]>[0]) {
+    this.submits.push(request.attemptId);
+    if (!this.consent) return { ok: false as const, code: "consent_required", message: "no consent is registered at the bank for this account" };
+    if (request.payee !== this.payee) return { ok: false as const, code: "payee_not_consented", message: "the consent pulls into one account only" };
+    const pullId = `swp_${request.attemptId.slice(-12)}`;
+    if (!this.pulls.has(pullId)) {
+      this.sent.push(structuredClone(request));
+      this.pulls.set(pullId, { state: "pending", endToEndId: null, code: null, needsHuman: false, signatureTimedOut: false });
+    }
+    if (this.loseNextAnswer) {
+      this.loseNextAnswer = false;
+      throw new Error("timeout: the host sent the pull and its answer was lost");
+    }
+    return { ok: true as const, pullId, state: this.pulls.get(pullId)!.state };
+  }
+  async read(pullId: string) {
+    const found = this.pulls.get(pullId);
+    if (!found) throw new Error(`no pull ${pullId}`);
+    return { ...found };
+  }
+  /** The person signed it at the bank and the money landed. */
+  sign(pullId: string, endToEndId: string): void {
+    this.pulls.set(pullId, { state: "completed", endToEndId, code: null, needsHuman: false, signatureTimedOut: false });
+  }
+  /** The person never signed: the bank ended it. */
+  timeOut(pullId: string): void {
+    this.pulls.set(pullId, { state: "rejected", endToEndId: "E00000000000000000000000000000000", code: "TIMEOUT_CONSENTIMENTO", needsHuman: false, signatureTimedOut: true });
+  }
+  get ids(): string[] {
+    return [...this.pulls.keys()];
   }
 }
 

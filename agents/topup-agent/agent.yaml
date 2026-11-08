@@ -28,6 +28,13 @@ agents_md: ./AGENTS.md
 # What a person reads about this agent where it is offered (the Playground's catalog). pt-BR reviewed by the Playground's
 # product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
 presentation:
+  # In the integrated Test (codespar-test, with a model) the platform sends the pull under the person's own consent at their
+  # bank (a passkey registered there), never under the Playground's spending mandate; the person signs each pull at the bank.
+  recommendedRuns:
+    - executor: codespar-test
+      modelMode: model
+      example: happy-path
+      rank: 6
   pt-BR:
     title: "Recarga da sua conta"
     summary: "Traz dinheiro de outra conta sua, com a sua autorização no próprio banco."

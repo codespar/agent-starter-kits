@@ -108,7 +108,15 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
   // drafts a platform proposal per attempt and a person pays it (CONTRATO.md v1.1); a kit on another rail has none.
   const receiptBlocked = maturity["receipt-verification"] === "blocked";
   const executors: HostedKitDescriptor["executors"] = [{ id: "simulator", evidence: moves ? "simulated" : "none", requires: [], blockedBy: [] }];
-  if (moves && agent.kit.apiRailKey !== "none") {
+  if (moves && effects.has("charge") && !effects.has("payment") && agent.kit.hosted?.consentPulls) {
+    // A pull from the person's own bank, under the consent they give at that bank: the host sends it, the person signs it there.
+    // No spending mandate (the consent is the authority), and what stands behind a completed pull is the Pix end-to-end id.
+    const blockedBy = Object.entries(maturity)
+      .filter(([capability, level]) => level === "blocked" && capability !== "receipt-verification")
+      .map(([capability]) => capability)
+      .sort();
+    executors.push({ id: "codespar-test", evidence: "rail_record", requires: ["platform.test_project", "platform.consent_pulls"], blockedBy });
+  } else if (moves && agent.kit.apiRailKey !== "none") {
     const evidence: EvidenceKind = effects.has("payment") && !receiptBlocked ? "codespar_receipt" : "charge_status";
     const requires: PlatformPrerequisite[] = ["platform.test_project", "platform.consumer_mandate"];
     if (effects.has("payment")) requires.push("platform.payouts");
