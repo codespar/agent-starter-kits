@@ -101,7 +101,7 @@ for (const descriptor of catalog.kits) {
   const state = memoryState();
   const proposals = memoryProposals();
   const charges = memoryCharges();
-  const charging = descriptor.tools.some((t) => t.effect === "charge");
+  const charging = executor.requires.includes("platform.charges");
   const ports = { identity: { actor: async () => actor }, state, approval: { signer, authorize: async () => ({ ok: true }) }, rail: { executor: "codespar-test", proposals, charges }, model: { mode: "replay" }, clock: () => new Date("2026-09-23T14:00:00-03:00") };
   try {
     const kit = await openHostedKit(catalog, descriptor.id, descriptor.source.packageDigest);
