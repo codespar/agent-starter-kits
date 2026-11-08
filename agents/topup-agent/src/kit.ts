@@ -40,7 +40,9 @@ function mandateFor(base: Mandate, limits: SweepingLimits, creditorId?: string):
 const kit: AgentKit = {
   settlement: "await-payer",
   // A pull from the person's own bank, not a charge a payer settles and not a CodeSpar payment: no CodeSpar receipt exists for it.
-  hosted: { outcomeKinds: ["answer", "pull"] },
+  // Hosted on codespar-test, the platform sends each pull under the consent the person gave at their bank (Pix com biometria,
+  // the provider's sandbox in Test) and the person signs it there; the kit gets the host's pull port, never a provider client.
+  hosted: { outcomeKinds: ["answer", "pull"], consentPulls: true },
   scenarioRail: "stub",
   // The live rail is Iniciador's sandbox; buildRail requires its credentials and never calls the CodeSpar API.
   apiRailKey: "none",

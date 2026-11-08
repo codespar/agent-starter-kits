@@ -25,7 +25,7 @@ export const OutcomeKindSchema = z.enum(["answer", "payment", "charge", "order",
  */
 export const EvidenceKindSchema = z.enum(["none", "simulated", "codespar_receipt", "charge_status", "rail_record"]);
 /** The closed list of platform prerequisites a descriptor may name; the host maps each one to readiness. */
-export const PlatformPrerequisiteSchema = z.enum(["platform.test_project", "platform.consumer_mandate", "platform.payouts", "platform.charges"]);
+export const PlatformPrerequisiteSchema = z.enum(["platform.test_project", "platform.consumer_mandate", "platform.payouts", "platform.charges", "platform.consent_pulls"]);
 /** What the platform does not offer yet and an executor would need: listed in `blockedBy`, never worked around. */
 export const PLATFORM_GAPS: readonly string[] = ["platform.charge_proposals"];
 export const ApprovalModeSchema = z.enum(["human", "mandate"]);
@@ -137,6 +137,8 @@ export const HostedKitDescriptorSchema = z
       if (!moves && e.evidence !== "none") issue("a read-only kit has no evidence to show", ["executors", i, "evidence"]);
       if (e.id === "simulator" && (e.requires.length > 0 || (e.evidence !== "simulated" && e.evidence !== "none"))) issue("the simulator needs nothing from the platform and proves nothing but simulation", ["executors", i]);
       if (e.id === "codespar-test" && !e.requires.includes("platform.test_project")) issue("codespar-test runs in a Test project", ["executors", i, "requires"]);
+      // A pull under the person's own consent is not a spend under the Playground's mandate, and nothing CodeSpar seals stands behind it.
+      if (e.requires.includes("platform.consent_pulls") && (e.evidence !== "rail_record" || e.requires.includes("platform.consumer_mandate") || !d.outcomeKinds.includes("pull"))) issue("a consent pull shows a rail record, needs no spending mandate and declares the pull outcome", ["executors", i]);
       for (const cap of e.blockedBy) if (d.capabilityMaturity[cap] !== "blocked" && !PLATFORM_GAPS.includes(cap)) issue(`blockedBy names ${cap}, which is neither blocked in the manifest nor a known platform gap`, ["executors", i, "blockedBy"]);
     }
   });

@@ -277,6 +277,9 @@ export interface AgentKit {
    * What the hosted catalog cannot derive from `tools.json`. Validated against the tool effects.
    * `readsPlatform`: a read-only kit whose tools read the Test project through the host (`PlatformReads`); it gets a
    * `codespar-test` executor that needs the Test project and nothing else (no spending mandate).
+   * `consentPulls`: a pull kit whose money comes from the person's own bank under the consent they give there (CONTRATO v1.7).
+   * Its `codespar-test` executor sends each attempt through the host's `PullRail`, needs the Test project and the platform's
+   * consent pulls, never the spending mandate, and shows a rail record (the Pix end-to-end id), never a CodeSpar receipt.
    */
-  hosted?: { outcomeKinds?: readonly OutcomeKind[]; readsPlatform?: boolean };
+  hosted?: { outcomeKinds?: readonly OutcomeKind[]; readsPlatform?: boolean; consentPulls?: boolean };
 }
