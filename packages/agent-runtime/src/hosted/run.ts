@@ -197,6 +197,7 @@ export type HostedRefusalCode =
   | "not_awaiting_payer"
   | "not_authorized"
   | "payer_not_simulatable"
+  | "payer_not_ready"
   | "replay_exhausted"
   | "replay_requires_example_turn"
   | "turn_failed";
@@ -710,6 +711,7 @@ export class HostedRun {
     }
 
     this.record(command.commandId, "simulate_payer", payload, null);
+    const refused: string[] = [];
     for (const outcome of issued) {
       if (command.behaviour === "expires") {
         payer.decideFor!(outcome.attempt_id, "expires");
@@ -718,6 +720,13 @@ export class HostedRun {
       }
       const result = await payer.pay(outcome.transaction_id!, outcome.attempt_id);
       this.setup.engine.note("sandbox_payer", execution.id, { charge_id: outcome.transaction_id, ok: result.ok, detail: result.detail });
+      if (!result.ok) refused.push(result.detail);
+    }
+    // On codespar-test the platform's Test payer paid none of them (the charge is still registering at the provider, or the
+    // platform refused): the person is told, and nothing of this command is kept; pressing again is a new command.
+    if (sentOnly && refused.length === issued.length) {
+      delete this.image.commands[command.commandId];
+      throw new HostedRefusal("payer_not_ready", `the Test payer paid nothing: ${this.redact(refused.join("; "))}`);
     }
     await this.continueExecution(this.setup.engine.get(execution.id)!);
     await this.checkpoint();

@@ -126,7 +126,10 @@ export class FakeCharges implements ChargeProposalRail {
     const { paid: _paid, ...read } = found;
     return structuredClone(read);
   }
+  /** Set: the charge is still registering at the provider, and the Test payer cannot pay it yet. */
+  notReady = false;
   async payInTest(proposalId: string) {
+    if (this.notReady) return { ok: false as const, code: "charge_not_payable_yet", detail: `${proposalId} waits for its copy-and-paste` };
     const found = this.states.get(proposalId);
     if (!found || found.state !== "executing") return { ok: false as const, code: "charge_not_sent", detail: `${proposalId} was not sent` };
     if (!found.paid) this.payments.push(proposalId);
