@@ -47,6 +47,7 @@ import { GeminiRuntime } from "@codespar/agent-core/providers/gemini";
 import type { ApiClient } from "@codespar/sdk";
 import { envName, type Agent } from "./agent.js";
 import type { AgentKit, KitConfig, KitStrings, RailBuild, RailKind, SandboxPayer, Settlement } from "./kit.js";
+import type { PlatformReads } from "./hosted/reads.js";
 
 /** The `.env.example` placeholder counts as no key: a copied example must replay, not call Anthropic with a fake key. */
 export const ANTHROPIC_KEY_PLACEHOLDER = "sk-ant-your_key_here";
@@ -133,6 +134,8 @@ export interface Setup {
   locale: Locale;
   /** What the kit reads by name instead of `process.env` (`KitConfig`). On a terminal it is the environment `setup` was given. */
   config: KitConfig;
+  /** The platform a read-only kit may read (hosted `codespar-test` only). `undefined` elsewhere: a tool then says it is not available here. */
+  platformReads: PlatformReads | undefined;
   /** The kit's words in `locale`. */
   readonly strings: KitStrings;
   /** The words every agent shares, in `locale`. */
@@ -310,6 +313,8 @@ export interface SetupParts {
   makeRuntime: () => AgentRuntime;
   /** Awaited before every rail call (`EngineDeps.beforeDispatch`). */
   beforeDispatch?: ((execution: Execution, attemptId: string) => Promise<void>) | undefined;
+  /** The host's read port on a hosted `codespar-test` run (`PlatformReads`). Absent on a terminal and on the simulator. */
+  platformReads?: PlatformReads | undefined;
 }
 
 /**
@@ -368,6 +373,7 @@ export function assembleSetup(agent: Agent, p: SetupParts): Setup {
     tools,
     locale,
     config: p.config,
+    platformReads: p.platformReads,
     get strings() {
       return agent.kit.strings[this.locale];
     },

@@ -111,7 +111,9 @@ describe.each(ALL.map((dir) => [dir.split("/").pop()!, dir]))("%s", (_name, dir)
     // A blocked executor names a capability the manifest marks blocked, or a platform gap the contract lists; nothing else.
     for (const e of d.executors) for (const capability of e.blockedBy) expect(manifest.maturity[capability] === "blocked" || PLATFORM_GAPS.includes(capability), capability).toBe(true);
     // codespar-test: money on the CodeSpar API, as platform proposals (CONTRATO.md v1.1); a kit on another rail has none.
-    expect(d.supportedExecutors.includes("codespar-test")).toBe(moves && agent.kit.apiRailKey !== "none");
+    // A read-only kit gets it when it reads the Test project through the host (CONTRATO v1.5), and then needs only the project.
+    expect(d.supportedExecutors.includes("codespar-test")).toBe((moves || Boolean(agent.kit.hosted?.readsPlatform)) && agent.kit.apiRailKey !== "none");
+    if (!moves && d.supportedExecutors.includes("codespar-test")) expect(d.executors.find((e) => e.id === "codespar-test")).toEqual({ id: "codespar-test", evidence: "none", requires: ["platform.test_project"], blockedBy: [] });
   });
 });
 

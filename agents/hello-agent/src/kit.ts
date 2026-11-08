@@ -6,6 +6,7 @@
 import { defaultKit, defineAgent } from "@codespar/agent-runtime";
 import type { StubRail } from "@codespar/agent-core";
 import { listBills } from "./bills.js";
+import { codesparAccount } from "./account.js";
 
 export const agent = defineAgent(import.meta.url, {
   ...defaultKit,
@@ -13,7 +14,9 @@ export const agent = defineAgent(import.meta.url, {
     "pt-BR": { ...defaultKit.strings["pt-BR"], intro: 'Pergunte sobre as contas do mês ("quais contas vencem em outubro?"). Ctrl+D ou "sair" encerra.' },
     en: { ...defaultKit.strings.en, intro: 'Ask about the month\'s bills ("which bills are due in October?"). Ctrl+D or "exit" ends.' },
   },
-  handlers: () => ({ list_bills: listBills }),
+  handlers: (s) => ({ list_bills: listBills, codespar_account: codesparAccount(s.platformReads) }),
+  // On the integrated Test it reads the project through the host: the project is all it needs, never a spending mandate.
+  hosted: { readsPlatform: true },
 
   /** The same `commerce.payment.succeeded` twice, and `paid` before `created`: one settled, never two. */
   runEventsCase: async (s) => {

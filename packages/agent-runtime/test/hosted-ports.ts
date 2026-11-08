@@ -9,6 +9,7 @@ import { loadAgent } from "../src/agent.js";
 import { describeKit } from "../src/hosted/catalog.js";
 import type { HostedEvent } from "../src/hosted/contract.js";
 import { FencedError, type ProposalRail, type ProposalState } from "../src/hosted/proposals.js";
+import type { PlatformReads } from "../src/hosted/reads.js";
 import type { ApprovalPort, HostedActor, HostedKit, HostedPorts, IdentityPort, ModelPort, RailPort, RunImage, StatePort } from "../src/hosted/run.js";
 
 export const ACTOR: HostedActor = { userId: "user_fixture_owner", orgId: "org_fixture", projectId: "prj_fixture", environment: "test" };
@@ -99,6 +100,23 @@ export class FakeProposals implements ProposalRail {
   /** Aprovações or the person refused it. */
   deny(proposalId: string): void {
     this.states.set(proposalId, { state: "denied", receiptId: null, failureCode: null });
+  }
+}
+
+/** SIMULATION of the host's read port: fixed answers, counted, never a platform. */
+export class FakeReads implements PlatformReads {
+  readonly calls: string[] = [];
+  async balance() {
+    this.calls.push("balance");
+    return { environment: "test" as const, asOf: "2026-11-08T12:00:00.000Z", accountExists: true, currencies: [{ currency: "BRL", balanceMinor: 25000, availableMinor: 24000, heldMinor: 1000 }] };
+  }
+  async mandates() {
+    this.calls.push("mandates");
+    return [{ id: "cm_fixture", status: "active", currency: "BRL", perTxCapMinor: 3000, capMinor: 20000, periodicCap: { window: "month", capMinor: 10000 }, expiresAt: "2026-11-13T00:00:00.000Z" }];
+  }
+  async proposals(limit: number) {
+    this.calls.push(`proposals:${limit}`);
+    return [{ id: "prp_fixture", state: "succeeded", amountMinor: 1000, currency: "BRL", payeeMasked: "ab***cd", createdAt: "2026-11-07T19:05:00.000Z", receiptId: "rcpt_fixture" }];
   }
 }
 
