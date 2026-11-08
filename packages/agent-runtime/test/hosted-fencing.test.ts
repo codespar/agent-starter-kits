@@ -2,14 +2,15 @@
  * Fencing (CONTRATO v1.2): when the host gives a run to another process, the
  * old one must stop at once — no save, no event, no proposal — and the new
  * owner must take the run over without drafting a second proposal for an
- * attempt the old one already proposed.
+ * attempt the old one already proposed. And a look that merely fails (a
+ * timeout) is neither: it leaves the execution as it was, for the next resume.
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { checkEventLog } from "../src/hosted/contract.js";
 import { createHostedRun, HostedRefusal, openHostedRun, type HostedKit } from "../src/hosted/run.js";
-import { FakeProposals, MemoryState, hostedKit, ports } from "./hosted-ports.js";
+import { FakeProposals, MemoryState, ScriptedRuntime, hostedKit, ports } from "./hosted-ports.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 let kit: HostedKit;
@@ -84,5 +85,30 @@ describe("fencing", () => {
     const done = await owner.resume({ commandId: "c-2" });
     expect(done.executions[0]).toMatchObject({ state: "settled", evidence: [{ kind: "codespar_receipt", id: "rcpt_platform_after_takeover" }] });
     expect(proposals.submitted).toHaveLength(1);
+  });
+
+  it("a transient error reading one proposal leaves that execution as it was; the pass goes on, and the next resume settles it", async () => {
+    const state = new MemoryState();
+    const proposals = new FakeProposals();
+    const pay = (id: string, amount: number) => [{ id, name: "codespar_pay", input: { payee: "barista", amount_minor: amount } }];
+    const model = new ScriptedRuntime([pay("tc_1", 1000), pay("tc_2", 1500), { text: "Duas propostas criadas." }]);
+    const run = await createHostedRun(kit, ports({ state, rail: { executor: "codespar-test", proposals }, model: { mode: "model", runtime: model } }), { ...create, modelMode: "model" });
+    await run.turn({ commandId: "c-1", text: "two tips for the barista" });
+    expect(proposals.submitted).toHaveLength(2);
+    const [first, second] = proposals.submitted.map((r) => `prop_${r.attemptId}`) as [string, string];
+    proposals.pay(first, "rcpt_one");
+    proposals.pay(second, "rcpt_two");
+    proposals.failNextRead.add(first);
+
+    const once = await run.resume({ commandId: "r-1" });
+    const byProposal = (s: typeof once, id: string) => s.executions.find((e) => e.attempts.some((a) => `prop_${a.attemptId}` === id))!;
+    expect(byProposal(once, first).state).toBe("executing");
+    expect(byProposal(once, second).state).toBe("settled");
+    expect(once.pending.map((p) => p.kind)).toEqual(["payment_proposal"]);
+
+    const twice = await run.resume({ commandId: "r-2" });
+    expect(twice.executions.map((e) => e.state)).toEqual(["settled", "settled"]);
+    expect(proposals.submitted).toHaveLength(2);
+    expect(checkEventLog(state.log.get(run.runId)!)).toEqual([]);
   });
 });

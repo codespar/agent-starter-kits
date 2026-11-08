@@ -14,7 +14,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:932424049f7d014b375f55890d1e2cb8c223a65f9739d489b5e9329cb8a25893"
+        "packageDigest": "sha256:7002947bf2943609d97061f7f325811b93900a775fbbd1db20a1339ae85729d5"
       },
       "entrypoint": "kits/bills-agent/src/kit.js",
       "inputSchema": {
@@ -1393,7 +1393,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:55a692c640c2824792ca4b121a18d0ce26c54777f6ee1770a1ea2d7725ab9118"
+        "packageDigest": "sha256:4f8e0ed463f6bb8c57620991910ed80b810f6cb82f5daa912ed7eb4d1bde1da6"
       },
       "entrypoint": "kits/supplier-payments-agent/src/kit.js",
       "inputSchema": {

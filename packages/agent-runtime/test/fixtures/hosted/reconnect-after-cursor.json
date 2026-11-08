@@ -246,7 +246,7 @@
         },
         "data": {
           "turnId": "turn_1",
-          "text": "Propus os fornecedores de outubro: três linhas, uma execução para cada. O resultado de cada linha está no terminal; uma linha que o trilho recusar não segura as outras e não é reenviada.",
+          "text": "Propus os fornecedores de outubro: três linhas, uma execução para cada. O resultado de cada linha está no painel desta execução; uma linha que o trilho recusar não segura as outras e não é reenviada.",
           "truncated": false
         }
       },

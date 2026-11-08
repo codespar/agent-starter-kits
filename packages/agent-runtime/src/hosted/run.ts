@@ -50,7 +50,7 @@ import { envName, type Agent } from "../agent.js";
 import type { KitConfig, RailBuild, RailKind } from "../kit.js";
 import { isAwaitingPayer } from "../poll.js";
 import { loadScenario } from "../scenarios.js";
-import { isFenced, ProposalPaymentRail, type ProposalRail } from "./proposals.js";
+import { isFenced, PROPOSAL_FORWARD_CHANNEL, ProposalPaymentRail, type ProposalRail } from "./proposals.js";
 import { assembleSetup, loadAgentFiles, type Setup } from "../setup.js";
 import { decideByGesture, followUp, handleExecution, type BatchGestureRecord } from "../terminal.js";
 import { RUN_ID } from "./contract.js";
@@ -445,7 +445,7 @@ export class HostedRun {
   private forward(execution: Execution): Execution {
     if (this.image.binding.executor !== "codespar-test" || execution.state !== "awaiting_approval") return execution;
     this.project();
-    const forwarded = this.setup.engine.approve(execution.id, { id: this.approver.id, channel: "platform-proposal" });
+    const forwarded = this.setup.engine.approve(execution.id, { id: this.approver.id, channel: PROPOSAL_FORWARD_CHANNEL });
     this.decided(forwarded, "forward", "platform-proposal");
     return forwarded;
   }
@@ -519,10 +519,17 @@ export class HostedRun {
     const engine = this.setup.engine;
     const reconciled: Array<{ executionId: string; from: ExecutionState; to: ExecutionState }> = [];
     for (const stuck of engine.list({ state: "executing" })) {
-      let e = await engine.resumePending(stuck.id);
-      if (this.setup.settlement === "await-payer") e = await this.continueExecution(e);
-      else if (e.state !== "executing") await followUp(e, this.setup, (line) => this.ports.log?.(line));
-      reconciled.push({ executionId: stuck.id, from: "executing", to: e.state });
+      try {
+        let e = await engine.resumePending(stuck.id);
+        if (this.setup.settlement === "await-payer") e = await this.continueExecution(e);
+        else if (e.state !== "executing") await followUp(e, this.setup, (line) => this.ports.log?.(line));
+        reconciled.push({ executionId: stuck.id, from: "executing", to: e.state });
+      } catch (err) {
+        // A fence ends the process; anything else (a read that timed out, a 5xx) leaves this execution as it was, still
+        // executing and reconcilable, for the next resume to look at again. Never a failure, never a re-send; the others go on.
+        if (this.dead || isFenced(err)) throw this.dead ?? err;
+        this.ports.log?.(`resume: ${stuck.id} left as it was, the look failed and the next resume tries again: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     const expired = engine.expireStale().map((e) => e.id);
     const open = engine.list({ state: ["awaiting_approval", "approved", "executing"] }).map((e) => e.id);
@@ -575,7 +582,7 @@ export class HostedRun {
       await this.checkpoint();
       throw new HostedRefusal(err instanceof ReplayExhaustedError ? "replay_exhausted" : "turn_failed", err instanceof Error ? err.message : String(err));
     }
-    const masked = this.redact(reply) ?? "";
+    const masked = hostedWording(this.redact(reply) ?? "");
     const record = this.turnRecord();
     if (record) record.reply = masked;
     this.emit("assistant.replied", "loop", { turnId, text: masked, truncated }, { turnId });
@@ -971,6 +978,18 @@ export class HostedRun {
 }
 
 // ---- views -------------------------------------------------------------------
+
+/**
+ * A reply written for the terminal (the recordings, and a model reading a prompt that mentions one) points the person at a
+ * terminal the Playground does not have. The hosted channel names where the result is instead: the run's panel. The bundle's
+ * transcript and the loop's history keep the reply as the model wrote it; only what the person reads is reworded.
+ */
+export function hostedWording(text: string): string {
+  return text
+    .replace(/\bno terminal\b/g, "no painel desta execução")
+    .replace(/\bNo terminal\b/g, "No painel desta execução")
+    .replace(/\bin the terminal\b/gi, "in this run's panel");
+}
 
 function actorView(actor: Actor): ActorView {
   return actor.type === "agent" ? { type: "agent", agent: actor.agent, onBehalfOf: actor.on_behalf_of } : { type: "human", id: actor.id, channel: actor.channel === "platform-proposal" ? "platform-proposal" : "playground" };

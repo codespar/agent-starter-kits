@@ -13,14 +13,14 @@
           "id": "supplier-payments-agent",
           "version": "0.1.0",
           "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-          "packageDigest": "sha256:55a692c640c2824792ca4b121a18d0ce26c54777f6ee1770a1ea2d7725ab9118"
+          "packageDigest": "sha256:4f8e0ed463f6bb8c57620991910ed80b810f6cb82f5daa912ed7eb4d1bde1da6"
         },
         "modelMode": "replay",
         "executor": "simulator",
         "approvalMode": "human",
         "locale": "pt-BR",
         "exampleId": "partial-batch-failure",
-        "inputRevision": "sha256:99b12c98e0113536ad81a5532dbd9852a07cae8d90468ea7480bc504b035276a"
+        "inputRevision": "sha256:e737d9a8083b4b07d1dc10adf15e5fbd04dda7be60bb21970dde033ff44d935f"
       }
     },
     {
@@ -484,7 +484,7 @@
       },
       "data": {
         "turnId": "turn_1",
-        "text": "Propus os fornecedores de outubro: três linhas, uma execução para cada. O resultado de cada linha está no terminal; uma linha que o trilho recusar não segura as outras e não é reenviada.",
+        "text": "Propus os fornecedores de outubro: três linhas, uma execução para cada. O resultado de cada linha está no painel desta execução; uma linha que o trilho recusar não segura as outras e não é reenviada.",
         "truncated": false
       }
     },
