@@ -104,7 +104,7 @@ export interface ApprovalPort {
  * The executor, pinned at create. No fallback in either direction.
  * `simulator`: the kit's own stub rail and example mandate, in the run's private store.
  * `codespar-test`: each attempt is a platform proposal drafted through `proposals`; a person pays it, the platform dispatches it.
- * A kit that charges (a `charge` tool) drafts receive proposals through `charges` instead (CONTRATO v1.5): a person sends
+ * A kit that charges (a `charge` tool) drafts receive proposals through `charges` instead (CONTRATO v1.6): a person sends
  * the charge, the platform issues it, the payer pays it. A host without `charges` runs no charging kit on codespar-test.
  * The kit gets no client and no key. `mandate` is the one the host binds the kit's own policy to; absent, the kit's example.
  */
@@ -927,7 +927,7 @@ export class HostedRun {
         if (this.image.binding.executor === "codespar-test") {
           const proposalId = String(payload["charge_id"]);
           this.emit("proposal.updated", "engine", { proposalId, attemptId: String(payload["attempt_id"]), state: String(payload["status"]) as "drafted" }, { ...ref, proposalId, attemptId: String(payload["attempt_id"]) }, row.at);
-          // A charge proposal a person sent is a charge out to its payer: what the payer sees travels as for any receivable (v1.5).
+          // A charge proposal a person sent is a charge out to its payer: what the payer sees travels as for any receivable (v1.6).
           if (!chargesOf(this.kit.descriptor) || payload["status"] !== "executing") return;
         }
         const instrument = outcome?.instrument;

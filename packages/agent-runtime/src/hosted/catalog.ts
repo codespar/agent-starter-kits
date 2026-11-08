@@ -106,9 +106,9 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
 
   // The executors: the kit's own stub always. `codespar-test` for a kit whose money moves on the CodeSpar API: there the kit
   // drafts a platform proposal per attempt and a person pays it (CONTRATO.md v1.1), or, for a charge, a receive proposal a
-  // person sends and its payer pays (v1.5); a kit on another rail has none.
+  // person sends and its payer pays (v1.6); a kit on another rail has none.
   const receiptBlocked = maturity["receipt-verification"] === "blocked";
-  // What, on codespar-test, is the platform's own operation and not the kit's API rail (v1.5): its maturity there is the
+  // What, on codespar-test, is the platform's own operation and not the kit's API rail (v1.6): its maturity there is the
   // platform's, so the kit's own `blocked` (which is about its standalone rail) does not block that executor.
   const platformServes = new Set(agent.kit.hosted?.platformServes ?? []);
   for (const capability of platformServes) if (!(capability in maturity)) throw new Error(`${m.name}: hosted.platformServes names ${capability}, which is not a capability in agent.yaml maturity`);

@@ -170,18 +170,18 @@ describe("hosted, on the simulator, from each kit's own example", () => {
     const state = new MemoryState();
     const kit = await kitOf("collections-agent");
     expect(kit.descriptor.executors.find((e) => e.id === "codespar-test")).toMatchObject({ evidence: "charge_status", blockedBy: [], requires: ["platform.test_project", "platform.consumer_mandate", "platform.charges"] });
-    expect(kit.descriptor.recommendedRuns).toEqual([{ executor: "codespar-test", modelMode: "model", example: "acordo-1103", rank: 5 }]);
+    expect(kit.descriptor.recommendedRuns).toEqual([{ executor: "codespar-test", modelMode: "model", example: "acordo-1150", rank: 5 }]);
     const p = ports({ state, rail: { executor: "codespar-test", proposals, charges } });
-    const run = await createHostedRun(kit, p, { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "acordo-1103" } });
+    const run = await createHostedRun(kit, p, { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "acordo-1150" } });
     const drafted = await replayAll(run, 2);
     // The kit's approval is forwarded; the person's decision is sending the charge on its card.
     expect(drafted.run.status).toBe("awaiting_decision");
     expect(drafted.pending.map((x) => x.kind)).toEqual(["payment_proposal"]);
     expect(charges.submitted).toHaveLength(1);
     expect(proposals.submitted).toHaveLength(0);
-    expect(charges.submitted[0]).toMatchObject({ debtor: "Ana Paula Souza", amountMinor: 40500, currency: "BRL", dueDate: "2026-09-23" });
+    expect(charges.submitted[0]).toMatchObject({ debtor: "Bruno Alves", amountMinor: 2700, currency: "BRL", dueDate: "2026-09-23" });
     // No document travels: the payee of a collection is the debtor's CPF, and the host never receives it.
-    expect(JSON.stringify(charges.submitted)).not.toContain("39053344705");
+    expect(JSON.stringify(charges.submitted)).not.toContain("71428563008");
     const proposal = drafted.pending[0]!;
     if (proposal.kind !== "payment_proposal") throw new Error("expected the charge proposal");
     expect(drafted.executions[0]!.evidence[0]).toMatchObject({ kind: "charge_status", detail: "platform charge proposal drafted; not sent, not paid" });
@@ -224,10 +224,10 @@ describe("hosted, on the simulator, from each kit's own example", () => {
     const charges = new FakeCharges();
     const state = new MemoryState();
     const kit = await kitOf("checkout-agent");
-    const run = await createHostedRun(kit, ports({ state, rail: { executor: "codespar-test", proposals: new FakeProposals(), charges } }), { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "ingresso-recital" } });
+    const run = await createHostedRun(kit, ports({ state, rail: { executor: "codespar-test", proposals: new FakeProposals(), charges } }), { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "aula-experimental" } });
     const drafted = await replayAll(run, 2);
     expect(charges.submitted).toHaveLength(1);
-    expect(charges.submitted[0]).toMatchObject({ debtor: "Beatriz Nunes", amountMinor: 4500 });
+    expect(charges.submitted[0]).toMatchObject({ debtor: "Beatriz Nunes", amountMinor: 2500 });
     const proposal = drafted.pending[0]!;
     if (proposal.kind !== "payment_proposal") throw new Error(`expected the charge proposal, got ${JSON.stringify(drafted.pending)}`);
     charges.send(proposal.proposalId);

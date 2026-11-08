@@ -55,7 +55,7 @@ function memoryProposals() {
   };
 }
 
-// The platform's receive proposals for a charging kit (CONTRATO v1.5), in memory: a simulation of the host's port, never a provider.
+// The platform's receive proposals for a charging kit (CONTRATO v1.6), in memory: a simulation of the host's port, never a provider.
 function memoryCharges() {
   const states = new Map();
   return {

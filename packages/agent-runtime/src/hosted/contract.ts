@@ -28,7 +28,7 @@ export const EvidenceKindSchema = z.enum(["none", "simulated", "codespar_receipt
 export const PlatformPrerequisiteSchema = z.enum(["platform.test_project", "platform.consumer_mandate", "platform.payouts", "platform.charges"]);
 /**
  * What the platform does not offer yet and an executor would need: listed in `blockedBy`, never worked around. Empty since
- * v1.5: `platform.charge_proposals` closed when the platform drafted receive proposals for a kit's charges.
+ * v1.6: `platform.charge_proposals` closed when the platform drafted receive proposals for a kit's charges.
  */
 export const PLATFORM_GAPS: readonly string[] = [];
 export const ApprovalModeSchema = z.enum(["human", "mandate"]);

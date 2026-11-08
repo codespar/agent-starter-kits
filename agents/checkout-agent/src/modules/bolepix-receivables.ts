@@ -47,7 +47,7 @@ export interface OrderDeps {
   boundCustomer?: () => string | undefined;
   /** The run's locale, read at call time: an order's status message is worded in it. Default pt-BR. */
   locale?: () => Locale;
-  /** The run's rail: hosted on codespar-test the charge is a platform proposal a person sends first (CONTRATO v1.5). */
+  /** The run's rail: hosted on codespar-test the charge is a platform proposal a person sends first (CONTRATO v1.6). */
   rail?: Pick<PaymentRail, "name">;
 }
 
@@ -168,7 +168,7 @@ function messageFor(order: Execution, text: (typeof STRINGS)[Locale], rail?: Pic
 
 export function describe(order: Execution, cart: Cart | undefined, rail?: Pick<PaymentRail, "name">) {
   const outcome = order.outcomes[0];
-  // Hosted on codespar-test the charge is a platform proposal: a person sends it on its card, then the customer pays (v1.5).
+  // Hosted on codespar-test the charge is a platform proposal: a person sends it on its card, then the customer pays (v1.6).
   const awaiting = rail ? chargeProposalAwaiting(order, rail) : null;
   return {
     status: order.state,

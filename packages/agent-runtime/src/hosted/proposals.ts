@@ -31,7 +31,7 @@ export function awaitingProposalDecision(execution: Execution): boolean {
 
 /**
  * Where a charge that became a platform receive proposal (`rail` is the hosted proposal rail) stands, for what a kit tells
- * the model (v1.5):
+ * the model (v1.6):
  * `person_sends_charge_on_proposal` while a person has not sent it on its card (nothing was charged yet),
  * `payer_pays_charge` once it is out and its payer has not paid. Null for anything else.
  */
@@ -163,7 +163,7 @@ export interface ChargeView {
 }
 
 /**
- * What the host offers a kit whose tool CHARGES (`effect: charge`) on `codespar-test` (CONTRATO v1.5). Each attempt becomes
+ * What the host offers a kit whose tool CHARGES (`effect: charge`) on `codespar-test` (CONTRATO v1.6). Each attempt becomes
  * ONE platform receive proposal: drafted here, sent by a verified person on its card ("Enviar cobrança"), issued by the
  * platform as its own charge (a Collect link and its attempt at the provider's sandbox), paid by the payer, and read back.
  * The kit never issues, never holds a client or a key, and never marks anything paid.
