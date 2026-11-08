@@ -8,8 +8,8 @@
 import { join, resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { checkEventLog, createHostedRun, RunSnapshotSchema, type HostedEvent, type HostedRun, type RunSnapshot } from "@codespar/agent-runtime";
-import { FakeProposals, hostedKit, MemoryState, ports } from "../packages/agent-runtime/test/hosted-ports.js";
+import { checkEventLog, createHostedRun, openHostedRun, RunSnapshotSchema, type HostedEvent, type HostedRun, type RunSnapshot } from "@codespar/agent-runtime";
+import { FakeCharges, FakeProposals, hostedKit, MemoryState, ports } from "../packages/agent-runtime/test/hosted-ports.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const FIXTURES = join(ROOT, "packages/agent-runtime/test/fixtures/hosted");
@@ -163,11 +163,80 @@ describe("hosted, on the simulator, from each kit's own example", () => {
     expect(events(state, run).filter((e) => e.type === "dispatch.attempted")).toHaveLength(3);
   });
 
-  it("collections-agent and checkout-agent have no codespar-test run: the platform drafts no charge for a person to issue", async () => {
+  it("collections-agent on codespar-test: the charge is a platform receive proposal a person sends, its Test payer pays, and a resume repeats nothing", async () => {
+    // FakeCharges is an in-memory SIMULATION of the host's port; the provider sandbox is the host's, exercised in the API's suite.
+    const charges = new FakeCharges();
+    const proposals = new FakeProposals();
+    const state = new MemoryState();
+    const kit = await kitOf("collections-agent");
+    expect(kit.descriptor.executors.find((e) => e.id === "codespar-test")).toMatchObject({ evidence: "charge_status", blockedBy: [], requires: ["platform.test_project", "platform.consumer_mandate", "platform.charges"] });
+    expect(kit.descriptor.recommendedRuns).toEqual([{ executor: "codespar-test", modelMode: "model", example: "acordo-1103", rank: 5 }]);
+    const p = ports({ state, rail: { executor: "codespar-test", proposals, charges } });
+    const run = await createHostedRun(kit, p, { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "acordo-1103" } });
+    const drafted = await replayAll(run, 2);
+    // The kit's approval is forwarded; the person's decision is sending the charge on its card.
+    expect(drafted.run.status).toBe("awaiting_decision");
+    expect(drafted.pending.map((x) => x.kind)).toEqual(["payment_proposal"]);
+    expect(charges.submitted).toHaveLength(1);
+    expect(proposals.submitted).toHaveLength(0);
+    expect(charges.submitted[0]).toMatchObject({ debtor: "Ana Paula Souza", amountMinor: 40500, currency: "BRL", dueDate: "2026-09-23" });
+    // No document travels: the payee of a collection is the debtor's CPF, and the host never receives it.
+    expect(JSON.stringify(charges.submitted)).not.toContain("39053344705");
+    const proposal = drafted.pending[0]!;
+    if (proposal.kind !== "payment_proposal") throw new Error("expected the charge proposal");
+    expect(drafted.executions[0]!.evidence[0]).toMatchObject({ kind: "charge_status", detail: "platform charge proposal drafted; not sent, not paid" });
+    const notYet = await run.simulatePayer({ commandId: "early", executionId: proposal.executionId, behaviour: "pays" }).then(() => undefined, (e: unknown) => e);
+    expect((notYet as { code?: string }).code).toBe("not_awaiting_payer");
+
+    charges.send(proposal.proposalId);
+    const sent = valid(await run.resume({ commandId: "r1" }));
+    expect(sent.run.status).toBe("awaiting_payer");
+    const payer = sent.pending.find((x) => x.kind === "payer");
+    if (!payer || payer.kind !== "payer") throw new Error(`expected the payer, got ${JSON.stringify(sent.pending)}`);
+    expect(payer).toMatchObject({ chargeId: proposal.proposalId, simulatable: true, instrument: { payable: true, pixCopyPaste: "00020101fake-copy-paste", status: "executing" } });
+    expect(events(state, run).some((e) => e.type === "instrument.presented" && (e.data as { chargeId: string }).chargeId === proposal.proposalId)).toBe(true);
+    const expires = await run.simulatePayer({ commandId: "exp", executionId: payer.executionId, behaviour: "expires" }).then(() => undefined, (e: unknown) => e);
+    expect((expires as { code?: string }).code).toBe("payer_not_simulatable");
+
+    const paid = valid(await run.simulatePayer({ commandId: "pay", executionId: payer.executionId, behaviour: "pays" }));
+    expect(paid.executions.map((e) => e.state)).toEqual(["settled"]);
+    expect(paid.run.status).toBe("idle");
+    expect(paid.executions[0]!.evidence).toEqual([{ kind: "charge_status", id: `clr_fake_${proposal.proposalId}`, detail: "the platform reports the charge paid; the id is its receipt, not verified by the kit" }]);
+
+    // Resume after a restart: the same proposal is read, nothing is drafted, sent or paid again.
+    const reopened = await openHostedRun(kit, p, run.runId);
+    const again = valid(await reopened.resume({ commandId: "r2" }));
+    expect(again.executions.map((e) => e.state)).toEqual(["settled"]);
+    expect(charges.submitted).toHaveLength(1);
+    expect(charges.payments).toEqual([proposal.proposalId]);
+    expect(valid(await reopened.simulatePayer({ commandId: "pay", executionId: payer.executionId, behaviour: "pays" })).executions.map((e) => e.state)).toEqual(["settled"]);
+    expect(charges.payments).toHaveLength(1);
+    expect(events(state, reopened).filter((e) => e.type === "dispatch.attempted")).toHaveLength(1);
+  });
+
+  it("checkout-agent on codespar-test: the order's charge goes out as a receive proposal, and no NFS-e is issued or simulated", async () => {
+    const charges = new FakeCharges();
+    const state = new MemoryState();
+    const kit = await kitOf("checkout-agent");
+    const run = await createHostedRun(kit, ports({ state, rail: { executor: "codespar-test", proposals: new FakeProposals(), charges } }), { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "ingresso-recital" } });
+    const drafted = await replayAll(run, 2);
+    expect(charges.submitted).toHaveLength(1);
+    expect(charges.submitted[0]).toMatchObject({ debtor: "Beatriz Nunes", amountMinor: 4500 });
+    const proposal = drafted.pending[0]!;
+    if (proposal.kind !== "payment_proposal") throw new Error(`expected the charge proposal, got ${JSON.stringify(drafted.pending)}`);
+    charges.send(proposal.proposalId);
+    await run.resume({ commandId: "r" });
+    const paid = valid(await run.simulatePayer({ commandId: "pay", executionId: proposal.executionId, behaviour: "pays" }));
+    expect(paid.executions.map((e) => e.state)).toEqual(["settled"]);
+    const exported = await run.export();
+    const bundle = JSON.stringify(exported.events);
+    expect(bundle).toContain("nfse.not_run");
+    expect(bundle).not.toMatch(/invoice\.opened|nfse_stub/);
+  });
+
+  it("a charging kit on a host without the charge port has no codespar-test run: it is refused, never paid out as a payment proposal", async () => {
     for (const name of ["collections-agent", "checkout-agent"]) {
-      const kit = await kitOf(name);
-      expect(kit.descriptor.executors.find((e) => e.id === "codespar-test")!.blockedBy).toContain("platform.charge_proposals");
-      const refused = await createHostedRun(kit, ports({ rail: { executor: "codespar-test", proposals: new FakeProposals() } }), { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "happy-path" } }).then(
+      const refused = await createHostedRun(await kitOf(name), ports({ rail: { executor: "codespar-test", proposals: new FakeProposals() } }), { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "happy-path" } }).then(
         () => undefined,
         (e: unknown) => e,
       );

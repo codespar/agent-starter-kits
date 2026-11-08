@@ -31,10 +31,20 @@ agents_md: ./AGENTS.md
 # What a person reads about this agent where it is offered (the Playground's catalog). pt-BR reviewed by the Playground's
 # product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
 presentation:
+  # In the integrated Test (codespar-test, with a model) the charge is a platform receive proposal: the person sends it on its
+  # card and the platform's Test payer pays it at the provider's sandbox (CONTRATO v1.5). `acordo-1103` is the smallest agreement.
+  recommendedRuns:
+    - executor: codespar-test
+      modelMode: model
+      example: acordo-1103
+      rank: 5
   pt-BR:
     title: "Cobrança de acordos"
     summary: "Negocia o acordo com quem deve, emite a cobrança e acompanha até o pagamento."
     examples:
+      acordo-1103:
+        title: "Acordo à vista, hoje"
+        description: "A devedora do acordo 1103 paga à vista com desconto; a cobrança vence hoje e é paga."
       beneficiary-not-allowed:
         title: "Devedor sem acordo em aberto"
         description: "Uma cobrança para quem não está na carteira não é emitida."
@@ -63,6 +73,9 @@ presentation:
     title: "Debt collection"
     summary: "Agrees terms with the payer, issues the charge and follows it until it is paid."
     examples:
+      acordo-1103:
+        title: "Paid in full, today"
+        description: "The payer of agreement 1103 pays in full with a discount; the charge is due today and is paid."
       beneficiary-not-allowed:
         title: "Payer without an open agreement"
         description: "A charge to someone not in the book is not issued."
