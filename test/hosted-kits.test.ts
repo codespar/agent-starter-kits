@@ -198,6 +198,12 @@ describe("hosted, on the simulator, from each kit's own example", () => {
     const expires = await run.simulatePayer({ commandId: "exp", executionId: payer.executionId, behaviour: "expires" }).then(() => undefined, (e: unknown) => e);
     expect((expires as { code?: string }).code).toBe("payer_not_simulatable");
 
+    // A charge still registering at the provider: the Test payer pays nothing, the person is told, and the command is not kept.
+    charges.notReady = true;
+    const early = await run.simulatePayer({ commandId: "pay", executionId: payer.executionId, behaviour: "pays" }).then(() => undefined, (e: unknown) => e);
+    expect((early as { code?: string }).code).toBe("payer_not_ready");
+    expect(charges.payments).toEqual([]);
+    charges.notReady = false;
     const paid = valid(await run.simulatePayer({ commandId: "pay", executionId: payer.executionId, behaviour: "pays" }));
     expect(paid.executions.map((e) => e.state)).toEqual(["settled"]);
     expect(paid.run.status).toBe("idle");
