@@ -15,10 +15,23 @@
  *      minutes, then the bank ends it REJECTED (`TIMEOUT_CONSENTIMENTO`).
  * Each is a `consent_step` of the instrument, so the channel shows each once.
  *
+ * Before a payment the enrollment is read again at the provider, as
+ * codespar-enterprise#2428 does: one on record that is no longer usable (an
+ * INACTIVE one, past its expiry; a revoked one) means a new enrollment, not a
+ * failed pull. The MCP binds a payment to the person's newest COMPLETED
+ * enrollment at that bank, never to one we name, so the payment goes out only
+ * when the one checked is the newest, and a payment the MCP bound to another
+ * anyway is uncertain with a human, its signing page never shown.
+ *
  * The payment request goes out at most once: its marker is written to
  * state.db BEFORE the request, and a lost answer is uncertain, never retried
  * (AGENTS.md, rule 7). An enrollment moves no money; one nobody completed
  * ends REJECTED on its own.
+ *
+ * The hosted links carry credentials (a PAR request_uri, a JWT) and are not
+ * written to state.db. The enrollment's lives in this process only (it
+ * expires in about a minute anyway); the signing page is read again from
+ * `status_payment` while the payment waits.
  *
  * Nothing in this file decides money. The amount, the payee and the caps
  * were checked by `ExecutionEngine` before `pay()`; the rail refuses a payee
@@ -61,16 +74,24 @@ export const DEVICE_CONTEXT: DeviceContext = { osVersion: "6.8.0", userTimeZoneO
 
 const AGENT_REASON = "Recarga da sua conta CodeSpar";
 
-/** Ids and statuses only. The hosted links are kept to show the person again on a restart, never logged. */
+/** Ids and statuses only: no hosted link (each carries a credential), nothing logged. */
 interface JsrRecord {
   amount_minor: number;
   payee: string;
   mandate_id: string;
   created_at: string;
-  enrollment?: { id: string; url: string | null; reused: boolean };
-  /** Written BEFORE the payment request goes out; `id` once it answered; `lost_at` when it got no clear answer. */
-  payment?: { requested_at: string; id?: string; url?: string | null; end_to_end_id?: string | null; lost_at?: string };
+  enrollment?: { id: string; reused: boolean };
+  /**
+   * Written BEFORE the payment request goes out; `id` once it answered; `lost_at` when it got no clear answer;
+   * `mismatch` when the MCP bound it to another enrollment than the one checked.
+   */
+  payment?: { requested_at: string; id?: string; end_to_end_id?: string | null; lost_at?: string; mismatch?: true };
   final?: RailOutcome;
+}
+
+/** COMPLETED at the MCP and, when the answer says, AUTHORISED upstream: anything else (INACTIVE, REVOKED, a status not known yet) is not paid with. */
+function usable(e: EnrollmentView): boolean {
+  return e.terminal && e.status === "COMPLETED" && (e.upstreamStatus === null || e.upstreamStatus === "AUTHORISED");
 }
 
 const RECORD = (attemptId: string) => `jsr:${attemptId}`;
@@ -81,6 +102,8 @@ const IN_FLIGHT_MS = 60_000;
 export class JsrPullRail implements PaymentRail {
   readonly name = "iniciador-jsr" as const;
   private readonly clock: () => Date;
+  /** The enrollment pages this process made, by attempt. Memory only: the link is a credential and expires in about a minute. */
+  private readonly enrollLinks = new Map<string, string>();
 
   constructor(
     private readonly store: StateStore,
@@ -105,22 +128,43 @@ export class JsrPullRail implements PaymentRail {
     const record: JsrRecord = { amount_minor: payment.amount_minor, payee: payment.payee, mandate_id: payment.mandate_id, created_at: this.clock().toISOString() };
     let enrollment: EnrollmentView | null;
     try {
-      enrollment = this.config.alwaysEnroll ? null : await this.api.completedEnrollment(this.config.taxId, this.config.participantId);
-      if (!enrollment) {
-        const request: EnrollmentRequest = { externalId: payment.attempt_id, participantId: this.config.participantId, taxId: this.config.taxId, userName: this.config.userName, agentReason: AGENT_REASON, deviceContext: this.config.deviceContext };
-        const created = await this.api.createEnrollment(request);
-        record.enrollment = { id: created.authorizationId, url: created.url, reused: false };
-        this.save(payment.attempt_id, record);
-        return this.awaitingEnrollment(record, created.status);
-      }
+      enrollment = await this.enrollmentToUse();
     } catch (e) {
-      // Nothing that moves money was asked for: a refusal ends the attempt, no answer leaves it for the next try.
-      if (e instanceof IniciadorError && !e.uncertain) return { status: "failed", code: "charge_issuer_error", message: `the enrollment was refused: ${e.message}` };
+      // Reads only, nothing asked of the bank: a refusal ends the attempt, no answer leaves it for the next try.
+      if (e instanceof IniciadorError && !e.transientRead) return { status: "failed", code: "charge_issuer_error", message: `the enrollment is unreadable: ${messageOf(e)}` };
       return { status: "uncertain", code: "enrollment_unconfirmed", message: `the enrollment got no clear answer: ${messageOf(e)}` };
     }
-    record.enrollment = { id: enrollment.authorizationId, url: null, reused: true };
+    if (!enrollment) {
+      let created: EnrollmentView;
+      try {
+        const request: EnrollmentRequest = { externalId: payment.attempt_id, participantId: this.config.participantId, taxId: this.config.taxId, userName: this.config.userName, agentReason: AGENT_REASON, deviceContext: this.config.deviceContext };
+        created = await this.api.createEnrollment(request);
+      } catch (e) {
+        // Nothing that moves money was asked for: a refusal ends the attempt, no answer leaves it for the next try.
+        if (e instanceof IniciadorError && !e.uncertain) return { status: "failed", code: "charge_issuer_error", message: `the enrollment was refused: ${e.message}` };
+        return { status: "uncertain", code: "enrollment_unconfirmed", message: `the enrollment got no clear answer: ${messageOf(e)}` };
+      }
+      record.enrollment = { id: created.authorizationId, reused: false };
+      if (created.url) this.enrollLinks.set(payment.attempt_id, created.url);
+      this.save(payment.attempt_id, record);
+      return this.awaitingEnrollment(payment.attempt_id, record, created.status);
+    }
+    record.enrollment = { id: enrollment.authorizationId, reused: true };
     this.save(payment.attempt_id, record);
-    return this.requestPayment(payment.attempt_id, payment);
+    // `enrollmentToUse` read the newest from the list a moment ago: no second read before the request.
+    return this.requestPayment(payment.attempt_id, payment, true);
+  }
+
+  /**
+   * The enrollment on record to pay with, read again at the provider: the newest COMPLETED one, still usable.
+   * Null when there is none, when `alwaysEnroll`, or when the one on record expired or was revoked: a new enrollment then.
+   */
+  private async enrollmentToUse(): Promise<EnrollmentView | null> {
+    if (this.config.alwaysEnroll) return null;
+    const listed = await this.api.completedEnrollment(this.config.taxId, this.config.participantId);
+    if (!listed) return null;
+    const seen = await this.api.getEnrollment(listed.authorizationId);
+    return usable(seen) ? { ...seen, authorizationId: listed.authorizationId } : null;
   }
 
   async lookup(attemptId: string, payment: RailPayment): Promise<RailLookup> {
@@ -137,7 +181,7 @@ export class JsrPullRail implements PaymentRail {
         if (e instanceof IniciadorError && !e.transientRead) return this.finish(attemptId, record, { status: "failed", code: "charge_issuer_error", message: `the enrollment is unreadable: ${messageOf(e)}` });
         return { status: "uncertain", code: "enrollment_unreadable", message: messageOf(e) };
       }
-      if (!seen.terminal) return this.awaitingEnrollment(record, seen.status);
+      if (!seen.terminal) return this.awaitingEnrollment(attemptId, record, seen.status);
       if (seen.status !== "COMPLETED") {
         // A link nobody opened in time, a passkey not registered within the window: nothing was asked of the bank's money.
         return this.finish(attemptId, record, { status: "failed", code: "charge_expired", message: `the enrollment ended ${seen.status}${seen.upstreamStatus ? ` (${seen.upstreamStatus})` : ""} before the passkey was registered` });
@@ -145,6 +189,7 @@ export class JsrPullRail implements PaymentRail {
       return this.requestPayment(attemptId, payment);
     }
 
+    if (record.payment.mismatch) return mismatchOutcome();
     const paymentId = record.payment.id;
     if (!paymentId) {
       if (!record.payment.lost_at && this.clock().getTime() - new Date(record.payment.requested_at).getTime() < IN_FLIGHT_MS) return { status: "in_flight" };
@@ -157,7 +202,7 @@ export class JsrPullRail implements PaymentRail {
       if (e instanceof IniciadorError && !e.transientRead) return { status: "uncertain", code: "payment_unreadable", needs_human: true, message: `${messageOf(e)}; the payment was requested and may have completed: check it at the bank` };
       return { status: "uncertain", code: "payment_unreadable", message: messageOf(e) };
     }
-    if (!seen.terminal) return this.awaitingSignature(record, seen.upstreamStatus ?? seen.status);
+    if (!seen.terminal) return this.awaitingSignature(record, seen.upstreamStatus ?? seen.status, seen.url);
     if (seen.status !== "COMPLETED") return this.finish(attemptId, record, paymentFailure(seen));
     const endToEndId = seen.endToEndId ?? record.payment.end_to_end_id ?? null;
     const settled: RailOutcome = {
@@ -193,8 +238,27 @@ export class JsrPullRail implements PaymentRail {
     };
   }
 
-  /** The one payment of this attempt. The marker is claimed in a write transaction before the request goes out. */
-  private async requestPayment(attemptId: string, payment: RailPayment): Promise<RailOutcome> {
+  /**
+   * The one payment of this attempt. Unless the caller just read it, the enrollment is checked to be the newest
+   * COMPLETED one, the one the MCP will bind the payment to; nothing is written before that passes. The marker is
+   * claimed in a write transaction before the request goes out.
+   */
+  private async requestPayment(attemptId: string, payment: RailPayment, newestChecked = false): Promise<RailOutcome> {
+    if (!newestChecked) {
+      const enrollmentId = this.load(attemptId)?.enrollment?.id;
+      let newest: EnrollmentView | null;
+      try {
+        newest = await this.api.completedEnrollment(this.config.taxId, this.config.participantId);
+      } catch (e) {
+        if (e instanceof IniciadorError && !e.transientRead) return this.finishIfUnclaimed(attemptId, payment, { status: "failed", code: "charge_issuer_error", message: `the enrollments are unreadable: ${messageOf(e)}; nothing was sent` });
+        return { status: "uncertain", code: "enrollment_unreadable", message: messageOf(e) };
+      }
+      // The list can lag the read that said COMPLETED: look again, nothing was sent.
+      if (!newest) return { status: "uncertain", code: "enrollment_not_listed", message: "the enrollment read COMPLETED but the bank lists none yet; looking again, nothing was sent" };
+      if (newest.authorizationId !== enrollmentId) {
+        return this.finishIfUnclaimed(attemptId, payment, { status: "failed", code: "jsr_enrollment_not_newest", message: "a newer passkey of this person at this bank exists, and the bank would bind the payment to it; nothing was sent" });
+      }
+    }
     const claimed = this.store.transaction(() => {
       const fresh = this.load(attemptId);
       if (!fresh || fresh.payment || fresh.final) return undefined;
@@ -225,17 +289,35 @@ export class JsrPullRail implements PaymentRail {
       this.save(attemptId, { ...claimed, payment: { ...claimed.payment!, lost_at: this.clock().toISOString() } });
       return { status: "uncertain", code: "pull_dispatch_uncertain", needs_human: true, message: `the payment request got no clear answer (${messageOf(e)}); it is NOT retried: check the payments at the bank` };
     }
-    const next: JsrRecord = { ...claimed, payment: { ...claimed.payment!, id: created.paymentId, url: created.url } };
+    if (created.authorizationId !== claimed.enrollment!.id) {
+      // Bound to another passkey than the one checked (one completed in between): its page is never shown, so it expires unsigned.
+      this.save(attemptId, { ...claimed, payment: { ...claimed.payment!, id: created.paymentId, mismatch: true } });
+      return mismatchOutcome();
+    }
+    const next: JsrRecord = { ...claimed, payment: { ...claimed.payment!, id: created.paymentId } };
     this.save(attemptId, next);
-    return this.awaitingSignature(next, created.upstreamStatus ?? created.status);
+    return this.awaitingSignature(next, created.upstreamStatus ?? created.status, created.url);
   }
 
-  private awaitingEnrollment(record: JsrRecord, status: string): Extract<RailOutcome, { status: "accepted" }> {
-    return this.accepted(record.enrollment!.id, status, record.enrollment!.url, "enroll");
+  /** A final outcome reached before any payment request, unless another reader claimed the payment meanwhile. */
+  private async finishIfUnclaimed(attemptId: string, payment: RailPayment, outcome: RailOutcome): Promise<RailOutcome> {
+    const done = this.store.transaction(() => {
+      const fresh = this.load(attemptId);
+      if (!fresh || fresh.payment || fresh.final) return false;
+      this.save(attemptId, { ...fresh, final: outcome });
+      return true;
+    });
+    if (done) return outcome;
+    const seen = await this.lookup(attemptId, payment);
+    return seen && seen.status !== "in_flight" ? seen : { status: "uncertain", code: "pull_in_flight", message: "another reader's payment request is still on its way" };
   }
 
-  private awaitingSignature(record: JsrRecord, status: string): Extract<RailOutcome, { status: "accepted" }> {
-    return this.accepted(record.payment!.id!, status, record.payment!.url ?? null, "sign");
+  private awaitingEnrollment(attemptId: string, record: JsrRecord, status: string): Extract<RailOutcome, { status: "accepted" }> {
+    return this.accepted(record.enrollment!.id, status, this.enrollLinks.get(attemptId) ?? null, "enroll");
+  }
+
+  private awaitingSignature(record: JsrRecord, status: string, url: string | null): Extract<RailOutcome, { status: "accepted" }> {
+    return this.accepted(record.payment!.id!, status, url, "sign");
   }
 
   private accepted(transactionId: string, status: string, url: string | null, step: "enroll" | "sign"): Extract<RailOutcome, { status: "accepted" }> {
@@ -256,6 +338,10 @@ export class JsrPullRail implements PaymentRail {
   private save(attemptId: string, record: JsrRecord): void {
     this.store.setCursor(RECORD(attemptId), JSON.stringify(record));
   }
+}
+
+function mismatchOutcome(): RailOutcome {
+  return { status: "uncertain", code: "enrollment_mismatch", needs_human: true, message: "the bank bound the payment to another passkey than the one checked; its signing page is not shown, so it expires unsigned, and it is NOT sent again: check the payments at the bank" };
 }
 
 function messageOf(e: unknown): string {
@@ -293,6 +379,7 @@ export class FixtureJsrApi implements JsrApi {
     const id = this.store.getCursor("jsr-fixture:completed");
     if (id) return { authorizationId: id, status: "COMPLETED", upstreamStatus: "AUTHORISED", terminal: true, url: null };
     if (!this.enrolled) return null;
+    this.store.setCursor("jsr-fixture:enr:enr_fixture_prior", "COMPLETED");
     this.store.setCursor("jsr-fixture:completed", "enr_fixture_prior");
     return this.completedEnrollment();
   }

@@ -87,9 +87,7 @@ describe("the payment goes out at most once", () => {
       createEnrollment: async () => {
         throw new Error("not reached");
       },
-      getEnrollment: async () => {
-        throw new Error("not reached");
-      },
+      getEnrollment: async () => ({ authorizationId: "enr_1", status: "COMPLETED", upstreamStatus: "AUTHORISED", terminal: true, url: null }),
       createPayment: async (): Promise<JsrPaymentView> => {
         creates += 1;
         throw new IniciadorError(0, "network", "MCP create_payment: no answer");
@@ -220,10 +218,11 @@ describe("expiry", () => {
     let look = 0;
     const api = scripted({
       completedEnrollment: async () => ({ authorizationId: "enr_1", status: "COMPLETED", upstreamStatus: "AUTHORISED", terminal: true, url: null }),
+      getEnrollment: async () => ({ authorizationId: "enr_1", status: "COMPLETED", upstreamStatus: "AUTHORISED", terminal: true, url: null }),
       createPayment: async () => ({ paymentId: "p1", status: "PENDING", upstreamStatus: "CONSENT_AWAITING_AUTHORIZATION", terminal: false, url: "https://app.invalid/agentic/pay/p1?token=x", authorizationId: "enr_1", endToEndId: null, errorCode: null }),
       getPayment: async () =>
         ++look === 1
-          ? { paymentId: "p1", status: "PENDING", upstreamStatus: "CONSENT_AWAITING_AUTHORIZATION", terminal: false, url: null, authorizationId: null, endToEndId: null, errorCode: null }
+          ? { paymentId: "p1", status: "PENDING", upstreamStatus: "CONSENT_AWAITING_AUTHORIZATION", terminal: false, url: "https://app.invalid/agentic/pay/p1?token=x", authorizationId: null, endToEndId: null, errorCode: null }
           : { paymentId: "p1", status: "REJECTED", upstreamStatus: "CONSENT_REJECTED", terminal: true, url: null, authorizationId: null, endToEndId: null, errorCode: "TIMEOUT_CONSENTIMENTO" },
     });
     const rail = new JsrPullRail(s, api, CONFIG, true);
@@ -264,7 +263,7 @@ describe("a status read that times out", () => {
   it("status_payment times out: uncertain, not final, no human; the next look settles; the payment asked for once", async () => {
     const s = store();
     const base = fakeIniciador(
-      { list_authorizations: () => ENROLLED, create_payment: () => CREATED, status_payment: () => ({ status: "COMPLETED", terminal: true, upstreamStatus: "PAYMENT_COMPLETED" }) },
+      { list_authorizations: () => ENROLLED, status_authorization: () => ({ status: "COMPLETED", terminal: true, upstreamStatus: "AUTHORISED" }), create_payment: () => CREATED, status_payment: () => ({ status: "COMPLETED", terminal: true, upstreamStatus: "PAYMENT_COMPLETED" }) },
       { "/enrollments/payments/p1/status": { id: "p1", status: "PAYMENT_COMPLETED", endToEndId: "E44471172202610271427Uc0cd9af529" } },
     );
     let statusReads = 0;
@@ -281,10 +280,12 @@ describe("a status read that times out", () => {
 
   it("status_authorization times out: uncertain, the enrollment kept; the next look goes on to the sign page", async () => {
     const s = store();
+    let completed = false;
     const base = fakeIniciador({
-      list_authorizations: () => ({ data: [] }),
+      // The list shows the enrollment once a status read saw it COMPLETED.
+      list_authorizations: () => (completed ? ENROLLED : { data: [] }),
       create_authorization: () => ({ authorizationId: "enr_1", status: "PENDING", terminal: false, url: "https://idp.example/authorize?request_uri=r" }),
-      status_authorization: () => ({ status: "COMPLETED", terminal: true, upstreamStatus: "AUTHORISED" }),
+      status_authorization: () => ((completed = true), { status: "COMPLETED", terminal: true, upstreamStatus: "AUTHORISED" }),
       create_payment: () => CREATED,
     });
     let reads = 0;
@@ -316,7 +317,7 @@ describe("the MCP down", () => {
     ["a 503 that echoes the credentials", () => new Response(JSON.stringify({ code: "UNAVAILABLE", message: `upstream down for ${CLIENT_ID}/${CLIENT_SECRET} with Bearer ${TOKEN}` }), { status: 503, headers: { "content-type": "application/json" } })],
   ])("at create_payment, %s: uncertain, needs a human, no secret anywhere, never asked again", async (_name, fault) => {
     const s = store();
-    const base = fakeIniciador({ list_authorizations: () => ENROLLED, create_payment: () => CREATED });
+    const base = fakeIniciador({ list_authorizations: () => ENROLLED, status_authorization: () => ({ status: "COMPLETED", terminal: true, upstreamStatus: "AUTHORISED" }), create_payment: () => CREATED });
     let creates = 0;
     const api = faulty(base, (c) => (c.tool === "create_payment" ? (creates++, fault()) : undefined));
     const rail = new JsrPullRail(s, api, CONFIG, true);
@@ -326,5 +327,112 @@ describe("the MCP down", () => {
     expect(await rail.pay(payment())).toMatchObject({ status: "uncertain" });
     expect(creates).toBe(1);
     expectNoSecret(outcome.status === "uncertain" ? outcome.message : "", s.getCursor("jsr:att_1"));
+  });
+});
+
+const PAYMENT_PENDING: JsrPaymentView = { paymentId: "p1", status: "PENDING", upstreamStatus: "CONSENT_AWAITING_AUTHORIZATION", terminal: false, url: "https://app.invalid/agentic/pay/p1?token=jwt-secret", authorizationId: "enr_1", endToEndId: null, errorCode: null };
+const COMPLETED_ENROLLMENT = { authorizationId: "enr_1", status: "COMPLETED", upstreamStatus: "AUTHORISED", terminal: true, url: null };
+
+describe("the enrollment read again before a payment (codespar-enterprise#2428)", () => {
+  it("one on record that expired (INACTIVE) is a new enrollment page, not a failed pull, and no payment", async () => {
+    const s = store();
+    const api = scripted({
+      completedEnrollment: async () => ({ ...COMPLETED_ENROLLMENT, authorizationId: "enr_old" }),
+      getEnrollment: async (id) => (id === "enr_old" ? { ...COMPLETED_ENROLLMENT, authorizationId: "enr_old", upstreamStatus: "INACTIVE" } : { ...PENDING_ENROLLMENT, url: null }),
+      createEnrollment: async () => PENDING_ENROLLMENT,
+    });
+    const rail = new JsrPullRail(s, api, CONFIG, true);
+    expect(await rail.pay(payment())).toMatchObject({ status: "accepted", transaction_id: "enr_1", instrument: { consent_step: "enroll", consent_url: PENDING_ENROLLMENT.url } });
+    expect(api.calls).toEqual(["completedEnrollment", "getEnrollment", "createEnrollment"]);
+  });
+
+  it("a revoked one too; a usable one goes straight to the payment after the one read", async () => {
+    const s = store();
+    const revoked = scripted({
+      completedEnrollment: async () => COMPLETED_ENROLLMENT,
+      getEnrollment: async () => ({ ...COMPLETED_ENROLLMENT, status: "REVOKED", upstreamStatus: "REVOKED" }),
+      createEnrollment: async () => ({ ...PENDING_ENROLLMENT, authorizationId: "enr_2" }),
+    });
+    expect(await new JsrPullRail(s, revoked, CONFIG, true).pay(payment())).toMatchObject({ status: "accepted", instrument: { consent_step: "enroll" } });
+    const fine = scripted({ completedEnrollment: async () => COMPLETED_ENROLLMENT, getEnrollment: async () => COMPLETED_ENROLLMENT, createPayment: async () => PAYMENT_PENDING });
+    expect(await new JsrPullRail(store(), fine, CONFIG, true).pay(payment())).toMatchObject({ status: "accepted", instrument: { consent_step: "sign" } });
+    expect(fine.calls).toEqual(["completedEnrollment", "getEnrollment", "createPayment"]);
+  });
+});
+
+describe("the payment is bound to the enrollment checked", () => {
+  it("bound to another passkey: uncertain with a human, the signing page never shown, never sent again, never read", async () => {
+    const s = store();
+    const api = scripted({ completedEnrollment: async () => COMPLETED_ENROLLMENT, getEnrollment: async () => COMPLETED_ENROLLMENT, createPayment: async () => ({ ...PAYMENT_PENDING, authorizationId: "enr_other" }) });
+    const rail = new JsrPullRail(s, api, CONFIG, true);
+    const outcome = await rail.pay(payment());
+    expect(outcome).toMatchObject({ status: "uncertain", code: "enrollment_mismatch", needs_human: true });
+    expect(await rail.lookup("att_1", payment())).toEqual(outcome);
+    expect(await rail.pay(payment())).toEqual(outcome);
+    expect(JSON.stringify(outcome)).not.toContain("agentic/pay");
+    expect(s.getCursor("jsr:att_1")).not.toContain("agentic/pay");
+    expect(api.calls.filter((c) => c === "createPayment")).toHaveLength(1);
+    expect(api.calls).not.toContain("getPayment");
+  });
+
+  it("an answer that names no enrollment is the same: not shown", async () => {
+    const api = scripted({ completedEnrollment: async () => COMPLETED_ENROLLMENT, getEnrollment: async () => COMPLETED_ENROLLMENT, createPayment: async () => ({ ...PAYMENT_PENDING, authorizationId: null }) });
+    expect(await new JsrPullRail(store(), api, CONFIG, true).pay(payment())).toMatchObject({ status: "uncertain", code: "enrollment_mismatch", needs_human: true });
+  });
+
+  it("a newer passkey completed after this enrollment: refused before the payment (jsr_enrollment_not_newest), nothing sent", async () => {
+    const s = store();
+    const api = scripted({
+      completedEnrollment: async () => (api.calls.filter((c) => c === "completedEnrollment").length === 1 ? null : { ...COMPLETED_ENROLLMENT, authorizationId: "enr_newer" }),
+      createEnrollment: async () => PENDING_ENROLLMENT,
+      getEnrollment: async () => COMPLETED_ENROLLMENT,
+    });
+    const rail = new JsrPullRail(s, api, CONFIG, true);
+    await rail.pay(payment());
+    const refused = await rail.lookup("att_1", payment());
+    expect(refused).toMatchObject({ status: "failed", code: "jsr_enrollment_not_newest" });
+    expect(await rail.lookup("att_1", payment())).toEqual(refused);
+    expect(api.calls).not.toContain("createPayment");
+  });
+
+  it("the list not showing the enrollment yet: uncertain, nothing sent; the next look pays", async () => {
+    const s = store();
+    let listed = 0;
+    const api = scripted({
+      // First call (pay): none, so it enrolls; second (the check): not listed yet; third: listed.
+      completedEnrollment: async () => (++listed >= 3 ? COMPLETED_ENROLLMENT : null),
+      createEnrollment: async () => PENDING_ENROLLMENT,
+      getEnrollment: async () => COMPLETED_ENROLLMENT,
+      createPayment: async () => PAYMENT_PENDING,
+    });
+    const rail = new JsrPullRail(s, api, CONFIG, true);
+    await rail.pay(payment());
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "uncertain", code: "enrollment_not_listed" });
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "accepted", instrument: { consent_step: "sign" } });
+    expect(api.calls.filter((c) => c === "createPayment")).toHaveLength(1);
+  });
+});
+
+describe("no hosted link at rest", () => {
+  it("neither page is in state.db; after a restart the signing page comes back from status_payment", async () => {
+    const s = store();
+    let completed = false;
+    const base = fakeIniciador({
+      list_authorizations: () => (completed ? ENROLLED : { data: [] }),
+      create_authorization: () => ({ authorizationId: "enr_1", status: "PENDING", terminal: false, url: "https://idp.example/authorize?request_uri=par-secret" }),
+      status_authorization: () => ((completed = true), { status: "COMPLETED", terminal: true, upstreamStatus: "AUTHORISED" }),
+      create_payment: () => ({ ...CREATED, url: "https://app.example/agentic/pay/p1?token=jwt-secret" }),
+      status_payment: () => ({ status: "PENDING", terminal: false, upstreamStatus: "CONSENT_AWAITING_AUTHORIZATION", link: "https://app.example/agentic/pay/p1?token=jwt-secret" }),
+    });
+    const api = faulty(base, () => undefined);
+    const rail = new JsrPullRail(s, api, CONFIG, true);
+    expect(await rail.pay(payment())).toMatchObject({ instrument: { consent_step: "enroll", consent_url: "https://idp.example/authorize?request_uri=par-secret" } });
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ instrument: { consent_step: "sign", consent_url: "https://app.example/agentic/pay/p1?token=jwt-secret" } });
+    const atRest = s.getCursor("jsr:att_1") ?? "";
+    for (const secret of ["par-secret", "jwt-secret", "request_uri", "token="]) expect(atRest).not.toContain(secret);
+    // A new process over the same state.db: the signing page read again while the payment waits.
+    const restarted = new JsrPullRail(s, api, CONFIG, true);
+    expect(await restarted.lookup("att_1", payment())).toMatchObject({ status: "accepted", instrument: { consent_step: "sign", consent_url: "https://app.example/agentic/pay/p1?token=jwt-secret" } });
+    expect(base.calls.filter((c) => c.tool === "create_payment")).toHaveLength(1);
   });
 });

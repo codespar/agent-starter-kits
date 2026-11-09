@@ -35,7 +35,7 @@ export interface JsrPaymentView {
   status: string;
   upstreamStatus: string | null;
   terminal: boolean;
-  /** The hosted signing page; only on create. About 10 minutes, then the payment ends REJECTED. */
+  /** The hosted signing page: on create, and on a status read while the payment waits. About 10 minutes, then the payment ends REJECTED. */
   url: string | null;
   /** The enrollment the MCP bound the payment to: the most recent COMPLETED one of the person at that bank, never chosen. */
   authorizationId: string | null;
@@ -165,8 +165,10 @@ export class HttpJsrApi implements JsrApi {
   }
 
   async getPayment(paymentId: string): Promise<JsrPaymentView> {
-    const seen = paymentOf({ paymentId, ...((await this.tool("status_payment", { paymentId })) as object) });
-    if (!seen.terminal) return { ...seen, url: null };
+    const json = (await this.tool("status_payment", { paymentId })) as Record<string, unknown>;
+    const seen = paymentOf({ paymentId, ...json });
+    // While it waits, the signing page comes back with the status (as `link`, or `url`), so no copy of it is kept anywhere.
+    if (!seen.terminal) return { ...seen, url: typeof json["link"] === "string" ? json["link"] : seen.url };
     // Terminal: the end-to-end id and the rejection code exist only on the REST side.
     const rest = (await this.rest("GET", `/enrollments/payments/${encodeURIComponent(paymentId)}/status`)) as { endToEndId?: unknown; status?: unknown; error?: { code?: unknown } } | null;
     return {
