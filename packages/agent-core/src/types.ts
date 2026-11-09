@@ -216,4 +216,9 @@ export interface ChargeInstrument {
    * by hand. Absent on a bolepix.
    */
   consent_url?: string | null;
+  /**
+   * True where `consent_url` was dropped before the instrument went to disk
+   * (the stub rail's table): there was a page, its link is not kept.
+   */
+  has_consent_url?: boolean;
 }
