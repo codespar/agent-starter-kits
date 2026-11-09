@@ -93,7 +93,8 @@ function fakeIniciador(options: { authStatus?: string[]; rejection?: string; pay
     if (init?.method === "GET" && path === "/sweeping/authorizations/urn%3AIniciador%3Aauth-1") {
       if (options.authRead) return json(options.authRead, { message: "authorization read refused" });
       const status = authStatus.length > 1 ? authStatus.shift()! : authStatus[0]!;
-      return json(200, { authorizationId: "urn:Iniciador:auth-1", status, ...(options.rejection ? { rejection: { reason: { code: options.rejection } } } : {}) });
+      // As the sandbox answered on 2026-10-29: `authUrl` comes back with the status while the bank waits, and not after.
+      return json(200, { authorizationId: "urn:Iniciador:auth-1", status, ...(status === "AWAITING_AUTHORISATION" ? { authUrl: "https://bank.example/consent?request_uri=urn:x" } : {}), ...(options.rejection ? { rejection: { reason: { code: options.rejection } } } : {}) });
     }
     if (init?.method === "POST" && path === "/sweeping/authorizations/urn%3AIniciador%3Aauth-1/payments") {
       if (options.paymentCreate === "lost") throw new TypeError("fetch failed");
@@ -315,5 +316,39 @@ describe("the limits", () => {
     expect(sweepingLimits({ INICIADOR_TOTAL_CENTS: "2000", INICIADOR_TX_LIMIT_CENTS: "300" })).toEqual({ total_minor: 2000, per_tx_minor: 300 });
     expect(() => sweepingLimits({ INICIADOR_TX_LIMIT_CENTS: "2000" })).toThrow(/cannot exceed/);
     expect(() => sweepingLimits({ INICIADOR_TOTAL_CENTS: "10.5" })).toThrow(/positive integer/);
+  });
+});
+
+describe("the bank's link is not kept in state.db", () => {
+  const LINK = "https://bank.example/consent?request_uri=urn:x";
+
+  it("the record holds ids and statuses only; after a restart the link comes back from the authorization read", async () => {
+    const s = store();
+    const fake = fakeIniciador({ authStatus: ["AWAITING_AUTHORISATION", "AUTHORISED"] });
+    const first = await new SweepingPullRail(s, httpApi(fake), CONFIG, true).pay(payment());
+    expect(first).toMatchObject({ status: "accepted", instrument: { consent_url: LINK } });
+    const atRest = s.getCursor("sweeping:att_1") ?? "";
+    for (const piece of ["request_uri", "bank.example", "auth_url"]) expect(atRest).not.toContain(piece);
+    // A new process over the same state.db, the bank still waiting: the link again, read from the bank.
+    const restarted = new SweepingPullRail(s, httpApi(fake), CONFIG, true);
+    expect(await restarted.lookup("att_1", payment())).toMatchObject({ status: "accepted", instrument: { consent_url: LINK } });
+    expect(fake.calls.filter((c) => c.method === "POST" && c.path === "/sweeping/authorizations")).toHaveLength(1);
+  });
+
+  it("a record written with the link by an earlier version loses it at its next write, and the pull goes on", async () => {
+    const s = store();
+    const fake = fakeIniciador({ authStatus: ["AUTHORISED"] });
+    const rail = new SweepingPullRail(s, httpApi(fake), CONFIG, true);
+    await rail.pay(payment());
+    s.setCursor("sweeping:att_1", JSON.stringify({ ...JSON.parse(s.getCursor("sweeping:att_1")!), auth_url: LINK }));
+    expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "settled" });
+    expect(s.getCursor("sweeping:att_1")).not.toContain("request_uri");
+  });
+
+  it("the offline fixture answers the link while it waits, as the sandbox does", async () => {
+    const s = store();
+    const api = new FixtureSweepingApi(s);
+    const created = await api.createAuthorization({ externalId: "att_1" } as Parameters<FixtureSweepingApi["createAuthorization"]>[0]);
+    expect(created.authUrl).toMatch(/request_uri=/);
   });
 });

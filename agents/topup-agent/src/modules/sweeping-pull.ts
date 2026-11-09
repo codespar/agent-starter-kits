@@ -62,7 +62,7 @@ export interface SweepingRailConfig {
   clock?: () => Date;
 }
 
-/** What the rail remembers per attempt, in state.db. Ids and statuses only. */
+/** What the rail remembers per attempt, in state.db. Ids and statuses only: the bank's link carries a credential and is not kept. */
 interface PullRecord {
   /** Null while the authorization request has gone out and no answer came back with an id. */
   authorization_id: string | null;
@@ -72,7 +72,6 @@ interface PullRecord {
    * of one nobody saw expires on its own.
    */
   authorization_requests?: Array<{ at: string; answered: "id" | "refused" | "no_answer" | null }>;
-  auth_url: string | null;
   amount_minor: number;
   payee: string;
   mandate_id: string;
@@ -94,6 +93,11 @@ const RECEIPT = (paymentId: string) => `sweeping-receipt:${paymentId}`;
 export class SweepingPullRail implements PaymentRail {
   readonly name = "iniciador-sweeping" as const;
   private readonly clock: () => Date;
+  /**
+   * The bank's consent links this process was handed, by attempt. Memory only: each carries its credential
+   * (a PAR request_uri). After a restart the link comes back from `getAuthorization` while the bank waits.
+   */
+  private readonly authLinks = new Map<string, string>();
 
   constructor(
     private readonly store: StateStore,
@@ -111,7 +115,7 @@ export class SweepingPullRail implements PaymentRail {
       const seen = await this.lookup(payment.attempt_id, payment);
       return seen && seen.status !== "in_flight" ? seen : { status: "uncertain", code: "authorization_unconfirmed", message: "an authorization request for this attempt is still on its way" };
     }
-    if (existing) return this.awaiting(existing, existing.payment ? "PAYMENT_PENDING" : "AWAITING_AUTHORISATION");
+    if (existing) return this.awaiting(payment.attempt_id, existing, existing.payment ? "PAYMENT_PENDING" : "AWAITING_AUTHORISATION");
     if (payment.payee !== this.config.creditorId) {
       return { status: "failed", code: "creditor_mismatch", message: "the payee is not the creditor this agent is configured for; nothing was sent" };
     }
@@ -120,7 +124,6 @@ export class SweepingPullRail implements PaymentRail {
     }
     const pending: PullRecord = {
       authorization_id: null,
-      auth_url: null,
       amount_minor: payment.amount_minor,
       payee: payment.payee,
       mandate_id: payment.mandate_id,
@@ -158,9 +161,10 @@ export class SweepingPullRail implements PaymentRail {
       this.save(attemptId, kept);
       return outcome;
     }
-    const issued: PullRecord = { ...record, authorization_id: auth.authorizationId, auth_url: auth.authUrl, authorization_requests: answered("id") };
+    const issued: PullRecord = { ...record, authorization_id: auth.authorizationId, authorization_requests: answered("id") };
+    if (auth.authUrl) this.authLinks.set(attemptId, auth.authUrl);
     this.save(attemptId, issued);
-    return this.awaiting(issued, auth.status);
+    return this.awaiting(attemptId, issued, auth.status);
   }
 
   async lookup(attemptId: string, payment: RailPayment): Promise<RailLookup> {
@@ -197,7 +201,9 @@ export class SweepingPullRail implements PaymentRail {
         if (e instanceof IniciadorError && !e.transientRead) return this.finish(attemptId, record, { status: "failed", code: "authorization_unreadable", message: messageOf(e) });
         return { status: "uncertain", code: "authorization_unreadable", message: messageOf(e) };
       }
-      if (!AUTHORIZATION_TERMINAL.has(auth.status)) return this.awaiting(record, auth.status);
+      // While it waits, the bank answers the link again with the status (sandbox, 2026-10-29): that copy wins over this process's.
+      if (auth.authUrl) this.authLinks.set(attemptId, auth.authUrl);
+      if (!AUTHORIZATION_TERMINAL.has(auth.status)) return this.awaiting(attemptId, record, auth.status);
       if (auth.status !== "AUTHORISED") return this.finish(attemptId, record, authorizationFailure(auth));
       // The person approved at the bank. The marker goes to disk before the request does, claimed inside
       // one write transaction on the record as it is NOW: another reader (the run's poll, `npm run poll`,
@@ -247,7 +253,7 @@ export class SweepingPullRail implements PaymentRail {
       return { status: "uncertain", code: "payment_unreadable", message: messageOf(e) };
     }
     const endToEndId = seen.endToEndId ?? record.payment.end_to_end_id ?? null;
-    if (!PAYMENT_TERMINAL.has(seen.status)) return this.awaiting(record, seen.status);
+    if (!PAYMENT_TERMINAL.has(seen.status)) return this.awaiting(attemptId, record, seen.status);
     if (seen.status !== "PAYMENT_COMPLETED") return this.finish(attemptId, record, { status: "failed", code: "charge_issuer_error", message: `the bank ended the pull ${seen.status}` });
     const settled: RailOutcome = {
       status: "settled",
@@ -287,7 +293,7 @@ export class SweepingPullRail implements PaymentRail {
     };
   }
 
-  private awaiting(record: PullRecord, status: string): Extract<RailOutcome, { status: "accepted" }> {
+  private awaiting(attemptId: string, record: PullRecord, status: string): Extract<RailOutcome, { status: "accepted" }> {
     if (!record.authorization_id) throw new Error("awaiting() is only reached once the bank answered with an authorization id");
     const instrument: ChargeInstrument = {
       payable: true,
@@ -297,7 +303,7 @@ export class SweepingPullRail implements PaymentRail {
       boleto_bar_code: null,
       due_date: null,
       // Only while the bank is waiting for the person; once a payment exists there is nothing left to open.
-      consent_url: record.payment ? null : record.auth_url,
+      consent_url: record.payment ? null : (this.authLinks.get(attemptId) ?? null),
     };
     return { status: "accepted", transaction_id: record.authorization_id, instrument, sandbox: this.sandbox, raw: { authorization_id: record.authorization_id, status } };
   }
@@ -313,8 +319,14 @@ export class SweepingPullRail implements PaymentRail {
   }
 
   private save(attemptId: string, record: PullRecord): void {
-    this.store.setCursor(RECORD(attemptId), JSON.stringify(record));
+    // A record written before the link left state.db carries `auth_url`: dropped at its next write.
+    const { auth_url: _legacy, ...kept } = record as PullRecord & { auth_url?: unknown };
+    this.store.setCursor(RECORD(attemptId), JSON.stringify(kept));
   }
+}
+
+function fixtureAuthUrl(authorizationId: string): string {
+  return `https://banco-de-testes.invalid/consent?request_uri=${encodeURIComponent(authorizationId)}`;
 }
 
 function messageOf(e: unknown): string {
@@ -392,7 +404,7 @@ export class FixtureSweepingApi implements SweepingApi {
   async createAuthorization(r: AuthorizationRequest): Promise<AuthorizationView> {
     const id = `urn:fixture:${sha256Hex(r.externalId).slice(0, 16)}`;
     if (!this.auth(id)) this.saveAuth(id, { status: "AWAITING_AUTHORISATION", looks: 0, fate: this.fate, rejection: null });
-    return { authorizationId: id, status: "AWAITING_AUTHORISATION", authUrl: `https://banco-de-testes.invalid/consent?request_uri=${encodeURIComponent(id)}`, rejection: null };
+    return { authorizationId: id, status: "AWAITING_AUTHORISATION", authUrl: fixtureAuthUrl(id), rejection: null };
   }
 
   async getAuthorization(authorizationId: string): Promise<AuthorizationView> {
@@ -405,7 +417,8 @@ export class FixtureSweepingApi implements SweepingApi {
       else if (auth.fate === "rejects") next = { ...next, status: "REJECTED", rejection: "REJEITADO_USUARIO" };
     }
     this.saveAuth(authorizationId, next);
-    return { authorizationId, status: next.status, authUrl: null, rejection: next.rejection };
+    // As the sandbox does: the link comes back with the status while the bank waits for the person.
+    return { authorizationId, status: next.status, authUrl: next.status === "AWAITING_AUTHORISATION" ? fixtureAuthUrl(authorizationId) : null, rejection: next.rejection };
   }
 
   async createPayment(authorizationId: string, r: PaymentRequest): Promise<PaymentView> {
