@@ -105,6 +105,21 @@ What this rail adds is which page comes when and how long each one lasts:
 1. **Cadastrar biometria** (`consent_step: enroll`). Sent only when the person has no COMPLETED enrollment at that bank. The link expires about a minute after it is made, so it is made when the approved execution is dispatched.
 2. **Confirmar biometria** (`consent_step: sign`). The payment, created once the enrollment is COMPLETED. The person has about 10 minutes, then the bank ends it REJECTED (`TIMEOUT_CONSENTIMENTO`), which the agent reports as an expired link.
 
+Before each payment the enrollment on record is read again at the provider
+(`status_authorization`), as the API's `/v1/ofb/jsr` does
+(codespar-enterprise#2428): one that expired (INACTIVE) or was revoked means
+a new **Cadastrar biometria** page, not a failed pull. The MCP binds a payment
+to the person's newest COMPLETED enrollment at that bank, so the payment goes
+out only when the one checked is the newest (`jsr_enrollment_not_newest`
+otherwise, nothing sent). A payment the MCP bound to another one anyway is
+`enrollment_mismatch`, `uncertain` with `needs_human`: its signing page is
+never shown, it expires unsigned, and it is never sent again.
+
+Neither link is written to state.db: each carries a credential. The
+enrollment's lives in the running process only (it lasts about a minute);
+the signing page is read again from `status_payment` while the payment
+waits, so `npm run poll` after a restart still has it.
+
 The payment request goes out at most once. A marker is written to state.db
 before it, and an answer that never arrives (MCP down, a timeout, a 5xx) is
 `uncertain` with `needs_human` and is never sent again. A status read that
