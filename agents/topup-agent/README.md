@@ -97,7 +97,10 @@ phone's biometrics. The local mandate still caps the amount and pins the one
 account, and the rail refuses any other payee and any amount above the limit
 per pull before it calls anything.
 
-One approved execution can send the person two pages, each once:
+One approved execution can send the person two pages. How the runtime shows
+each of them once, in order, with its own words, is #110's `consent_step`
+(`ChargeInstrument.consent_step` in `packages/agent-core/src/types.ts`).
+What this rail adds is which page comes when and how long each one lasts:
 
 1. **Cadastrar biometria** (`consent_step: enroll`). Sent only when the person has no COMPLETED enrollment at that bank. The link expires about a minute after it is made, so it is made when the approved execution is dispatched.
 2. **Confirmar biometria** (`consent_step: sign`). The payment, created once the enrollment is COMPLETED. The person has about 10 minutes, then the bank ends it REJECTED (`TIMEOUT_CONSENTIMENTO`), which the agent reports as an expired link.
