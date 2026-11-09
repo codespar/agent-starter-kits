@@ -273,6 +273,10 @@ export interface AgentKit {
   /** The one line `eval` prints per scenario run and per adversarial case. */
   evalScenarioLine?(check: ScenarioCheck): string;
   evalAdversarialLine?(result: AdversarialResult): string;
-  /** What the hosted catalog cannot derive from `tools.json`. Validated against the tool effects. */
-  hosted?: { outcomeKinds?: readonly OutcomeKind[] };
+  /**
+   * What the hosted catalog cannot derive from `tools.json`. Validated against the tool effects.
+   * `readsPlatform`: a read-only kit whose tools read the Test project through the host (`PlatformReads`); it gets a
+   * `codespar-test` executor that needs the Test project and nothing else (no spending mandate).
+   */
+  hosted?: { outcomeKinds?: readonly OutcomeKind[]; readsPlatform?: boolean };
 }

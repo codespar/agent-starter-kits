@@ -22,10 +22,19 @@ agents_md: ./AGENTS.md
 # What a person reads about this agent where it is offered (the Playground's catalog). pt-BR reviewed by the Playground's
 # product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
 presentation:
+  # In the integrated Test (codespar-test, with a model), the first run the host offers for this kit.
+  recommendedRuns:
+    - executor: codespar-test
+      modelMode: model
+      example: conta-plataforma
+      rank: 3
   pt-BR:
     title: "Primeiros passos"
     summary: "Lê as contas do mês e responde perguntas. Não move dinheiro."
     examples:
+      conta-plataforma:
+        title: "Sua conta de Test"
+        description: "No Test integrado, lê o saldo do seu projeto de Test na CodeSpar, só leitura e sem mandato de gasto. No simulador não há conta para ler, e o agente diz isso."
       happy-path:
         title: "O que vence este mês"
         description: "Você pergunta o que vence em outubro e recebe a lista."
@@ -36,6 +45,9 @@ presentation:
     title: "First steps"
     summary: "Reads the month's bills and answers questions. Moves no money."
     examples:
+      conta-plataforma:
+        title: "Your Test account"
+        description: "In the integrated Test it reads your Test project's balance at CodeSpar, read-only and with no spending mandate. In the simulator there is no account to read, and the agent says so."
       happy-path:
         title: "What is due this month"
         description: "You ask what is due in October and get the list."

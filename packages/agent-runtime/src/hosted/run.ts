@@ -51,6 +51,7 @@ import type { KitConfig, RailBuild, RailKind } from "../kit.js";
 import { isAwaitingPayer } from "../poll.js";
 import { loadScenario } from "../scenarios.js";
 import { isFenced, PROPOSAL_FORWARD_CHANNEL, ProposalPaymentRail, type ProposalRail } from "./proposals.js";
+import type { PlatformReads } from "./reads.js";
 import { assembleSetup, loadAgentFiles, type Setup } from "../setup.js";
 import { decideByGesture, followUp, handleExecution, type BatchGestureRecord } from "../terminal.js";
 import { RUN_ID } from "./contract.js";
@@ -106,7 +107,7 @@ export interface ApprovalPort {
  * `codespar-test`: each attempt is a platform proposal drafted through `proposals`; a person pays it, the platform dispatches it.
  * The kit gets no client and no key. `mandate` is the one the host binds the kit's own policy to; absent, the kit's example.
  */
-export type RailPort = { executor: "simulator" } | { executor: "codespar-test"; proposals: ProposalRail; mandate?: Mandate };
+export type RailPort = { executor: "simulator" } | { executor: "codespar-test"; proposals: ProposalRail; mandate?: Mandate; reads?: PlatformReads };
 
 /** The model mode, pinned at create. `replay` is the example's own recorded transcript; `model` is the host's runtime, under its budgets. */
 export type ModelPort = { mode: "replay" } | { mode: "model"; runtime: AgentRuntime };
@@ -375,6 +376,7 @@ export class HostedRun {
       config,
       makeRuntime: () => this.runtime(),
       beforeDispatch: () => this.checkpoint(),
+      platformReads: rail.executor === "codespar-test" && rail.reads ? this.guardedReads(rail.reads) : undefined,
     });
   }
 
@@ -811,6 +813,23 @@ export class HostedRun {
       }
     };
     return { submit: (request) => guard(() => proposals.submit(request)), read: (proposalId) => guard(() => proposals.read(proposalId)) };
+  }
+
+  /** The host's read port, under the same fence: a read after the run was taken over ends this process, like a save would. */
+  private guardedReads(reads: PlatformReads): PlatformReads {
+    const guard = async <T>(call: () => Promise<T>): Promise<T> => {
+      if (this.dead) throw this.dead;
+      try {
+        return await call();
+      } catch (err) {
+        if (isFenced(err)) {
+          this.dead = this.fenced(err);
+          throw this.dead;
+        }
+        throw err;
+      }
+    };
+    return { balance: () => guard(() => reads.balance()), mandates: () => guard(() => reads.mandates()), proposals: (limit) => guard(() => reads.proposals(limit)) };
   }
 
   /** Engine rows since the last projection, as contract events. The engine's log is the source; these are its view. */

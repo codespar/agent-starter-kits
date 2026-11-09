@@ -1242,7 +1242,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:3ed17311d9a13756098336a3ed5ea23334d373358775ead7758b839c322b40b1"
+        "packageDigest": "sha256:a36a2faef59d5c3491d8320d77167c12fda8eb46298e287b755ef636c86fc567"
       },
       "entrypoint": "kits/hello-agent/src/kit.js",
       "inputSchema": {
@@ -1264,6 +1264,7 @@
           },
           "exampleId": {
             "enum": [
+              "conta-plataforma",
               "happy-path",
               "prompt-injection"
             ]
@@ -1291,13 +1292,22 @@
         "model"
       ],
       "supportedExecutors": [
-        "simulator"
+        "simulator",
+        "codespar-test"
       ],
       "executors": [
         {
           "id": "simulator",
           "evidence": "none",
           "requires": [],
+          "blockedBy": []
+        },
+        {
+          "id": "codespar-test",
+          "evidence": "none",
+          "requires": [
+            "platform.test_project"
+          ],
           "blockedBy": []
         }
       ],
@@ -1311,6 +1321,10 @@
       ],
       "defaultApprovalMode": "human",
       "tools": [
+        {
+          "name": "codespar_account",
+          "effect": "read"
+        },
         {
           "name": "list_bills",
           "effect": "read"
@@ -1332,12 +1346,43 @@
         }
       },
       "recommended": null,
-      "recommendedRuns": [],
+      "recommendedRuns": [
+        {
+          "executor": "codespar-test",
+          "modelMode": "model",
+          "example": "conta-plataforma",
+          "rank": 3
+        }
+      ],
       "exampleIds": [
+        "conta-plataforma",
         "happy-path",
         "prompt-injection"
       ],
       "examples": [
+        {
+          "id": "conta-plataforma",
+          "description": "The person asks for the balance of their Test project. On the integrated Test, codespar_account reads the project's account through the host (no mandate needed, nothing changes); on the simulator there is no platform account, the tool answers available: false and the agent says nothing was read.",
+          "approvalModes": [
+            "human"
+          ],
+          "turns": [
+            {
+              "input": "qual é o saldo da minha conta de teste?"
+            }
+          ],
+          "replay": true,
+          "presentation": {
+            "pt-BR": {
+              "title": "Sua conta de Test",
+              "description": "No Test integrado, lê o saldo do seu projeto de Test na CodeSpar, só leitura e sem mandato de gasto. No simulador não há conta para ler, e o agente diz isso."
+            },
+            "en": {
+              "title": "Your Test account",
+              "description": "In the integrated Test it reads your Test project's balance at CodeSpar, read-only and with no spending mandate. In the simulator there is no account to read, and the agent says so."
+            }
+          }
+        },
         {
           "id": "happy-path",
           "description": "A pessoa pergunta o que vence no mês; o agente lê a lista e responde. Nada é proposto, nada é aprovado, nada é pago.",
@@ -1393,7 +1438,7 @@
       "source": {
         "repository": "codespar/agent-starter-kits",
         "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
-        "packageDigest": "sha256:4f8e0ed463f6bb8c57620991910ed80b810f6cb82f5daa912ed7eb4d1bde1da6"
+        "packageDigest": "sha256:70f3baaa18a554e871ad929b2488703fa9b408717745fe02d030b2d9ee9dc31c"
       },
       "entrypoint": "kits/supplier-payments-agent/src/kit.js",
       "inputSchema": {
@@ -1420,6 +1465,7 @@
               "cap-exceeded",
               "escalated-above-threshold",
               "happy-path",
+              "lote-teste",
               "mandate-revoked",
               "partial-batch-failure",
               "prompt-injection"
@@ -1518,12 +1564,20 @@
         }
       },
       "recommended": null,
-      "recommendedRuns": [],
+      "recommendedRuns": [
+        {
+          "executor": "codespar-test",
+          "modelMode": "model",
+          "example": "lote-teste",
+          "rank": 2
+        }
+      ],
       "exampleIds": [
         "beneficiary-not-allowed",
         "cap-exceeded",
         "escalated-above-threshold",
         "happy-path",
+        "lote-teste",
         "mandate-revoked",
         "partial-batch-failure",
         "prompt-injection"
@@ -1627,6 +1681,30 @@
             "en": {
               "title": "October payroll",
               "description": "The payroll becomes one payment per person, each decided and recorded."
+            }
+          }
+        },
+        {
+          "id": "lote-teste",
+          "description": "The first run in the integrated Test: the operator asks to pay the test batch, which under the confirmed Playground mandate is one line per platform test receiver, R$ 10,00 each, within its caps; every line becomes one platform proposal the person pays. Under the example mandate (the simulator, and this pack in the scenario matrix) that batch does not exist, so nothing is drafted, which is what the expectation pins.",
+          "approvalModes": [
+            "human",
+            "mandate"
+          ],
+          "turns": [
+            {
+              "input": "pague o lote de teste"
+            }
+          ],
+          "replay": true,
+          "presentation": {
+            "pt-BR": {
+              "title": "Lote de teste",
+              "description": "No Test integrado, paga R$ 10,00 a cada recebedor de teste da plataforma; cada linha vira uma proposta que você paga. No simulador esse lote não existe e nada é proposto."
+            },
+            "en": {
+              "title": "Test batch",
+              "description": "In the integrated Test it pays R$ 10.00 to each of the platform's test receivers; each line becomes a proposal you pay. In the simulator that batch does not exist and nothing is proposed."
             }
           }
         },

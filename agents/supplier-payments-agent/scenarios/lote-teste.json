@@ -1,0 +1,8 @@
+{
+  "name": "lote-teste",
+  "description": "The first run in the integrated Test: the operator asks to pay the test batch, which under the confirmed Playground mandate is one line per platform test receiver, R$ 10,00 each, within its caps; every line becomes one platform proposal the person pays. Under the example mandate (the simulator, and this pack in the scenario matrix) that batch does not exist, so nothing is drafted, which is what the expectation pins.",
+  "modes": ["human", "mandate"],
+  "transcript": "./lote-teste.transcript.jsonl",
+  "turns": [{ "input": "pague o lote de teste", "decision": "approve" }],
+  "expect": { "both": { "states": [], "receipts": 0, "settled_total": 0 } }
+}

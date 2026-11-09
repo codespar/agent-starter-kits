@@ -121,6 +121,9 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
       ...(effects.has("charge") ? ["platform.charge_proposals"] : []),
     ].sort();
     executors.push({ id: "codespar-test" satisfies ExecutorId, evidence, requires, blockedBy });
+  } else if (!moves && agent.kit.hosted?.readsPlatform && agent.kit.apiRailKey !== "none") {
+    // A read-only kit that reads the Test project through the host: the project is all it needs. No mandate, nothing to prove.
+    executors.push({ id: "codespar-test", evidence: "none", requires: ["platform.test_project"], blockedBy: [] });
   }
 
   const derived: OutcomeKind[] = ["answer", ...(effects.has("payment") ? (["payment"] as const) : []), ...(effects.has("charge") ? (["charge"] as const) : [])];

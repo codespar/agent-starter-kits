@@ -21,10 +21,22 @@ describe("the hosted catalog of this repository", () => {
     expect([...(await catalog()).keys()]).toEqual(["bills-agent", "checkout-agent", "collections-agent", "hello-agent", "supplier-payments-agent", "topup-agent"]);
   });
 
-  it("describes hello-agent as read-only: no mandate, no settlement, nothing to prove", async () => {
+  it("describes hello-agent as read-only: no mandate, no settlement, nothing to prove, and on the integrated Test only the project", async () => {
     const hello = (await catalog()).get("hello-agent")!;
-    expect(hello).toMatchObject({ needsMandate: false, settlement: "none", outcomeKinds: ["answer"], supportedExecutors: ["simulator"] });
-    expect(hello.executors).toEqual([{ id: "simulator", evidence: "none", requires: [], blockedBy: [] }]);
+    expect(hello).toMatchObject({ needsMandate: false, settlement: "none", outcomeKinds: ["answer"], supportedExecutors: ["simulator", "codespar-test"] });
+    expect(hello.executors).toEqual([
+      { id: "simulator", evidence: "none", requires: [], blockedBy: [] },
+      { id: "codespar-test", evidence: "none", requires: ["platform.test_project"], blockedBy: [] },
+    ]);
+  });
+
+  it("recommends one executable run per kit that can run on the integrated Test with a model: bills, supplier, hello", async () => {
+    const runs = [...(await catalog()).values()].flatMap((k) => k.recommendedRuns.map((r) => [k.id, r.example, r.rank]));
+    expect(runs).toEqual([
+      ["bills-agent", "conta-teste", 1],
+      ["hello-agent", "conta-plataforma", 3],
+      ["supplier-payments-agent", "lote-teste", 2],
+    ]);
   });
 
   it("describes topup-agent as a pull with no CodeSpar receipt, and checkout-agent as an order with its charge", async () => {

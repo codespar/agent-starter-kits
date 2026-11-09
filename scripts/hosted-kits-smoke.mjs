@@ -82,15 +82,35 @@ for (const descriptor of catalog.kits) {
     console.log("FAIL " + descriptor.id + ": " + (err instanceof Error ? err.message : String(err)));
   }
 }
-// codespar-test: every runnable kit drafts proposals and pays nothing; a paid proposal reads back settled.
+// codespar-test, against IN-MEMORY stand-ins of the host's ports (a SIMULATION, not the platform): every runnable kit
+// drafts proposals and pays nothing; a proposal the stand-in marks paid reads back settled.
 for (const descriptor of catalog.kits) {
   const executor = descriptor.executors.find((e) => e.id === "codespar-test");
   if (!executor || executor.blockedBy.length > 0) continue;
   const state = memoryState();
   const proposals = memoryProposals();
-  const ports = { identity: { actor: async () => actor }, state, approval: { signer, authorize: async () => ({ ok: true }) }, rail: { executor: "codespar-test", proposals }, model: { mode: "replay" }, clock: () => new Date("2026-09-23T14:00:00-03:00") };
+  // SIMULATION of the host's read port (v1.5), for a read-only kit: fixed answers, counted.
+  const readCalls = [];
+  const reads = {
+    async balance() { readCalls.push("balance"); return { environment: "test", asOf: "2026-11-08T12:00:00.000Z", accountExists: true, currencies: [{ currency: "BRL", balanceMinor: 1000, availableMinor: 1000, heldMinor: 0 }] }; },
+    async mandates() { readCalls.push("mandates"); return []; },
+    async proposals() { readCalls.push("proposals"); return []; },
+  };
+  const ports = { identity: { actor: async () => actor }, state, approval: { signer, authorize: async () => ({ ok: true }) }, rail: { executor: "codespar-test", proposals, reads }, model: { mode: "replay" }, clock: () => new Date("2026-09-23T14:00:00-03:00") };
   try {
     const kit = await openHostedKit(catalog, descriptor.id, descriptor.source.packageDigest);
+    if (!descriptor.needsMandate) {
+      // A read-only kit: its recommended example reads through the port, and nothing is proposed or executed.
+      const exampleId = descriptor.recommendedRuns[0]?.example ?? "happy-path";
+      const run = await createHostedRun(kit, ports, { commandId: "create", modelMode: "replay", executor: "codespar-test", options: { exampleId } });
+      const example = descriptor.examples.find((e) => e.id === exampleId);
+      for (let n = 0; n < example.turns.length; n += 1) await run.turn({ commandId: "turn-" + n, exampleTurn: n });
+      const snapshot = await run.snapshot();
+      if (snapshot.executions.length > 0 || proposals.states.size > 0) throw new Error("a read-only kit proposed or executed something");
+      if (readCalls.length === 0) throw new Error("the read-only kit read nothing through the port");
+      console.log("ok   " + descriptor.id + " [codespar-test] read-only: " + readCalls.join(", ") + "; 0 proposals, 0 executions");
+      continue;
+    }
     const example = descriptor.examples.find((e) => e.replay && e.id === "happy-path") ?? descriptor.examples.find((e) => e.replay);
     const run = await createHostedRun(kit, ports, { commandId: "create", modelMode: "replay", executor: "codespar-test", options: { exampleId: example.id } });
     for (let n = 0; n < example.turns.length; n += 1) await run.turn({ commandId: "turn-" + n, exampleTurn: n });
@@ -100,7 +120,7 @@ for (const descriptor of catalog.kits) {
     for (const p of waiting) proposals.states.set(p.proposalId, { state: "succeeded", receiptId: "rcpt_smoke_" + p.proposalId, failureCode: null });
     snapshot = await run.resume({ commandId: "resume" });
     if (snapshot.executions.some((e) => e.state !== "settled")) throw new Error("not settled after the proposals were paid: " + snapshot.executions.map((e) => e.state).join(", "));
-    console.log("ok   " + descriptor.id + " [codespar-test] " + waiting.length + " proposal(s) paid by the platform, " + snapshot.executions.length + " settled");
+    console.log("ok   " + descriptor.id + " [codespar-test] " + waiting.length + " proposal(s), paid by the in-memory stand-in of the platform (SIMULATION), " + snapshot.executions.length + " settled");
   } catch (err) {
     failures += 1;
     console.log("FAIL " + descriptor.id + " [codespar-test]: " + (err instanceof Error ? err.message : String(err)));
