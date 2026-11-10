@@ -1,0 +1,72 @@
+name: hosted-kits
+
+# The artifact the CodeSpar API pins (playground-executavel/CONTRATO.md section 7):
+# every agent and the runtime compiled by this repository's own tsc into one npm
+# package, with a catalog whose digests are of the files that ship.
+#
+# On every pull request: build it, scan it, install it into an empty project the
+# way the API does and run every kit once from its own example on the simulator.
+# Nothing is published.
+#
+# Published ONLY by a person: workflow_dispatch on main with publish=true attaches
+# the tarball to the release `hosted-kits-<commit12>` of this public repository.
+# No key, no registry, no paid service: the API pins the release URL and npm
+# records the tarball's sha512.
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Attach the tarball to the release hosted-kits-<commit12> (main only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: build the artifact (tsc, layout, catalog with artifact digests, npm pack)
+        run: node scripts/build-hosted-kits.mjs --out build/hosted-kits
+      - name: secret scan of the laid-out package, its bundled node_modules included
+        run: node scripts/secret-scan.mjs dir build/hosted-kits/package
+      - name: install the tarball into an empty project and run every kit once on the simulator
+        run: node scripts/hosted-kits-smoke.mjs build/hosted-kits/codespar-hosted-kits-*.tgz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hosted-kits
+          path: |
+            build/hosted-kits/*.tgz
+            build/hosted-kits/catalog.json
+            build/hosted-kits/artifact.json
+          retention-days: 14
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: hosted-kits
+          path: hosted-kits
+      - name: attach the tarball to hosted-kits-<commit12>
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="hosted-kits-${GITHUB_SHA:0:12}"
+          integrity=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("hosted-kits/artifact.json","utf8")).integrity)')
+          kits=$(node -e 'const a=JSON.parse(require("fs").readFileSync("hosted-kits/artifact.json","utf8")); console.log(a.kits.map(k=>`- ${k.id}@${k.version} ${k.packageDigest}`).join("\n"))')
+          printf 'Hosted kits from %s.\n\nintegrity: %s\n\n%s\n' "$GITHUB_SHA" "$integrity" "$kits" > notes.md
+          gh release create "$tag" hosted-kits/*.tgz hosted-kits/catalog.json hosted-kits/artifact.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$tag" --notes-file notes.md

@@ -1,0 +1,8 @@
+{
+  "name": "conta-plataforma",
+  "description": "The person asks for the balance of their Test project. On the integrated Test, codespar_account reads the project's account through the host (no mandate needed, nothing changes); on the simulator there is no platform account, the tool answers available: false and the agent says nothing was read.",
+  "modes": ["human"],
+  "transcript": "./conta-plataforma.transcript.jsonl",
+  "turns": [{ "input": "qual é o saldo da minha conta de teste?" }],
+  "expect": { "human": { "states": [], "receipts": 0, "refused_before_draft": 0 } }
+}

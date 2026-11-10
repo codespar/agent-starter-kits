@@ -1,11 +1,41 @@
 {
-  "meta_tools": [],
+  "meta_tools": [
+    {
+      "name": "codespar_account",
+      "effect": "read",
+      "description": "What the person's CodeSpar Test project holds, read-only: `balance` (the project's account balance per currency; no account yet is not a zero balance), `mandates` (the spending mandates' limits and status) or `proposals` (the latest payment proposals, newest first, payee masked, with the receipt id once paid). Only on the integrated Test; elsewhere it answers `available: false` and reads nothing. It cannot pay, approve or change anything.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "string",
+            "enum": [
+              "balance",
+              "mandates",
+              "proposals"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "view"
+        ]
+      }
+    }
+  ],
   "local_tools": [
     {
       "name": "list_bills",
       "effect": "read",
       "description": "The bills of the current month: payee alias, name, amount in BRL cents, due date and days until it falls due (negative once past), plus `today`, the only date you know. Read-only.",
-      "input_schema": { "type": "object", "properties": {} }
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
     }
   ]
 }

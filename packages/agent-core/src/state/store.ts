@@ -22,6 +22,16 @@ export interface EventRow {
 
 export type OutboxStatus = "pending" | "sent" | "done" | "failed";
 
+/**
+ * Every row of every table, as SQLite holds it: what a host that keeps a run
+ * somewhere other than a file persists, and hands back to `fromImage` to
+ * continue the run in another process. Tables a kit adds travel too.
+ */
+export interface StoreImage {
+  v: 1;
+  tables: Record<string, Array<Record<string, string | number | null>>>;
+}
+
 export interface OutboxRow {
   idempotency_key: string;
   execution_id: string;
@@ -113,6 +123,36 @@ export class StateStore {
 
   close(): void {
     this.db.close();
+  }
+
+  /** The whole store, table by table, rows in rowid order. */
+  exportImage(): StoreImage {
+    const tables: StoreImage["tables"] = {};
+    const names = this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>;
+    for (const { name } of names) tables[name] = this.db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all() as Array<Record<string, string | number | null>>;
+    return { v: 1, tables };
+  }
+
+  /**
+   * A store in memory holding exactly the rows of `image`, sequence numbers
+   * included, so the next event continues the numbering the image left.
+   * Only tables this schema knows are restored; an image naming another is
+   * refused rather than silently narrowed.
+   */
+  static fromImage(image: StoreImage): StateStore {
+    const store = new StateStore(":memory:");
+    const known = new Set((store.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((r) => r.name));
+    store.transaction(() => {
+      for (const [name, rows] of Object.entries(image.tables)) {
+        if (!known.has(name)) throw new Error(`store image holds a table this schema does not know: ${name}`);
+        for (const row of rows) {
+          const columns = Object.keys(row);
+          if (columns.length === 0) continue;
+          store.db.prepare(`INSERT INTO "${name}" (${columns.map((c) => `"${c}"`).join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`).run(...columns.map((c) => row[c] ?? null));
+        }
+      }
+    });
+    return store;
   }
 
   transaction<T>(fn: () => T): T {

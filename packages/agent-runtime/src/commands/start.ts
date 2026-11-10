@@ -182,7 +182,7 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
   }
 
   if (agent.kit.ensureMandate) {
-    const ok = await agent.kit.ensureMandate({ agentDir: agent.dir, argv, locale, say, railKind, oneShot: args.input !== undefined, ask: defaultAsk });
+    const ok = await agent.kit.ensureMandate({ agentDir: agent.dir, argv, locale, env: process.env, say, railKind, oneShot: args.input !== undefined, ask: defaultAsk });
     if (!ok) return 1;
   }
 

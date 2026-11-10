@@ -1,0 +1,3 @@
+{"kind":"assistant_step","tool_calls":[{"id":"tc_1","name":"list_payables","input":{}}]}
+{"kind":"assistant_step","tool_calls":[{"id":"tc_2","name":"codespar_pay","input":{"action":"pix","batch_ref":"teste-2026-10"}}]}
+{"kind":"assistant_step","reply":"Pedi o lote de teste: uma proposta por linha. O que o código decidiu sobre cada linha está no resultado desta execução."}

@@ -12,8 +12,10 @@
  *
  * What it refuses, before anything is created at the API:
  *   - a consumer without exactly one active `fs_celcoin_<consumer>` source in
- *     the key's project (no Celcoin binding means the consent would fall back
- *     to a new `pix-consent` source, the Mercado Pago path, or the simulator);
+ *     the key's project. The consent names `executor: "provider_sandbox"`
+ *     (ent#1983), so the API refuses an unbound consumer as well (409
+ *     `provider_sandbox_not_ready`) and never switches to the simulator; the
+ *     kit holds the proof's stricter rule first;
  *   - a local mandate that belongs to another consumer or another funding source.
  * And after the consent: a signed mandate whose consumer or funding source is
  * not the one checked. The consent never funds: the proof's account is credited

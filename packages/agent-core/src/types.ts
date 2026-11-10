@@ -195,6 +195,12 @@ export interface ItemOutcome {
    * attempt this execution already sent and cannot tell whose payment it reads.
    */
   replayed?: true;
+  /**
+   * Who executed a settled payment, as the API recorded it (`payment.executor`, ent#1983): `codespar_simulator` (a Test
+   * mandate signed with the CodeSpar simulator; no provider was called) or `celcoin_sandbox` (the provider's sandbox).
+   * Absent when the rail does not say: the stub, an API before ent#1983, or a payment the API names no executor for (Live).
+   */
+  executor?: string;
   error?: string;
   /** What the payer is shown for an accepted receivable, as the rail handed it back. Presentation only; nothing here decides money. */
   instrument?: ChargeInstrument;

@@ -17,8 +17,63 @@ export interface TranscriptLine {
   [key: string]: unknown;
 }
 
+/**
+ * Where a bundle's files live. A directory on a terminal; a map a host
+ * persists with the run when the run is hosted, so a hosted run writes no
+ * file anywhere. Paths are relative to the bundle (`receipts/<id>.json`).
+ */
+export interface BundleFiles {
+  append(path: string, text: string): void;
+  write(path: string, text: string): void;
+  read(path: string): string | undefined;
+  /** The `.json` files directly under `dir`, sorted. */
+  list(dir: string): string[];
+}
+
+class DirectoryFiles implements BundleFiles {
+  constructor(private readonly root: string) {
+    mkdirSync(join(root, "receipts"), { recursive: true });
+  }
+  append(path: string, text: string): void {
+    appendFileSync(join(this.root, path), text);
+  }
+  write(path: string, text: string): void {
+    writeFileSync(join(this.root, path), text);
+  }
+  read(path: string): string | undefined {
+    const abs = join(this.root, path);
+    return existsSync(abs) ? readFileSync(abs, "utf8") : undefined;
+  }
+  list(dir: string): string[] {
+    const abs = join(this.root, dir);
+    return existsSync(abs) ? readdirSorted(abs) : [];
+  }
+}
+
+/** The bundle as a map from path to contents. `files` is the live map: a host saves it as it is. */
+export class MemoryFiles implements BundleFiles {
+  constructor(readonly files: Map<string, string> = new Map()) {}
+  append(path: string, text: string): void {
+    this.files.set(path, (this.files.get(path) ?? "") + text);
+  }
+  write(path: string, text: string): void {
+    this.files.set(path, text);
+  }
+  read(path: string): string | undefined {
+    return this.files.get(path);
+  }
+  list(dir: string): string[] {
+    const prefix = `${dir}/`;
+    return [...this.files.keys()]
+      .filter((k) => k.startsWith(prefix) && !k.slice(prefix.length).includes("/") && k.endsWith(".json"))
+      .map((k) => k.slice(prefix.length))
+      .sort();
+  }
+}
+
 export class ProofBundle {
   readonly dir: string;
+  private readonly files: BundleFiles;
   /** Every payee key this bundle has been handed, so a prose field that names one (an escalation detail) is masked too. */
   private readonly payees = new Set<string>();
   /** The redactor over `payees`, rebuilt only when a value brings a key it has not seen. */
@@ -28,9 +83,24 @@ export class ProofBundle {
   constructor(
     runsDir: string,
     readonly runId: string,
+    files?: BundleFiles,
   ) {
     this.dir = join(runsDir, runId);
-    mkdirSync(join(this.dir, "receipts"), { recursive: true });
+    this.files = files ?? new DirectoryFiles(this.dir);
+  }
+
+  /** A bundle that writes no file: its contents are `files`, which the caller persists. `dir` is a label, never a path to open. */
+  static inMemory(runId: string, files: MemoryFiles): ProofBundle {
+    return new ProofBundle("memory:", runId, files);
+  }
+
+  /**
+   * The mandate's payee keys, so prose naming one is masked. `mandateSnapshot`
+   * learns them when a run starts; a run reopened in another process learns
+   * them again here before it writes anything.
+   */
+  learnPayees(mandate: Mandate): void {
+    for (const payee of [...mandate.beneficiaries.map((b) => b.payee), ...mandate.merchant_allowlist]) if (payee && payee !== "*") this.payees.add(payee);
   }
 
   static open(runsDir: string, runId: string): ProofBundle | undefined {
@@ -44,13 +114,11 @@ export class ProofBundle {
    * the masked text, which ends the turn the same way and decides nothing.
    */
   transcript(line: TranscriptLine): void {
-    appendFileSync(join(this.dir, "transcript.jsonl"), JSON.stringify(this.masked(line, REPLAYED_FIELDS)) + "\n");
+    this.files.append("transcript.jsonl", JSON.stringify(this.masked(line, REPLAYED_FIELDS)) + "\n");
   }
 
   readTranscript(): TranscriptLine[] {
-    const path = join(this.dir, "transcript.jsonl");
-    if (!existsSync(path)) return [];
-    return readFileSync(path, "utf8")
+    return (this.files.read("transcript.jsonl") ?? "")
       .split("\n")
       .filter(Boolean)
       .map((l) => JSON.parse(l) as TranscriptLine);
@@ -58,7 +126,7 @@ export class ProofBundle {
 
   /** Payee keys are masked on the way in (#116), in their fields and in any prose field that names one: the full key stays in state.db, which never travels. */
   event(event: Record<string, unknown>): void {
-    appendFileSync(join(this.dir, "events.jsonl"), JSON.stringify(this.masked(event)) + "\n");
+    this.files.append("events.jsonl", JSON.stringify(this.masked(event)) + "\n");
   }
 
   /**
@@ -94,22 +162,18 @@ export class ProofBundle {
    * here, like in an event.
    */
   channel(line: Record<string, unknown>): void {
-    appendFileSync(join(this.dir, "channel.jsonl"), JSON.stringify(this.masked(line)) + "\n");
+    this.files.append("channel.jsonl", JSON.stringify(this.masked(line)) + "\n");
   }
 
   readChannel(): Record<string, unknown>[] {
-    const path = join(this.dir, "channel.jsonl");
-    if (!existsSync(path)) return [];
-    return readFileSync(path, "utf8")
+    return (this.files.read("channel.jsonl") ?? "")
       .split("\n")
       .filter(Boolean)
       .map((l) => JSON.parse(l) as Record<string, unknown>);
   }
 
   readEvents(): Record<string, unknown>[] {
-    const path = join(this.dir, "events.jsonl");
-    if (!existsSync(path)) return [];
-    return readFileSync(path, "utf8")
+    return (this.files.read("events.jsonl") ?? "")
       .split("\n")
       .filter(Boolean)
       .map((l) => JSON.parse(l) as Record<string, unknown>);
@@ -122,24 +186,24 @@ export class ProofBundle {
    * behind is caught; it is unkeyed and binds nothing to the seal. The full artifact is in state.db, where the engine reads it.
    */
   approval(artifact: ApprovalArtifact): void {
-    const path = join(this.dir, "approval.json");
-    const current: ApprovalArtifact[] = existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as ApprovalArtifact[]) : [];
+    const stored = this.files.read("approval.json");
+    const current: ApprovalArtifact[] = stored !== undefined ? (JSON.parse(stored) as ApprovalArtifact[]) : [];
     if (!current.some((a) => a.approval_id === artifact.approval_id)) {
       const copy = this.masked(artifact);
       current.push({ ...copy, payee_masked: true, items_hash_masked: itemsHash(copy.items) });
     }
-    writeFileSync(path, JSON.stringify(current, null, 2) + "\n");
+    this.files.write("approval.json", JSON.stringify(current, null, 2) + "\n");
   }
 
   readApprovals(): ApprovalArtifact[] {
-    const path = join(this.dir, "approval.json");
-    return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as ApprovalArtifact[]) : [];
+    const stored = this.files.read("approval.json");
+    return stored !== undefined ? (JSON.parse(stored) as ApprovalArtifact[]) : [];
   }
 
   mandateSnapshot(mandate: Mandate): void {
-    for (const payee of [...mandate.beneficiaries.map((b) => b.payee), ...mandate.merchant_allowlist]) if (payee && payee !== "*") this.payees.add(payee);
+    this.learnPayees(mandate);
     const { signature: _signature, canonical: _canonical, ...safe } = mandate;
-    writeFileSync(join(this.dir, "mandate.snapshot.json"), JSON.stringify({ ...safe, beneficiaries: safe.beneficiaries.map((b) => ({ ...b, payee: maskPayee(b.payee) })), merchant_allowlist: safe.merchant_allowlist.map(maskPayee) }, null, 2) + "\n");
+    this.files.write("mandate.snapshot.json", JSON.stringify({ ...safe, beneficiaries: safe.beneficiaries.map((b) => ({ ...b, payee: maskPayee(b.payee) })), merchant_allowlist: safe.merchant_allowlist.map(maskPayee) }, null, 2) + "\n");
   }
 
   /**
@@ -153,20 +217,20 @@ export class ProofBundle {
     const relative = join("receipts", `${receipt.receipt_id}.json`);
     const { raw: _raw, ...safe } = receipt;
     const copy = { ...safe, payment: { ...safe.payment, payee: safe.payment.payee ? maskPayee(safe.payment.payee) : null }, ...(context.approval_id ? { approval_id: context.approval_id } : {}) };
-    writeFileSync(join(this.dir, relative), JSON.stringify(copy, null, 2) + "\n");
+    this.files.write(relative.split("\\").join("/"), JSON.stringify(copy, null, 2) + "\n");
     return relative;
   }
 
   /** The masked mandate as it stood when the run started. Absent on a bundle whose run never got that far. */
   readMandateSnapshot(): Record<string, unknown> | undefined {
-    const path = join(this.dir, "mandate.snapshot.json");
-    return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>) : undefined;
+    const stored = this.files.read("mandate.snapshot.json");
+    return stored !== undefined ? (JSON.parse(stored) as Record<string, unknown>) : undefined;
   }
 
   /** One receipt by its file name, as `listReceipts()` returns it. */
   readReceipt(file: string): Record<string, unknown> | undefined {
-    const path = join(this.dir, "receipts", basename(file));
-    return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>) : undefined;
+    const stored = this.files.read(`receipts/${basename(file)}`);
+    return stored !== undefined ? (JSON.parse(stored) as Record<string, unknown>) : undefined;
   }
 
   /**
@@ -176,22 +240,20 @@ export class ProofBundle {
    * bundle that gains one later is noticed rather than ignored.
    */
   hasVerify(): boolean {
-    return existsSync(join(this.dir, "verify.json"));
+    return this.files.read("verify.json") !== undefined;
   }
 
   listReceipts(): string[] {
-    const dir = join(this.dir, "receipts");
-    if (!existsSync(dir)) return [];
-    return readdirSorted(dir);
+    return this.files.list("receipts");
   }
 
   meta(meta: Record<string, unknown>): void {
-    writeFileSync(join(this.dir, "run.json"), JSON.stringify(meta, null, 2) + "\n");
+    this.files.write("run.json", JSON.stringify(meta, null, 2) + "\n");
   }
 
   readMeta(): Record<string, unknown> | undefined {
-    const path = join(this.dir, "run.json");
-    return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>) : undefined;
+    const stored = this.files.read("run.json");
+    return stored !== undefined ? (JSON.parse(stored) as Record<string, unknown>) : undefined;
   }
 }
 

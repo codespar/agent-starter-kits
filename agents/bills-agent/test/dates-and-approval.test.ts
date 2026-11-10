@@ -64,7 +64,7 @@ describe("the calendar the model reads", () => {
   it("list_bills carries today, from the pinned clock, and days_until_due per bill", async () => {
     const s = open("human", "2026-09-28T14:00:00-03:00");
     try {
-      const out = (await listBills({}, context(s, false))) as { today: string; bills: Array<{ alias: string; due: string; days_until_due: number }> };
+      const out = (await listBills({})({}, context(s, false))) as { today: string; bills: Array<{ alias: string; due: string; days_until_due: number }> };
       expect(out.today).toBe("2026-09-28");
       const mercado = out.bills.find((b) => b.alias === "mercado")!;
       expect(mercado.due).toBe("2026-10-05");
