@@ -70,11 +70,14 @@ function fakeApi(sources: Array<Record<string, unknown>>, signed: Partial<{ cons
       posts.push(path);
       if (path === "/v1/consents/init") ttl.push(options?.body?.intent?.mandate_ttl_seconds ?? -1);
       if (path === "/v1/consents/init") intents.push(options?.body?.intent ?? {});
-      if (path === "/v1/consents/init") return { token: "tok_test", expires_at: "2026-10-12T18:30:00.000Z" };
+      // ent#1983: the proof's consent asks for the provider's sandbox, and the API confirms it.
+      if (path === "/v1/consents/init") return { token: "tok_test", expires_at: "2026-10-12T18:30:00.000Z", executor: "celcoin_sandbox", executor_label: "Integrado (sandbox Celcoin)" };
       if (path === "/v1/consents/{token}/submit") {
         return {
           mandate_id: "cm_proof",
           signature: "0".repeat(64),
+          executor: "celcoin_sandbox",
+          executor_label: "Integrado (sandbox Celcoin)",
           mandate: {
             consumer_id: signed.consumer_id ?? PROOF.consumerId,
             funding_source_id: signed.funding_source_id ?? CELCOIN_FS,
@@ -161,7 +164,7 @@ describe("the proof's settings", () => {
     process.env["BILLS_CONSUMER_ID"] = PROOF.consumerId;
     process.env["BILLS_PROOF_RECEIVER_KEY"] = PROOF.receiverKey;
     const engine = engineFor({ ...example(), id: "mdt_proof_bills" }, "human");
-    const out = (await listBills({}, { engine } as never)) as { bills: Array<{ alias: string; amount_minor: number }> };
+    const out = (await listBills(process.env)({}, { engine } as never)) as { bills: Array<{ alias: string; amount_minor: number }> };
     expect(out.bills.map((b) => [b.alias, b.amount_minor])).toEqual(INTEGRATED_BILLS.map((b) => [b.alias, b.amount_minor]));
   });
 });

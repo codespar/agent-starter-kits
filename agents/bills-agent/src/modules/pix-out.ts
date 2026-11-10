@@ -5,8 +5,9 @@
  * `list_bills` are reads.
  */
 import { daysUntil, isReplayedSettlement, type Execution, type ToolHandler } from "@codespar/agent-core";
+import { awaitingProposalDecision, forwardedToProposal, type KitConfig } from "@codespar/agent-runtime";
 import { formatBRL } from "../bills.js";
-import { BILLS, MONTH } from "../bills.js";
+import { billsFor, MONTH } from "../bills.js";
 import { INTEGRATED_BILLS, integratedProofFrom } from "./integrated-proof.js";
 
 interface PayInput {
@@ -15,14 +16,18 @@ interface PayInput {
   total_minor?: unknown;
 }
 
-export const listBills: ToolHandler = async (_input, ctx) => {
+/**
+ * `config` is the run's configuration (`setup.config`): the integrated proof's bills replace the month's when it names one.
+ * Otherwise the bills follow the mandate the run is under (`billsFor`).
+ */
+export const listBills = (config: KitConfig): ToolHandler => async (_input, ctx) => {
   const settled = ctx.engine.list({ state: "settled" });
   const paidAliases = new Set(settled.flatMap((e) => e.items.map((i) => i.alias)).filter(Boolean));
   const today = ctx.engine.today();
   return {
     month: MONTH,
     today,
-    bills: (integratedProofFrom(process.env) ? INTEGRATED_BILLS : BILLS).map((b) => ({ ...b, amount: formatBRL(b.amount_minor), days_until_due: daysUntil(today, b.due), paid_this_window: paidAliases.has(b.alias) })),
+    bills: (integratedProofFrom(config) ? INTEGRATED_BILLS : billsFor(ctx.engine.mandate, today)).map((b) => ({ ...b, amount: formatBRL(b.amount_minor), days_until_due: daysUntil(today, b.due), paid_this_window: paidAliases.has(b.alias) })),
     payees: ctx.engine.mandate.beneficiaries.map((b) => ({ alias: b.alias, name: b.name })),
   };
 };
@@ -55,6 +60,8 @@ export const codesparPay: ToolHandler = async (raw, ctx) => {
     ...(execution.reason ? { reason: execution.reason, detail: execution.detail } : {}),
     ...(execution.escalation ? { escalated_by: execution.escalation.trigger } : {}),
     approved_by: approvedBy(execution),
+    // A platform proposal waiting for the person (codespar-test): nothing is approved or paid yet, whatever the state reads like.
+    ...(awaitingProposalDecision(execution) ? { awaiting: "person_decision_on_proposal" } : {}),
     receipt_ids: execution.outcomes.filter((o) => o.receipt_id).map((o) => o.receipt_id),
     // Settled by an earlier presentation of the same attempt: the payment exists, and this call did not make it.
     replayed: isReplayedSettlement(execution),
@@ -84,9 +91,14 @@ export const codesparLedger: ToolHandler = async (raw, ctx) => {
  * Who moved the execution to `approved`: the person (`human`), the signed
  * allowance (`mandate`), or nobody yet (`null`). The model is told which
  * approval modes exist but not which one ran, and without this it guesses.
+ *
+ * A kit approval forwarded to a platform proposal (codespar-test) is nobody's
+ * decision about the payment: `null` until the proposal settles, which only
+ * happens once the person paid it, and `human` from then on.
  */
 export function approvedBy(execution: Execution): "human" | "mandate" | null {
   const step = execution.history.find((h) => h.to === "approved");
   if (!step) return null;
+  if (forwardedToProposal(execution)) return execution.state === "settled" ? "human" : null;
   return step.actor.type === "human" ? "human" : "mandate";
 }

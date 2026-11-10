@@ -37,6 +37,11 @@ jobs:
         run: npm run typecheck
       - name: npm run check (plugin manifests + manifest coherence of every agent)
         run: npm run check
+      # The hosted catalog (CONTRATO.md section 1): one descriptor per agent, derived from its manifest, tools,
+      # scenario packs and kit module, validated by the contract's schema. Run on the clean checkout, before any
+      # step writes under agents/, because the digests are of the files the commit holds.
+      - name: hosted catalog (derived from every agent, validated by the contract schema)
+        run: node scripts/hosted-catalog.mjs --out /tmp/hosted-catalog.json
       - name: adversarial suite + scenarios (replay provider), every agent
         run: |
           npm run eval --workspace=agents/bills-agent

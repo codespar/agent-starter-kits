@@ -47,8 +47,8 @@ describe("npm run eval beside a person's own runs", () => {
 
   it("leaves runs/ with the person's run and one folder for the suite's", () => {
     expect(readdirSync(runsDir).sort()).toEqual(["eval", mine].sort());
-    // 8 adversarial cases and 11 scenario runs.
-    expect(evalRuns).toHaveLength(19);
+    // 8 adversarial cases and 13 scenario runs (seven packs, each in the modes it declares).
+    expect(evalRuns).toHaveLength(21);
     expect(evalRuns.some((id) => id.startsWith("run_adv_"))).toBe(true);
   });
 
@@ -66,7 +66,7 @@ describe("npm run eval beside a person's own runs", () => {
     const out = run("inspect", ["run_nope"]);
     expect(out.code).toBe(1);
     expect(out.stderr).toContain(`  ${mine}`);
-    expect(out.stderr).toContain(`19 more from \`npm run eval\` in ${join(runsDir, "eval")}`);
+    expect(out.stderr).toContain(`21 more from \`npm run eval\` in ${join(runsDir, "eval")}`);
     expect(out.stderr).not.toContain("run_adv_");
     expect(out.stderr).not.toMatch(/^ {2}eval$/m);
   });

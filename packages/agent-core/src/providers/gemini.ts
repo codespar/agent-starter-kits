@@ -5,7 +5,8 @@
  * the guardrails and `tools.json` stay the core's, so switching the model to
  * Gemini changes nothing about what can be paid.
  */
-import { GoogleGenAI, type Content, type FunctionDeclaration, type Part } from "@google/genai";
+// Loaded on the first step, not at import: a host that runs kits with its own model never loads this SDK (CONTRATO.md v1.1).
+import type { Content, FunctionDeclaration, GoogleGenAI, Part } from "@google/genai";
 import type { AgentRuntime, ConversationMessage, Reply, ToolCall, ToolSpec, Turn } from "./types.js";
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview";
@@ -18,7 +19,8 @@ export interface GeminiRuntimeOptions {
 export class GeminiRuntime implements AgentRuntime {
   readonly name = "gemini";
   readonly model: string;
-  private readonly client: GoogleGenAI;
+  private readonly apiKey: string;
+  private client: Promise<GoogleGenAI> | undefined;
   /**
    * The model's own turn, kept verbatim by the id of each call it made.
    * Gemini 2.5 and 3 attach a `thoughtSignature` to function-call parts and
@@ -31,7 +33,7 @@ export class GeminiRuntime implements AgentRuntime {
   constructor(options: GeminiRuntimeOptions = {}) {
     const apiKey = options.apiKey ?? process.env["GEMINI_API_KEY"];
     if (!apiKey) throw new Error("GEMINI_API_KEY is not set; use the replay provider for runs without a model");
-    this.client = new GoogleGenAI({ apiKey });
+    this.apiKey = apiKey;
     this.model = options.model || process.env["GEMINI_MODEL"] || DEFAULT_GEMINI_MODEL;
   }
 
@@ -44,7 +46,9 @@ export class GeminiRuntime implements AgentRuntime {
         tools: [{ functionDeclarations: tools.map(toGeminiDeclaration) }],
       },
     };
-    const response = await withRetry(() => this.client.models.generateContent(request));
+    this.client ??= import("@google/genai").then(({ GoogleGenAI: Sdk }) => new Sdk({ apiKey: this.apiKey }));
+    const client = await this.client;
+    const response = await withRetry(() => client.models.generateContent(request));
     const content = response.candidates?.[0]?.content;
     const calls: ToolCall[] = [];
     const text: string[] = [];

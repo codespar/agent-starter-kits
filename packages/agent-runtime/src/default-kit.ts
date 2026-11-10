@@ -3,7 +3,7 @@
  * example mandate, the generic console words, and no tools. A read-only agent
  * spreads this and adds its handlers; a payer or a collector replaces the rail.
  */
-import { StubRail, formatBRL, isReplayedSettlement, loadMandate, railErrorOf, type Execution, type LocaleTable } from "@codespar/agent-core";
+import { StubRail, executorLabel, executorOf, formatBRL, isReplayedSettlement, loadMandate, railErrorOf, type Execution, type LocaleTable } from "@codespar/agent-core";
 import { relative } from "node:path";
 import type { AgentKit, KitStrings } from "./kit.js";
 import type { Setup } from "./setup.js";
@@ -27,6 +27,9 @@ export function describePayment(execution: Execution, setup: Setup): string[] {
   for (const outcome of execution.outcomes) {
     if (outcome.receipt_id) lines.push(`    ${words.receiptWord}: ${relative(process.cwd(), `${setup.bundle.dir}/receipts/${outcome.receipt_id}.json`)}`);
   }
+  // ent#1983: who executed it, as the API recorded it (the simulator or the provider's sandbox).
+  const executor = executorOf(execution);
+  if (executor) lines.push(`    ${text.executedBy(executorLabel(executor), executor)}`);
   return lines;
 }
 
@@ -100,6 +103,7 @@ options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript 
       state: e.state,
       reason: e.reason ?? null,
       rail_error: railErrorOf(e),
+      executor: executorOf(e),
       escalation: e.escalation ?? null,
       total_minor: e.total,
       items: e.items.map((i) => ({ beneficiary: i.beneficiary, amount_minor: i.amount })),

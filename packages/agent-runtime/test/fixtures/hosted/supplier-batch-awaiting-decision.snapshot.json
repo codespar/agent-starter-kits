@@ -1,0 +1,268 @@
+{
+  "v": 1,
+  "run": {
+    "id": "run_20261103T142000_hk_sup_91d4",
+    "kit": {
+      "id": "supplier-payments-agent",
+      "version": "0.1.0",
+      "commit": "c30960ae3769f2b5ec1b65767856df6e5154d848",
+      "packageDigest": "sha256:70f3baaa18a554e871ad929b2488703fa9b408717745fe02d030b2d9ee9dc31c"
+    },
+    "modelMode": "replay",
+    "executor": "simulator",
+    "approvalMode": "human",
+    "locale": "pt-BR",
+    "exampleId": "partial-batch-failure",
+    "inputRevision": "sha256:8b866d0a731f4767b000d46b0828cadafc8d78d3c261373056b6ea8645e9574d",
+    "status": "awaiting_decision",
+    "createdAt": "2026-11-03T14:20:00.000Z",
+    "updatedAt": "2026-11-03T14:20:03.100Z"
+  },
+  "cursor": {
+    "seq": 17
+  },
+  "pending": [
+    {
+      "kind": "batch_decision",
+      "batchRef": "fornecedores-2026-10",
+      "batchHash": "sha256:3212437cc740ba7b3625b4881fd896bced79852b32f7f326c9bece877a919230",
+      "count": 3,
+      "totalMinor": 299000,
+      "lines": [
+        {
+          "index": 0,
+          "executionId": "exe_0b6e2d17c9a4f380",
+          "beneficiary": "Gráfica Litoral",
+          "amountMinor": 98000,
+          "status": "awaiting_approval"
+        },
+        {
+          "index": 1,
+          "executionId": "exe_5c93f1e08a2d47b6",
+          "beneficiary": "Insumos Atlântico",
+          "amountMinor": 125000,
+          "status": "awaiting_approval"
+        },
+        {
+          "index": 2,
+          "executionId": "exe_e7a4c2950d1b3f68",
+          "beneficiary": "Transporte Verde",
+          "amountMinor": 76000,
+          "status": "awaiting_approval"
+        }
+      ]
+    }
+  ],
+  "executions": [
+    {
+      "id": "exe_0b6e2d17c9a4f380",
+      "state": "awaiting_approval",
+      "reason": null,
+      "detail": null,
+      "approvalMode": "human",
+      "items": [
+        {
+          "beneficiary": "Gráfica Litoral",
+          "payeeMasked": "fi***@grafica-litoral.example.com.br",
+          "alias": "grafica",
+          "amountMinor": 98000,
+          "description": "Fornecedores de outubro: NF 4471, catálogos",
+          "dueDate": "2026-10-10"
+        }
+      ],
+      "totalMinor": 98000,
+      "currency": "BRL",
+      "itemsHash": "sha256:12acbeb2466eb80b5809f9a565ce5159d3e4db880e17ecbc5bce37a51be165d8",
+      "batch": {
+        "ref": "fornecedores-2026-10",
+        "batchHash": "sha256:3212437cc740ba7b3625b4881fd896bced79852b32f7f326c9bece877a919230",
+        "index": 0,
+        "count": 3
+      },
+      "compositionHash": null,
+      "escalation": null,
+      "approvalId": null,
+      "approvedBy": null,
+      "attempts": [],
+      "evidence": [],
+      "history": [
+        {
+          "from": "drafted",
+          "to": "awaiting_approval",
+          "at": "2026-11-03T14:20:03.050Z",
+          "reason": null,
+          "actor": {
+            "type": "agent",
+            "agent": "supplier-payments-agent@0.1.0",
+            "onBehalfOf": "usr_demo_financeiro"
+          }
+        }
+      ],
+      "createdAt": "2026-11-03T14:20:03.050Z",
+      "updatedAt": "2026-11-03T14:20:03.050Z"
+    },
+    {
+      "id": "exe_5c93f1e08a2d47b6",
+      "state": "awaiting_approval",
+      "reason": null,
+      "detail": null,
+      "approvalMode": "human",
+      "items": [
+        {
+          "beneficiary": "Insumos Atlântico",
+          "payeeMasked": "co***@insumos-atlantico.example.com.br",
+          "alias": "insumos",
+          "amountMinor": 125000,
+          "description": "Fornecedores de outubro: NF 8820, matéria-prima",
+          "dueDate": "2026-10-10"
+        }
+      ],
+      "totalMinor": 125000,
+      "currency": "BRL",
+      "itemsHash": "sha256:b9a4ff87a02851faea95d431ad544831cd14faa57bd1357dca843541752e64e9",
+      "batch": {
+        "ref": "fornecedores-2026-10",
+        "batchHash": "sha256:3212437cc740ba7b3625b4881fd896bced79852b32f7f326c9bece877a919230",
+        "index": 1,
+        "count": 3
+      },
+      "compositionHash": null,
+      "escalation": null,
+      "approvalId": null,
+      "approvedBy": null,
+      "attempts": [],
+      "evidence": [],
+      "history": [
+        {
+          "from": "drafted",
+          "to": "awaiting_approval",
+          "at": "2026-11-03T14:20:03.060Z",
+          "reason": null,
+          "actor": {
+            "type": "agent",
+            "agent": "supplier-payments-agent@0.1.0",
+            "onBehalfOf": "usr_demo_financeiro"
+          }
+        }
+      ],
+      "createdAt": "2026-11-03T14:20:03.060Z",
+      "updatedAt": "2026-11-03T14:20:03.060Z"
+    },
+    {
+      "id": "exe_e7a4c2950d1b3f68",
+      "state": "awaiting_approval",
+      "reason": null,
+      "detail": null,
+      "approvalMode": "human",
+      "items": [
+        {
+          "beneficiary": "Transporte Verde",
+          "payeeMasked": "+551***0006",
+          "alias": "logistica",
+          "amountMinor": 76000,
+          "description": "Fornecedores de outubro: NF 1290, fretes de setembro",
+          "dueDate": "2026-10-10"
+        }
+      ],
+      "totalMinor": 76000,
+      "currency": "BRL",
+      "itemsHash": "sha256:a928c4e99cfc091818bf70115376a0ce47bea5d02305934497e8a9e0d6a0801b",
+      "batch": {
+        "ref": "fornecedores-2026-10",
+        "batchHash": "sha256:3212437cc740ba7b3625b4881fd896bced79852b32f7f326c9bece877a919230",
+        "index": 2,
+        "count": 3
+      },
+      "compositionHash": null,
+      "escalation": null,
+      "approvalId": null,
+      "approvedBy": null,
+      "attempts": [],
+      "evidence": [],
+      "history": [
+        {
+          "from": "drafted",
+          "to": "awaiting_approval",
+          "at": "2026-11-03T14:20:03.070Z",
+          "reason": null,
+          "actor": {
+            "type": "agent",
+            "agent": "supplier-payments-agent@0.1.0",
+            "onBehalfOf": "usr_demo_financeiro"
+          }
+        }
+      ],
+      "createdAt": "2026-11-03T14:20:03.070Z",
+      "updatedAt": "2026-11-03T14:20:03.070Z"
+    }
+  ],
+  "batches": [
+    {
+      "batchRef": "fornecedores-2026-10",
+      "label": "Fornecedores de outubro",
+      "batchHash": "sha256:3212437cc740ba7b3625b4881fd896bced79852b32f7f326c9bece877a919230",
+      "count": 3,
+      "totalMinor": 299000,
+      "settledMinor": 0,
+      "lines": [
+        {
+          "index": 0,
+          "beneficiary": "Gráfica Litoral",
+          "amountMinor": 98000,
+          "executionId": "exe_0b6e2d17c9a4f380",
+          "state": "awaiting_approval",
+          "reason": null,
+          "evidence": []
+        },
+        {
+          "index": 1,
+          "beneficiary": "Insumos Atlântico",
+          "amountMinor": 125000,
+          "executionId": "exe_5c93f1e08a2d47b6",
+          "state": "awaiting_approval",
+          "reason": null,
+          "evidence": []
+        },
+        {
+          "index": 2,
+          "beneficiary": "Transporte Verde",
+          "amountMinor": 76000,
+          "executionId": "exe_e7a4c2950d1b3f68",
+          "state": "awaiting_approval",
+          "reason": null,
+          "evidence": []
+        }
+      ]
+    }
+  ],
+  "turns": [
+    {
+      "turnId": "turn_1",
+      "index": 0,
+      "text": "paga os fornecedores de outubro",
+      "reply": "Propus os fornecedores de outubro: três linhas, uma execução para cada. O resultado de cada linha está no painel desta execução; uma linha que o trilho recusar não segura as outras e não é reenviada.",
+      "tools": [
+        {
+          "toolCallId": "tc_1",
+          "name": "list_payables",
+          "effect": "read",
+          "refused": false
+        },
+        {
+          "toolCallId": "tc_2",
+          "name": "codespar_pay",
+          "effect": "payment",
+          "refused": false
+        }
+      ],
+      "interrupted": false
+    }
+  ],
+  "notRun": [],
+  "replay": {
+    "exampleId": "partial-batch-failure",
+    "turnsTotal": 1,
+    "turnsDone": 1,
+    "nextTurnText": null
+  }
+}

@@ -10,7 +10,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stderr, stdout } from "node:process";
 import { relative } from "node:path";
-import { formatBRL, railErrorOf, type AgentRuntime, type BatchGesture, type BatchPresentation, type ChargeInstrument, type Execution, type NotRunLine } from "@codespar/agent-core";
+import { executorLabel, executorOf, formatBRL, isExecutorRefusal, railErrorOf, type AgentRuntime, type BatchGesture, type BatchPresentation, type ChargeInstrument, type Execution, type NotRunLine } from "@codespar/agent-core";
 import { pollUntilClosed, type PollResult } from "./poll.js";
 import { draftRefusals, refusalLine, sayOutcome } from "./outcome.js";
 import { inLocaleOf, type Setup } from "./setup.js";
@@ -49,7 +49,7 @@ export interface TerminalOptions {
 
 /** One gesture per batch ref: the list it was taken on, and the positions vetoed. */
 export type BatchGestures = Map<string, BatchGestureRecord>;
-type BatchGestureRecord = { batch_hash: string; count: number; vetoed: Set<number> };
+export type BatchGestureRecord = { batch_hash: string; count: number; vetoed: Set<number> };
 
 export function describeExecution(execution: Execution, setup: Setup): string[] {
   return setup.kit.describeExecution(execution, setup);
@@ -74,6 +74,22 @@ function receiptLines(execution: Execution, setup: Setup, say: (line: string) =>
   for (const outcome of execution.outcomes) {
     if (outcome.receipt_id) say(`  ${setup.strings.receiptWord}: ${relative(process.cwd(), `${setup.bundle.dir}/receipts/${outcome.receipt_id}.json`)}`);
   }
+  for (const line of executorLines(execution, setup)) say(line);
+}
+
+/**
+ * ent#1983 on the console, after an execution ran: who executed it, as the API
+ * recorded it, and, on a refusal a person can act on (a Test mandate signed
+ * without an executor), what to do, after the API's own code and words.
+ */
+export function executorLines(execution: Execution, setup: Setup): string[] {
+  const text = setup.coreStrings;
+  const lines: string[] = [];
+  const executor = executorOf(execution);
+  if (executor) lines.push(`  ${text.executedBy(executorLabel(executor), executor)}`);
+  const failure = execution.state === "failed" ? railErrorOf(execution) : null;
+  if (failure && isExecutorRefusal(failure.code)) lines.push(`  ${text.executorHint(failure.code)}`);
+  return lines;
 }
 
 /** Decides an `awaiting_approval` execution and runs an `approved` one. Returns the final execution of this pass. */
@@ -145,7 +161,7 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
  * this line's own artifact, which carries the `batch_hash` the gesture was
  * taken on — that is what makes the gesture attested rather than asserted.
  */
-function decideByGesture(execution: Execution, gesture: BatchGestureRecord, setup: Setup, approver: TerminalOptions["approver"]): Execution {
+export function decideByGesture(execution: Execution, gesture: BatchGestureRecord, setup: Setup, approver: TerminalOptions["approver"]): Execution {
   const engine = setup.engine;
   const { batch_hash, index, count } = execution.batch!;
   if (batch_hash !== gesture.batch_hash || count !== gesture.count) {

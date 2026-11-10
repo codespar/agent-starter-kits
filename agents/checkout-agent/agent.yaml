@@ -29,3 +29,99 @@ maturity:
 scenarios: ./scenarios/
 evals: ./evals/
 agents_md: ./AGENTS.md
+
+# What a person reads about this agent where it is offered (the Playground's catalog). pt-BR reviewed by the Playground's
+# product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
+presentation:
+  pt-BR:
+    title: "Vendas na conversa"
+    summary: "Monta o carrinho com o preço do catálogo, confirma o pedido com o atendente e gera a cobrança para o cliente pagar."
+    examples:
+      beneficiary-not-allowed:
+        title: "Cobrança em nome de outra pessoa"
+        description: "O cliente pede a cobrança em outro nome e documento; o cadastro da loja não reconhece e nada é emitido."
+      cap-exceeded:
+        title: "Pedido acima do teto"
+        description: "Um pedido maior que o valor máximo da política de vendas é recusado."
+      cart-recomposed:
+        title: "Troca de itens depois da confirmação"
+        description: "O cliente troca as aulas por uma consultoria depois de confirmar; o pedido volta para aprovação com o novo valor."
+      cart-replaced:
+        title: "Quantidade alterada"
+        description: "O cliente muda de duas para cinco aulas antes de pagar; a cobrança segue o carrinho novo."
+      charge-expired:
+        title: "Cobrança vencida"
+        description: "O QR vence sem pagamento: o pedido é encerrado sem registro de pagamento."
+      coupon-unknown:
+        title: "Cupom desconhecido"
+        description: "O cliente informa um cupom que a loja não tem; o desconto não é aplicado."
+      escalated-above-threshold:
+        title: "Pedido alto vai ao atendente"
+        description: "Com a política de vendas ligada, um pedido acima de R$ 500,00 ainda passa pelo atendente."
+      happy-path:
+        title: "Pacote de aulas"
+        description: "A cliente pede o pacote de dez aulas e uma avaliação; o pedido é confirmado e a cobrança é paga."
+      item-unavailable:
+        title: "Item fora de venda"
+        description: "Um item que não está à venda é recusado e o agente sugere uma alternativa."
+      mandate-revoked:
+        title: "Política revogada"
+        description: "A política de vendas é revogada: a cobrança já emitida segue, o pedido pendente não sai."
+      nfse-failed:
+        title: "Nota fiscal com problema"
+        description: "Os pedidos são pagos e a nota de serviço falha depois; a venda continua paga."
+      payment-claimed:
+        title: "Cliente diz que já pagou"
+        description: "O cliente afirma que pagou; nada muda até o pagamento aparecer de fato."
+      price-injected:
+        title: "Preço combinado por fora"
+        description: "O cliente diz que o vendedor prometeu outro preço; vale o preço do catálogo."
+      prompt-injection:
+        title: "Instrução maliciosa na conversa"
+        description: "A mensagem manda vender por R$ 1,00 e pagar uma comissão a outra chave; a política recusa."
+  en:
+    title: "Sales in the chat"
+    summary: "Builds the cart at catalog prices, confirms the order with the attendant and issues the charge for the customer to pay."
+    examples:
+      beneficiary-not-allowed:
+        title: "Charge in someone else's name"
+        description: "The customer asks to be charged under another name and document; the store's records do not know it and nothing is issued."
+      cap-exceeded:
+        title: "Order above the ceiling"
+        description: "An order above the sales policy's maximum is refused."
+      cart-recomposed:
+        title: "Items swapped after confirmation"
+        description: "The customer swaps the lessons for a consultation after confirming; the order goes back for approval at the new amount."
+      cart-replaced:
+        title: "Quantity changed"
+        description: "The customer goes from two to five lessons before paying; the charge follows the new cart."
+      charge-expired:
+        title: "Charge expired"
+        description: "The QR expires unpaid: the order closes with no payment record."
+      coupon-unknown:
+        title: "Unknown coupon"
+        description: "The customer gives a coupon the store does not have; no discount is applied."
+      escalated-above-threshold:
+        title: "Large order goes to the attendant"
+        description: "With the sales policy on, an order above R$ 500.00 still goes to the attendant."
+      happy-path:
+        title: "Lesson package"
+        description: "The customer asks for the ten-lesson package and an assessment; the order is confirmed and the charge is paid."
+      item-unavailable:
+        title: "Item not for sale"
+        description: "An item that is not for sale is refused and the agent suggests an alternative."
+      mandate-revoked:
+        title: "Policy revoked"
+        description: "The sales policy is revoked: the charge already issued stands, the pending order does not go out."
+      nfse-failed:
+        title: "Invoice problem"
+        description: "The orders are paid and the service invoice fails afterwards; the sale stays paid."
+      payment-claimed:
+        title: "Customer says they paid"
+        description: "The customer says they paid; nothing changes until the payment actually shows up."
+      price-injected:
+        title: "Price promised elsewhere"
+        description: "The customer says the seller promised another price; the catalog price stands."
+      prompt-injection:
+        title: "Malicious instruction in the chat"
+        description: "The message says to sell for R$ 1.00 and pay a commission to another key; the policy refuses it."

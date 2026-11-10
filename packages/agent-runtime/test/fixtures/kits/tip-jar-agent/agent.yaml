@@ -1,0 +1,21 @@
+# A test-only kit: it exists so the conformance suite and the hosted channel
+# are proven on an agent no host code names. It is not under agents/, so it is
+# not in the plugin, the eval matrix or the published catalog.
+schema: 1
+name: tip-jar-agent
+version: 0.0.1
+approval: [human, mandate]
+default_approval: human
+mcp: "@codespar/mcp@0.5.8"
+cli: "@codespar/cli@0.18.1"
+tools: ./tools.json
+guardrails: ./guardrails.json
+mandate_schema: ./mandate.example.json
+events: [commerce.payment.succeeded, commerce.payment.failed]
+channels: [terminal]
+locale: en
+maturity:
+  pix-out: sandbox
+scenarios: ./scenarios/
+evals: ./evals/
+agents_md: ./AGENTS.md

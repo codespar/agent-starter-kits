@@ -50,11 +50,14 @@ function fakeApi(example: Mandate, status: string | Error): { api: ApiClient; re
   const reads: string[] = [];
   const api = {
     post: async (path: string) => {
-      if (path === "/v1/consents/init") return { token: "tok_test", expires_at: "2026-09-23T18:30:00.000Z" };
+      // ent#1983: the API confirms the executor the consent asked for (the quickstart's simulator), and the submit says it signed on it.
+      if (path === "/v1/consents/init") return { token: "tok_test", expires_at: "2026-09-23T18:30:00.000Z", executor: "codespar_simulator", executor_label: "Simulado pela CodeSpar" };
       if (path === "/v1/consents/{token}/submit") {
         return {
           mandate_id: "cm_new",
           signature: "0".repeat(64),
+          executor: "codespar_simulator",
+          executor_label: "Simulado pela CodeSpar",
           mandate: { consumer_id: example.consumer_id, agent_id: example.agent_id, purpose: example.purpose, currency: "BRL", cap_minor: example.cap_minor, per_tx_cap_minor: example.per_tx_cap_minor, merchant_pin_kind: "pix-key", merchant_allowlist: example.beneficiaries.map((b) => b.payee), expires_at: 1821312000 },
         };
       }

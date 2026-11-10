@@ -1,0 +1,22 @@
+{
+  "meta_tools": [
+    {
+      "name": "codespar_pay",
+      "effect": "payment",
+      "description": "Propose one tip. Creates an execution the core decides; it cannot pay by itself.",
+      "input_schema": {
+        "type": "object",
+        "properties": { "payee": { "type": "string" }, "amount_minor": { "type": "integer" } },
+        "required": ["payee", "amount_minor"]
+      }
+    }
+  ],
+  "local_tools": [
+    {
+      "name": "list_jars",
+      "effect": "read",
+      "description": "The payees that can receive a tip. Read-only.",
+      "input_schema": { "type": "object", "properties": {} }
+    }
+  ]
+}

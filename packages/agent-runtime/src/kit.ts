@@ -31,8 +31,18 @@ import type { ApiClient } from "@codespar/sdk";
 import type { Setup } from "./setup.js";
 import type { ScenarioCheck } from "./scenarios.js";
 import type { AdversarialResult } from "./adversarial.js";
+import type { OutcomeKind } from "./hosted/contract.js";
 
 export type RailKind = "stub" | "api";
+
+/**
+ * The configuration a kit reads, by name: the process environment on a
+ * terminal, a frozen record the host fills when the kit runs hosted. A kit
+ * reads it here (`setup.config`, `RailContext.env`, `ConsentContext.env`)
+ * and never from `process.env`, so a host never has to switch a tenant by
+ * changing the environment of a process other tenants share.
+ */
+export type KitConfig = Readonly<Record<string, string | undefined>>;
 
 /**
  * How an execution reaches a terminal state. `immediate`: the rail answers
@@ -71,7 +81,7 @@ export interface SandboxPayer {
 
 export interface RailContext {
   kind: RailKind;
-  env: NodeJS.ProcessEnv;
+  env: KitConfig;
   agentDir: string;
   stateDir: string;
   manifest: LoadedManifest;
@@ -152,6 +162,8 @@ export interface ConsentContext {
   /** The run's locale: the consent summary and its question are printed in it. */
   locale: Locale;
   argv: string[];
+  /** The configuration the command runs with (`KitConfig`): the key, the API URL, a proof's binding. */
+  env: KitConfig;
   say(line: string): void;
 }
 
@@ -261,4 +273,10 @@ export interface AgentKit {
   /** The one line `eval` prints per scenario run and per adversarial case. */
   evalScenarioLine?(check: ScenarioCheck): string;
   evalAdversarialLine?(result: AdversarialResult): string;
+  /**
+   * What the hosted catalog cannot derive from `tools.json`. Validated against the tool effects.
+   * `readsPlatform`: a read-only kit whose tools read the Test project through the host (`PlatformReads`); it gets a
+   * `codespar-test` executor that needs the Test project and nothing else (no spending mandate).
+   */
+  hosted?: { outcomeKinds?: readonly OutcomeKind[]; readsPlatform?: boolean };
 }

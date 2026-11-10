@@ -82,7 +82,7 @@ async function run(agent: Agent, command: string, argv: string[]): Promise<numbe
         stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
         return 2;
       }
-      return agent.kit.consent({ agentDir: agent.dir, argv, locale, say: (l) => void stderr.write(l + "\n") });
+      return agent.kit.consent({ agentDir: agent.dir, argv, locale, env: process.env, say: (l) => void stderr.write(l + "\n") });
     }
     case "approve":
       return decide(agent, "approve", argv);
