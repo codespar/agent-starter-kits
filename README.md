@@ -28,6 +28,8 @@ npm start                                                    # talk to the agent
 > pague a escola de outubro
 ```
 
+The consent names who executes the payment before you sign it: `executor: "codespar_simulator"`, shown as **Simulado pela CodeSpar**. That means no KYC, no Mercado Pago and no bank account, so the first payment runs in Test right away. This depends on codespar-enterprise ent#1983 being served. Until then the API does not confirm the executor, and the consent stops before you sign, saying so ([`agents/bills-agent`](agents/bills-agent#quickstart) has the details).
+
 The agent drafts the payment, asks you to approve it, pays in the sandbox and prints the receipt path: `recibo: runs/<run-id>/receipts/rcpt_....json`. Our last timed run (production test mode, 2026-09-28) took 8 seconds from `git clone` to a receipt the API confirmed. That number starts after signup: it does not count creating the account and the key, it ran with a warm npm cache, and it used the replay model (no `ANTHROPIC_API_KEY`). The run before it, on staging (2026-09-23), took 77 seconds. [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) §12 has both.
 
 Notes:

@@ -15,10 +15,11 @@ import {
   isReplayedSettlement,
   type Execution,
   railErrorOf,
+  executorOf,
   refusedDispatchesOf,
 } from "@codespar/agent-core";
 import { NoMandateError, defineAgent, describePayment, type AgentKit } from "@codespar/agent-runtime";
-import { loadLocalMandate, runEmbeddedConsent } from "./modules/embedded-consent.js";
+import { ConsentRefusedError, loadLocalMandate, runEmbeddedConsent } from "./modules/embedded-consent.js";
 import { assertMandateBinding, integratedExample, integratedProofFrom } from "./modules/integrated-proof.js";
 import { STRINGS } from "./strings.js";
 import { codesparLedger, codesparPay, listBills } from "./modules/pix-out.js";
@@ -90,6 +91,7 @@ options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript 
       state: e.state,
       reason: e.reason ?? null,
       rail_error: railErrorOf(e),
+      executor: executorOf(e),
       escalation: e.escalation ?? null,
       total_minor: e.total,
       items: e.items.map((i) => ({ beneficiary: i.beneficiary, amount_minor: i.amount })),
@@ -118,14 +120,23 @@ options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript 
     const api = createCodeSparClient({ apiKey: ctx.env["CODESPAR_API_KEY"], baseUrl: ctx.env["CODESPAR_API_URL"], projectId: ctx.env["CODESPAR_PROJECT_ID"] });
     const base = loadMandate(resolve(ctx.agentDir, "mandate.example.json"));
     const example = proof ? integratedExample(base, proof) : base;
-    await runEmbeddedConsent({ api, example, mandatePath: path, locale: ctx.locale, say: ctx.say, confirm: async (q: string) => /^(s|sim|y|yes)$/i.test((await ctx.ask(q)).trim()), ...(proof ? { integrated: proof } : {}) });
+    try {
+      await runEmbeddedConsent({ api, example, mandatePath: path, locale: ctx.locale, say: ctx.say, confirm: async (q: string) => /^(s|sim|y|yes)$/i.test((await ctx.ask(q)).trim()), ...(proof ? { integrated: proof } : {}) });
+    } catch (err) {
+      // Already said in lines (the provider's sandbox not ready, a Live key, an executor the API did not confirm): the run stops there.
+      if (err instanceof ConsentRefusedError) return false;
+      throw err;
+    }
     return true;
   },
 
   /**
    * `npm run consent -- --yes` (or `npm run consent --yes`, which npm keeps as
    * `npm_config_yes`): the partner-surface consent for a new mandate with the
-   * test key, stored locally and credited in the sandbox.
+   * test key, stored locally and credited in the sandbox. It names its executor
+   * (ent#1983): the CodeSpar simulator, or the provider's sandbox in the
+   * integrated proof. Exits 1, with the reason already said, when the API refuses
+   * the executor or does not confirm it.
    */
   consent: async (ctx) => {
     const api = createCodeSparClient({ apiKey: ctx.env["CODESPAR_API_KEY"], baseUrl: ctx.env["CODESPAR_API_URL"], projectId: ctx.env["CODESPAR_PROJECT_ID"] });
@@ -141,9 +152,14 @@ options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript 
       rl.close();
       return /^(s|sim|y|yes)$/i.test(answer);
     };
-    const mandate = await runEmbeddedConsent({ api, example, mandatePath: mandatePath(ctx.agentDir), locale: ctx.locale, say: ctx.say, confirm, ...(proof ? { integrated: proof } : {}) });
-    ctx.say(STRINGS[ctx.locale].consentSaved(mandate.id));
-    return 0;
+    try {
+      const mandate = await runEmbeddedConsent({ api, example, mandatePath: mandatePath(ctx.agentDir), locale: ctx.locale, say: ctx.say, confirm, ...(proof ? { integrated: proof } : {}) });
+      ctx.say(STRINGS[ctx.locale].consentSaved(mandate.id));
+      return 0;
+    } catch (err) {
+      if (err instanceof ConsentRefusedError) return 1;
+      throw err;
+    }
   },
 
   /** Payees with a prior settled payment under this mandate, so `new_beneficiary` is not what fires. */

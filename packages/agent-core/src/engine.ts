@@ -503,7 +503,7 @@ export class ExecutionEngine {
         this.recordInstrument(execution.id, payment.attempt_id, outcome.transaction_id, outcome.instrument);
         continue;
       }
-      outcomes.push({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: outcome.transaction_id, ...(outcome.receipt_id ? { receipt_id: outcome.receipt_id } : {}), ...(outcome.replayed ? { replayed: true as const } : {}) });
+      outcomes.push({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: outcome.transaction_id, ...(outcome.receipt_id ? { receipt_id: outcome.receipt_id } : {}), ...(outcome.replayed ? { replayed: true as const } : {}), ...(outcome.executor ? { executor: outcome.executor } : {}) });
       const mismatch = await this.ingestSettlement(execution, index, payment, outcome.receipt_id, PAYMENT_SUCCEEDED);
       if (mismatch) sealMismatches.push(mismatch);
     }
@@ -740,7 +740,7 @@ export class ExecutionEngine {
       // every settled lookup answers `idempotent_replay`, including the one
       // whose payment was this execution's own. The mark would say "someone
       // else paid" about a payment nobody can attribute from here.
-      replace({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: seen.transaction_id, ...(seen.receipt_id ? { receipt_id: seen.receipt_id } : {}) });
+      replace({ index, attempt_id: payment.attempt_id, status: "settled", transaction_id: seen.transaction_id, ...(seen.receipt_id ? { receipt_id: seen.receipt_id } : {}), ...(seen.executor ? { executor: seen.executor } : {}) });
       const mismatch = await this.ingestSettlement(execution, index, payment, seen.receipt_id, prior ? CHARGE_PAID : PAYMENT_SUCCEEDED);
       if (mismatch) sealMismatches.push(mismatch);
     }
@@ -1131,7 +1131,7 @@ function railAnswer(outcome: RailOutcome): Record<string, unknown> {
     case "accepted":
       return { transaction_id: outcome.transaction_id, sandbox: outcome.sandbox };
     case "settled":
-      return { transaction_id: outcome.transaction_id, receipt_id: outcome.receipt_id, money_moved: outcome.money_moved, sandbox: outcome.sandbox, ...(outcome.replayed ? { idempotent_replay: true } : {}) };
+      return { transaction_id: outcome.transaction_id, receipt_id: outcome.receipt_id, money_moved: outcome.money_moved, sandbox: outcome.sandbox, ...(outcome.replayed ? { idempotent_replay: true } : {}), ...(outcome.executor ? { executor: outcome.executor } : {}) };
     case "failed":
       return { code: outcome.code, message: outcome.message, ...(outcome.spent ? { spent: true } : {}), ...(outcome.held ? { held: outcome.held } : {}) };
     default:
