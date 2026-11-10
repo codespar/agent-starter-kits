@@ -197,7 +197,7 @@ export interface ItemOutcome {
   replayed?: true;
   /**
    * Who executed a settled payment, as the API recorded it (`payment.executor`, ent#1983): `codespar_simulator` (a Test
-   * mandate signed with the CodeSpar simulator; no provider was called) or `celcoin_sandbox` (the provider's sandbox).
+   * mandate signed with the CodeSpar simulator; no provider was called) or `provider_sandbox` (the provider's sandbox; `celcoin_sandbox` from an API before ent#1983's public rename).
    * Absent when the rail does not say: the stub, an API before ent#1983, or a payment the API names no executor for (Live).
    */
   executor?: string;

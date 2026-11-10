@@ -182,6 +182,7 @@ It is an npm workspace; `npm install` inside `agents/bills-agent` installed 13 p
 - The consent shows the executor the API confirmed before the question, and stops before signing when the API does not confirm it (an API before ent#1983).
 - A `provider_sandbox_not_ready` answer is printed with its `missing` and `next_steps`, and the simulator is named as an alternative, never taken automatically.
 - Each payment prints `payment.executor`, and the executor refusals carry a line saying what to do.
+- Public names (ent#1983, 2026-11-10): the API answers `executor: "provider_sandbox"` (the word the consent sends) with the provider apart in `executor_provider` and `real_money: false` in Test, where it answered `celcoin_sandbox` before; the kit confirms either spelling, prints the provider as the server resolved it, says *sem dinheiro real* on every Test executor line, never sends `provider` (400 `executor_provider_not_selectable` otherwise), and still refuses an answer that names another executor.
 
 **Not measured:** a run against a served API. The tests mock the HTTP layer.
 

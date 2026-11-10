@@ -30,8 +30,11 @@ import {
   ApiMandateStatusSource,
   CORE_STRINGS,
   MandateSchema,
-  RECORDED_EXECUTOR,
+  confirmsExecutor,
   executorLabel,
+  executorProvider,
+  publicExecutor,
+  withNoRealMoney,
   isExecutorRefusal,
   windowCap,
   type ConsentExecutor,
@@ -187,12 +190,15 @@ export async function runEmbeddedConsent(options: ConsentOptions): Promise<Manda
   }
   // The API answers the executor it recorded for this token. One that does not say, or says another, did not take
   // the choice (an API before ent#1983): the person is not asked to sign a mandate whose executor nobody confirmed.
+  // Since ent#1983's public rename it answers the word asked for (`provider_sandbox`); before it, `celcoin_sandbox`.
   const confirmed = field(init, "executor");
-  if (confirmed !== RECORDED_EXECUTOR[executor]) {
+  if (!confirmed || !confirmsExecutor(executor, confirmed)) {
     say(text.consentExecutorNotConfirmed(executor, confirmed));
     throw new ConsentRefusedError("executor_not_confirmed", `the API did not confirm executor ${executor} (answered ${confirmed ?? "none"}); nothing was signed`);
   }
-  const label = field(init, "executor_label") ?? executorLabel(confirmed);
+  // In Test, neither executor moves real money, a confirmed sandbox payment included: the label says so.
+  const label = withNoRealMoney(field(init, "executor_label") ?? executorLabel(confirmed));
+  const provider = executorProvider(init as { executor?: unknown; executor_provider?: unknown });
 
   // A consent after a revocation is not a first one: the file holds the mandate it replaces, and the API says what became of it.
   const previous = previousMandate(options.mandatePath);
@@ -204,7 +210,7 @@ export async function runEmbeddedConsent(options: ConsentOptions): Promise<Manda
   say(text.consentCaps(example.per_tx_cap_minor, windowCap(example), example.cap_minor));
   for (const b of example.beneficiaries) say(text.consentPayee(b.name, b.alias));
   say(options.integrated ? text.consentValidityDays(INTEGRATED_MANDATE_DAYS, init.expires_at) : text.consentValidity(init.expires_at));
-  say(text.consentExecutor(label, confirmed, executor));
+  say(text.consentExecutor(label, confirmed, executor, provider));
   const yes = await options.confirm(text.consentQuestion);
   if (!yes) throw new Error("consent not authorized by the titular; nothing was created");
 
@@ -228,7 +234,7 @@ export async function runEmbeddedConsent(options: ConsentOptions): Promise<Manda
   const signedExecutor = field(submitted, "executor");
   const guidance = (submitted as { executor_guidance?: unknown }).executor_guidance;
   if (guidance) say(text.consentExecutorGuidance(field(guidance, "code") ?? "funding_source_executor_required", field(guidance, "message") ?? ""));
-  if (signedExecutor !== confirmed) {
+  if (!signedExecutor || publicExecutor(signedExecutor) !== publicExecutor(confirmed)) {
     say(text.consentExecutorSignedOther(submitted.mandate_id, confirmed, signedExecutor));
     throw new ConsentRefusedError("executor_not_confirmed", `the signed mandate ${submitted.mandate_id} carries executor ${signedExecutor ?? "none"}, not ${confirmed}; it was not stored`);
   }
@@ -261,7 +267,7 @@ export async function runEmbeddedConsent(options: ConsentOptions): Promise<Manda
   writeFileSync(options.mandatePath, JSON.stringify(mandate, null, 2) + "\n", { mode: 0o600 });
   chmodSync(options.mandatePath, 0o600);
   say(text.consentSigned(mandate.id, mandate.consumer_id));
-  say(text.consentExecutorSigned(field(submitted, "executor_label") ?? executorLabel(signedExecutor)));
+  say(text.consentExecutorSigned(withNoRealMoney(field(submitted, "executor_label") ?? executorLabel(signedExecutor))));
 
   // The proof's account is credited once, by the operator, under the proof's own ceiling: never from here.
   if (options.integrated) say(text.consentNotFundedIntegrated);
