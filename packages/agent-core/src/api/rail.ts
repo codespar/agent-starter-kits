@@ -33,6 +33,16 @@ const ATTEMPT_ID_CONFLICT: SpendErrorCode = "attempt_id_conflict";
 /** Another project of this organization holds this attempt id; opaque by design, nothing was held or sent. */
 const ATTEMPT_ID_UNAVAILABLE: SpendErrorCode = "attempt_id_unavailable";
 
+/**
+ * `payment.executor` (ent#1983): who executed the payment, as the API recorded it. Read off the answer without
+ * trusting the SDK's types, which predate the field: anything but a non-empty string is no executor.
+ */
+function executorOfPayment(payment: unknown): { executor?: string } {
+  if (!payment || typeof payment !== "object" || !("executor" in payment)) return {};
+  const executor = payment.executor;
+  return typeof executor === "string" && executor ? { executor } : {};
+}
+
 export class CodeSparRail implements PaymentRail {
   readonly name = "codespar" as const;
 
@@ -76,6 +86,7 @@ export class CodeSparRail implements PaymentRail {
         money_moved: outcome.payment.moneyMoved,
         sandbox: !outcome.payment.moneyMoved,
         ...(outcome.idempotent_replay ? { replayed: true as const } : {}),
+        ...executorOfPayment(outcome.payment),
         raw: outcome,
       };
     } catch (err) {

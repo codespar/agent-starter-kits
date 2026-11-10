@@ -105,6 +105,8 @@ export type RailOutcome =
        * call. Absent on the call that settled it.
        */
       replayed?: true;
+      /** Who executed it, when the rail says (`payment.executor` on the CodeSpar API, ent#1983). See `ItemOutcome.executor`. */
+      executor?: string;
       raw: unknown;
     }
   | {

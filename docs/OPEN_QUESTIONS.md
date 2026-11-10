@@ -177,6 +177,14 @@ It is an npm workspace; `npm install` inside `agents/bills-agent` installed 13 p
 
 **CLOSED on the API side 2026-09-27** by ent#1827: the test-mode top-up runs on every spend door, the envelope route included. The production timed run of 2026-09-28 (§12) reached its receipt with no manual funding. `/v1/test/fund` still does not credit a `pix-consent` consumer; the kit no longer needs it to.
 
+**Reopened 2026-10-07, and resolved by ent#1983 (pending serve, 2026-11-09).** From 2026-10-07 the API refused a Test payment from a `pix-consent` source with 409 `test_provider_call_refused`. Every project carries the shared-sandbox Mercado Pago connection, and a Test call must not reach a provider. So the quickstart stopped short of a receipt, and the kit printed the code. ent#1983 replaces that refusal with an executor chosen at the consent, before signing. `POST /v1/consents` takes `executor: "codespar_simulator"` (Simulado pela CodeSpar: no KYC, no MP, no bank account, no provider called) or `executor: "provider_sandbox"` (the account bound to the consumer, "Integrado (sandbox Celcoin)"). The Mercado Pago connection no longer decides anything. A provider failure never becomes a simulated payment, and Live never simulates (`simulation_refused_live`). A Test `pix-consent` mandate signed without an executor is refused at payment with `funding_source_executor_required`, and nothing is sent. The kit side, in the same change:
+- `npm run consent` asks for the simulator, and the integrated proof asks for the provider's sandbox.
+- The consent shows the executor the API confirmed before the question, and stops before signing when the API does not confirm it (an API before ent#1983).
+- A `provider_sandbox_not_ready` answer is printed with its `missing` and `next_steps`, and the simulator is named as an alternative, never taken automatically.
+- Each payment prints `payment.executor`, and the executor refusals carry a line saying what to do.
+
+**Not measured:** a run against a served API. The tests mock the HTTP layer.
+
 ## 18. The receipt names no payee unless the spend carries a `quote` — CLOSED 2026-09-25: every spend carries one
 
 `GET /v1/consumers/receipts/{id}` answered `quote: null`, so the receipt's payee was null; the payee is only on the receipt when the spend presents a `SpendQuote` (`seller`, `resource`, `price_minor`, `payee`, optional `session_id` and `at`). The kit did not send one, so the local receipt copy carried the payee from the execution, not from the seal.

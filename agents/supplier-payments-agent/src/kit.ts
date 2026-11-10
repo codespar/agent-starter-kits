@@ -27,6 +27,7 @@ import {
   type LocaleTable,
   type Mandate,
   railErrorOf,
+  executorOf,
   refusedDispatchesOf,
 } from "@codespar/agent-core";
 import { existsSync, readFileSync } from "node:fs";
@@ -125,6 +126,7 @@ a batch runs one execution per line: in \`human\` the terminal asks once for the
       state: e.state,
       reason: e.reason ?? null,
       rail_error: railErrorOf(e),
+      executor: executorOf(e),
       escalation: e.escalation ?? null,
       total_minor: e.total,
       items: e.items.map((i) => ({ beneficiary: i.beneficiary, amount_minor: i.amount })),
