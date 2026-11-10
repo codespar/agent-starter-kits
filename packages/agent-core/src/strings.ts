@@ -22,13 +22,20 @@ const pt = {
   replayedSettlement: "já estava pago: a API respondeu com um pagamento anterior desta mesma tentativa; esta execução não moveu dinheiro",
   executedBy: (label: string, executor: string) => `executado por: ${label} (${executor})`,
   // What to do about a refusal of ent#1983 (executor chosen at the consent); the API's own code and words are printed before it.
-  executorHint: {
-    funding_source_executor_required:
-      "este mandato foi assinado sem executor e, em Test, não paga mais assim; nada foi enviado. Assine um mandato novo por um consentimento que nomeie o executor (no bills-agent, `npm run consent -- --yes` nomeia o simulador da CodeSpar) e pague sob ele",
-    simulation_refused_live: "a chave é de um projeto Live, e Live nunca simula: o simulador da CodeSpar existe só em projeto Test; nada foi criado",
-    executor_test_only: "a chave é de um projeto Live: a escolha de executor (simulador ou sandbox do provedor) existe só em projeto Test; nada foi criado",
-    provider_sandbox_not_ready: "o sandbox do provedor deste projeto não está pronto; nada foi assinado e nada foi trocado pelo simulador",
-  } as Record<string, string>,
+  executorHint: (code: string): string | null => {
+    switch (code) {
+      case "funding_source_executor_required":
+        return "este mandato foi assinado sem executor e, em Test, não paga mais assim; nada foi enviado. Assine um mandato novo por um consentimento que nomeie o executor (no bills-agent, `npm run consent -- --yes` nomeia o simulador da CodeSpar) e pague sob ele";
+      case "simulation_refused_live":
+        return "a chave é de um projeto Live, e Live nunca simula: o simulador da CodeSpar existe só em projeto Test; nada foi criado";
+      case "executor_test_only":
+        return "a chave é de um projeto Live: a escolha de executor (simulador ou sandbox do provedor) existe só em projeto Test; nada foi criado";
+      case "provider_sandbox_not_ready":
+        return "o sandbox do provedor deste projeto não está pronto; nada foi assinado e nada foi trocado pelo simulador";
+      default:
+        return null;
+    }
+  },
 
   // The approval path at the keyboard.
   onlyDeny: "  (o único desfecho possível é negar; aperte Enter)",
@@ -122,12 +129,19 @@ const en: CoreStrings = {
   blocked: (reasons, notAuthorized) => `blocked: ${reasons} — ${notAuthorized}; there is nothing to approve`,
   replayedSettlement: "already paid: the API answered with an earlier payment of this same attempt; this execution moved no money",
   executedBy: (label, executor) => `executed by: ${label} (${executor})`,
-  executorHint: {
-    funding_source_executor_required:
-      "this mandate was signed without an executor and, in Test, no longer pays that way; nothing was sent. Sign a new mandate through a consent that names the executor (in the bills-agent, `npm run consent -- --yes` names the CodeSpar simulator) and pay under it",
-    simulation_refused_live: "the key belongs to a Live project, and Live never simulates: the CodeSpar simulator exists only in a Test project; nothing was created",
-    executor_test_only: "the key belongs to a Live project: choosing an executor (the simulator or the provider's sandbox) exists only in a Test project; nothing was created",
-    provider_sandbox_not_ready: "this project's provider sandbox is not ready; nothing was signed and nothing was switched to the simulator",
+  executorHint: (code) => {
+    switch (code) {
+      case "funding_source_executor_required":
+        return "this mandate was signed without an executor and, in Test, no longer pays that way; nothing was sent. Sign a new mandate through a consent that names the executor (in the bills-agent, `npm run consent -- --yes` names the CodeSpar simulator) and pay under it";
+      case "simulation_refused_live":
+        return "the key belongs to a Live project, and Live never simulates: the CodeSpar simulator exists only in a Test project; nothing was created";
+      case "executor_test_only":
+        return "the key belongs to a Live project: choosing an executor (the simulator or the provider's sandbox) exists only in a Test project; nothing was created";
+      case "provider_sandbox_not_ready":
+        return "this project's provider sandbox is not ready; nothing was signed and nothing was switched to the simulator";
+      default:
+        return null;
+    }
   },
 
   onlyDeny: "  (the only possible outcome is to deny; press Enter)",

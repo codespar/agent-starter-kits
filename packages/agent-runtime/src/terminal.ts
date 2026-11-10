@@ -88,7 +88,8 @@ export function executorLines(execution: Execution, setup: Setup): string[] {
   const executor = executorOf(execution);
   if (executor) lines.push(`  ${text.executedBy(executorLabel(executor), executor)}`);
   const failure = execution.state === "failed" ? railErrorOf(execution) : null;
-  if (failure && isExecutorRefusal(failure.code) && text.executorHint[failure.code]) lines.push(`  ${text.executorHint[failure.code]}`);
+  const hint = failure && isExecutorRefusal(failure.code) ? text.executorHint(failure.code) : null;
+  if (hint) lines.push(`  ${hint}`);
   return lines;
 }
 

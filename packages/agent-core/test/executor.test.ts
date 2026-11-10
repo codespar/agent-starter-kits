@@ -65,7 +65,7 @@ describe("the engine keeps it on the execution", () => {
           const out = await inner.pay(p);
           return out.status === "settled" ? { ...out, executor: "codespar_simulator" } : out;
         },
-        lookup: (id, p, tx) => inner.lookup(id, p, tx),
+        lookup: (...args: Parameters<PaymentRail["lookup"]>) => inner.lookup(...args),
         receipt: (id, a) => inner.receipt(id, a),
       }),
     });
@@ -100,12 +100,13 @@ describe("labels", () => {
   it("every executor refusal has a line in both locales", () => {
     for (const code of ["funding_source_executor_required", "simulation_refused_live", "executor_test_only", "provider_sandbox_not_ready"]) {
       expect(isExecutorRefusal(code)).toBe(true);
-      expect(CORE_STRINGS["pt-BR"].executorHint[code]).toBeTruthy();
-      expect(CORE_STRINGS.en.executorHint[code]).toBeTruthy();
+      expect(CORE_STRINGS["pt-BR"].executorHint(code)).toBeTruthy();
+      expect(CORE_STRINGS.en.executorHint(code)).toBeTruthy();
     }
     expect(isExecutorRefusal("insufficient_funds")).toBe(false);
     expect(isExecutorRefusal(null)).toBe(false);
-    expect(CORE_STRINGS["pt-BR"].executorHint["funding_source_executor_required"]).toMatch(/npm run consent -- --yes/);
+    expect(CORE_STRINGS["pt-BR"].executorHint("funding_source_executor_required")).toMatch(/npm run consent -- --yes/);
+    expect(CORE_STRINGS.en.executorHint("insufficient_funds")).toBeNull();
   });
 });
 
