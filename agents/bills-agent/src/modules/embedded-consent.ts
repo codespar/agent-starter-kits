@@ -32,6 +32,7 @@ import {
   MandateSchema,
   RECORDED_EXECUTOR,
   executorLabel,
+  isExecutorRefusal,
   windowCap,
   type ConsentExecutor,
   type Locale,
@@ -109,7 +110,7 @@ function sandboxNotReadyDetails(body: unknown): SandboxNotReadyDetails {
 function refuseReadably(err: unknown, say: (line: string) => void, locale: Locale): never {
   const failure = describeApiError(err);
   const text = STRINGS[locale];
-  const hint = CORE_STRINGS[locale].executorHint(failure.code);
+  const hint = isExecutorRefusal(failure.code) ? CORE_STRINGS[locale].executorHint(failure.code) : null;
   if (failure.code === "provider_sandbox_not_ready") {
     const details = sandboxNotReadyDetails(failure.body);
     say(text.consentSandboxNotReady);

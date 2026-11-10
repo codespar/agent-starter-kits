@@ -106,7 +106,7 @@ describe("labels", () => {
     expect(isExecutorRefusal("insufficient_funds")).toBe(false);
     expect(isExecutorRefusal(null)).toBe(false);
     expect(CORE_STRINGS["pt-BR"].executorHint("funding_source_executor_required")).toMatch(/npm run consent -- --yes/);
-    expect(CORE_STRINGS.en.executorHint("insufficient_funds")).toBeNull();
+    expect(CORE_STRINGS.en.executorHint("insufficient_funds")).toMatch(/chosen at the consent/);
   });
 });
 

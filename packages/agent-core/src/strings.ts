@@ -22,7 +22,8 @@ const pt = {
   replayedSettlement: "já estava pago: a API respondeu com um pagamento anterior desta mesma tentativa; esta execução não moveu dinheiro",
   executedBy: (label: string, executor: string) => `executado por: ${label} (${executor})`,
   // What to do about a refusal of ent#1983 (executor chosen at the consent); the API's own code and words are printed before it.
-  executorHint: (code: string): string | null => {
+  // Callers ask only for a code `isExecutorRefusal` accepts; any other code reads as the general rule.
+  executorHint: (code: string): string => {
     switch (code) {
       case "funding_source_executor_required":
         return "este mandato foi assinado sem executor e, em Test, não paga mais assim; nada foi enviado. Assine um mandato novo por um consentimento que nomeie o executor (no bills-agent, `npm run consent -- --yes` nomeia o simulador da CodeSpar) e pague sob ele";
@@ -33,7 +34,7 @@ const pt = {
       case "provider_sandbox_not_ready":
         return "o sandbox do provedor deste projeto não está pronto; nada foi assinado e nada foi trocado pelo simulador";
       default:
-        return null;
+        return "quem executa um pagamento de teste é escolhido no consentimento, antes da assinatura: o simulador da CodeSpar ou o sandbox do provedor";
     }
   },
 
@@ -140,7 +141,7 @@ const en: CoreStrings = {
       case "provider_sandbox_not_ready":
         return "this project's provider sandbox is not ready; nothing was signed and nothing was switched to the simulator";
       default:
-        return null;
+        return "who executes a test payment is chosen at the consent, before signing: the CodeSpar simulator or the provider's sandbox";
     }
   },
 
