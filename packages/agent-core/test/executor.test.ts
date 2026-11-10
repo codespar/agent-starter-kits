@@ -65,7 +65,7 @@ describe("the engine keeps it on the execution", () => {
           const out = await inner.pay(p);
           return out.status === "settled" ? { ...out, executor: "codespar_simulator" } : out;
         },
-        lookup: (...args: Parameters<PaymentRail["lookup"]>) => inner.lookup(...args),
+        lookup: (id, p) => inner.lookup(id, p),
         receipt: (id, a) => inner.receipt(id, a),
       }),
     });
