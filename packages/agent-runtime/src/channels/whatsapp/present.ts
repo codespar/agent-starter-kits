@@ -11,7 +11,7 @@
  * its OWN message underneath, because a code inside a picture cannot be
  * copied and a code inside a paragraph cannot be tapped.
  */
-import { CORE_STRINGS, formatDay, type ChargeInstrument, type Execution, type Locale } from "@codespar/agent-core";
+import { CORE_STRINGS, consentWords, formatDay, type ChargeInstrument, type Execution, type Locale } from "@codespar/agent-core";
 import type { OutboundBody } from "../types.js";
 
 export function instrumentBodies(execution: Execution, instalment: number, chargeId: string, instrument: ChargeInstrument, currency: string, locale: Locale = "pt-BR"): OutboundBody[] {
@@ -27,6 +27,7 @@ export function instrumentBodies(execution: Execution, instalment: number, charg
         item ? money.format(item.amount / 100) : "",
         instrument.due_date ? text.dueOn(formatDay(instrument.due_date, locale)) : "",
         // A pull's id is the bank authorization's, which means nothing to the person; the link below is what they act on.
+        // On a two-page pull the amount comes again with the sign page, on purpose: that page is the one that moves the money.
         instrument.consent_url ? "" : text.chargeRef(chargeId),
       ].join(""),
     },
@@ -37,7 +38,7 @@ export function instrumentBodies(execution: Execution, instalment: number, charg
   }
   if (instrument.consent_url) {
     // One message: the link is a button to tap, not a string to copy. The backend falls back to the lead line and the bare link.
-    bodies.push({ kind: "instrument", instrument: "consent_url", value: instrument.consent_url, cta: { body: text.consentPrompt, button: text.consentButton, lead: text.consentLink } });
+    bodies.push({ kind: "instrument", instrument: "consent_url", value: instrument.consent_url, cta: consentCta(instrument.consent_step, locale) });
   }
   if (instrument.boleto_bank_line) {
     bodies.push({ kind: "text", text: text.boletoLine });
@@ -46,3 +47,8 @@ export function instrumentBodies(execution: Execution, instalment: number, charg
   return bodies;
 }
 
+/** The words on a consent link's button: the core's for that step (`consentWords`), in the shape the channel sends. */
+export function consentCta(step: ChargeInstrument["consent_step"], locale: Locale = "pt-BR"): { body: string; button: string; lead: string } {
+  const words = consentWords(step, locale);
+  return { body: words.prompt, button: words.button, lead: words.lead };
+}
