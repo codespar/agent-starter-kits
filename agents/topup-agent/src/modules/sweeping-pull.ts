@@ -201,7 +201,7 @@ export class SweepingPullRail implements PaymentRail {
         if (e instanceof IniciadorError && !e.transientRead) return this.finish(attemptId, record, { status: "failed", code: "authorization_unreadable", message: messageOf(e) });
         return { status: "uncertain", code: "authorization_unreadable", message: messageOf(e) };
       }
-      // While it waits, the bank answers the link again with the status (sandbox, 2026-10-29): that copy wins over this process's.
+      // While it waits, the bank answers the link again with the status (as observed on the sandbox): that copy wins over this process's.
       if (auth.authUrl) this.authLinks.set(attemptId, auth.authUrl);
       if (!AUTHORIZATION_TERMINAL.has(auth.status)) return this.awaiting(attemptId, record, auth.status);
       if (auth.status !== "AUTHORISED") return this.finish(attemptId, record, authorizationFailure(auth));

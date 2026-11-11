@@ -93,7 +93,7 @@ function fakeIniciador(options: { authStatus?: string[]; rejection?: string; pay
     if (init?.method === "GET" && path === "/sweeping/authorizations/urn%3AIniciador%3Aauth-1") {
       if (options.authRead) return json(options.authRead, { message: "authorization read refused" });
       const status = authStatus.length > 1 ? authStatus.shift()! : authStatus[0]!;
-      // As the sandbox answered on 2026-10-29: `authUrl` comes back with the status while the bank waits, and not after.
+      // As the sandbox answers: `authUrl` comes back with the status while the bank waits, and not after.
       return json(200, { authorizationId: "urn:Iniciador:auth-1", status, ...(status === "AWAITING_AUTHORISATION" ? { authUrl: "https://bank.example/consent?request_uri=urn:x" } : {}), ...(options.rejection ? { rejection: { reason: { code: options.rejection } } } : {}) });
     }
     if (init?.method === "POST" && path === "/sweeping/authorizations/urn%3AIniciador%3Aauth-1/payments") {
