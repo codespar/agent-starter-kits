@@ -1,9 +1,8 @@
 /**
  * The Iniciador sweeping REST, the four calls a pull needs and nothing else:
  * create an authorization (the payer approves it at the bank), read it, create
- * a payment under it, read the payment. Ported from the sandbox probe of
- * 2026-10-21 (`~/Documentos/codespar/iniciador/probe`), which proved the shapes
- * on 2026-10-22; the vendor client is not used.
+ * a payment under it, read the payment. The shapes are the ones observed on
+ * the sandbox; the vendor client is not used.
  *
  * What never leaves this module: the client id, the client secret and the
  * access token. The token lives in memory only, for 55 minutes, and is

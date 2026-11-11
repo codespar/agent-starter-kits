@@ -314,7 +314,7 @@ export class StateStore {
   }
 
   stubRailPut(attemptId: string, request: unknown, outcome: unknown, at: string): boolean {
-    const result = this.db.prepare("INSERT OR IGNORE INTO stub_rail_attempts (attempt_id, request, outcome, at) VALUES (?, ?, ?, ?)").run(attemptId, JSON.stringify(request), JSON.stringify(outcome), at);
+    const result = this.db.prepare("INSERT OR IGNORE INTO stub_rail_attempts (attempt_id, request, outcome, at) VALUES (?, ?, ?, ?)").run(attemptId, JSON.stringify(request), JSON.stringify(withoutConsentLink(outcome)), at);
     return result.changes === 1;
   }
 
@@ -322,7 +322,7 @@ export class StateStore {
   stubRailReplace(attemptId: string, request: unknown, outcome: unknown, at: string): void {
     this.db
       .prepare("INSERT INTO stub_rail_attempts (attempt_id, request, outcome, at) VALUES (?, ?, ?, ?) ON CONFLICT(attempt_id) DO UPDATE SET outcome = excluded.outcome, at = excluded.at")
-      .run(attemptId, JSON.stringify(request), JSON.stringify(outcome), at);
+      .run(attemptId, JSON.stringify(request), JSON.stringify(withoutConsentLink(outcome)), at);
   }
 
   // stub mandate status / org pause (the local stand-in of stubs/mandate-status.ts, for runs without a key)
@@ -345,4 +345,18 @@ export class StateStore {
   stubSetOrgPaused(orgId: string, paused: boolean, at: string): void {
     this.db.prepare("INSERT INTO stub_org (org_id, paused, updated_at) VALUES (?, ?, ?) ON CONFLICT(org_id) DO UPDATE SET paused = excluded.paused, updated_at = excluded.updated_at").run(orgId, paused ? 1 : 0, at);
   }
+}
+
+/**
+ * A hosted consent page's link carries its credential (a PAR request_uri, a
+ * JWT), so the stub rail's table keeps THAT an instrument had one, never the
+ * link: `consent_url` becomes null and `has_consent_url` true, as the events
+ * already do. A rail that needs the page again reads it from its provider.
+ * The `executions` row still keeps it (README, "Stubs").
+ */
+function withoutConsentLink(outcome: unknown): unknown {
+  if (!outcome || typeof outcome !== "object") return outcome;
+  const instrument = (outcome as { instrument?: unknown }).instrument;
+  if (!instrument || typeof instrument !== "object" || typeof (instrument as { consent_url?: unknown }).consent_url !== "string") return outcome;
+  return { ...outcome, instrument: { ...instrument, consent_url: null, has_consent_url: true } };
 }

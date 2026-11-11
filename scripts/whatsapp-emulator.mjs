@@ -19,6 +19,14 @@
  *   node scripts/whatsapp-emulator.mjs                   start it (foreground)
  *   node scripts/whatsapp-emulator.mjs --prepare         fetch only
  *   node scripts/whatsapp-emulator.mjs --version <v>     a different release
+ *   node scripts/whatsapp-emulator.mjs --host 0.0.0.0    listen on every interface
+ *
+ * WHY 127.0.0.1 BY DEFAULT. The emulator answers every origin (CORS `*`) and its
+ * app secret is the development value below, so on the local network anybody
+ * could read and post into the simulated conversations. `--host` is for a demo
+ * on a phone (agents/topup-agent/runbook.md, "On a phone"), on a network you
+ * trust, stopped when the demo ends. The webhook stays on 127.0.0.1 either way:
+ * the emulator and the channel's receiver run on the same machine.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -30,6 +38,8 @@ export const EMULATOR_PACKAGE = "@dyvit/whatsapp-simulator-cli";
 /** The release the gate is measured against. Bump deliberately, never automatically. */
 export const EMULATOR_VERSION = "0.3.0";
 export const EMULATOR_PORT = 4290;
+/** Where the emulator listens unless `--host` says otherwise. */
+export const EMULATOR_HOST = "127.0.0.1";
 /** Must match `WHATSAPP_SIM_APP_SECRET`. A local development value, not a credential. */
 export const EMULATOR_APP_SECRET = "dev";
 /** Where the channel's own receiver listens; the emulator posts its webhooks there. */
@@ -50,10 +60,10 @@ export function prepare(version = EMULATOR_VERSION, say = (l) => process.stderr.
   return spec(version);
 }
 
-function serve(version, webhookUrl) {
+function serve(version, webhookUrl, host) {
   const child = spawn(
     "npx",
-    ["--yes", spec(version), "serve", "--port", String(EMULATOR_PORT), "--webhook", webhookUrl, "--app-secret", EMULATOR_APP_SECRET],
+    ["--yes", spec(version), "serve", "--host", host, "--port", String(EMULATOR_PORT), "--webhook", webhookUrl, "--app-secret", EMULATOR_APP_SECRET],
     // Its own process group: `npx` is a wrapper around the real server, and a
     // signal sent to the wrapper alone leaves the port held by an orphan.
     { cwd: ROOT, stdio: "inherit", detached: true },
@@ -74,11 +84,16 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
   const argv = process.argv.slice(2);
   const version = argv.includes("--version") ? argv[argv.indexOf("--version") + 1] : EMULATOR_VERSION;
   const webhookUrl = argv.includes("--webhook") ? argv[argv.indexOf("--webhook") + 1] : `http://127.0.0.1:${EMULATOR_WEBHOOK_PORT}/`;
+  const host = argv.includes("--host") ? argv[argv.indexOf("--host") + 1] : EMULATOR_HOST;
+  if (!host || host.startsWith("--")) {
+    process.stderr.write("whatsapp emulator: --host needs an address, e.g. --host 0.0.0.0\n");
+    process.exit(2);
+  }
   if (argv.includes("--prepare")) {
     prepare(version);
     process.stderr.write(`whatsapp emulator ready: ${spec(version)}\n`);
   } else {
-    process.stderr.write(`whatsapp emulator: ${spec(version)} on :${EMULATOR_PORT}, webhooks to ${webhookUrl}\n`);
-    serve(version, webhookUrl);
+    process.stderr.write(`whatsapp emulator: ${spec(version)} on ${host}:${EMULATOR_PORT}, webhooks to ${webhookUrl}\n`);
+    serve(version, webhookUrl, host);
   }
 }
