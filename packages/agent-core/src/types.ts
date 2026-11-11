@@ -231,4 +231,9 @@ export interface ChargeInstrument {
    * (sweeping), which reads and presents as it always has.
    */
   consent_step?: "enroll" | "sign";
+  /**
+   * True where `consent_url` was dropped before the instrument went to disk
+   * (the stub rail's table): there was a page, its link is not kept.
+   */
+  has_consent_url?: boolean;
 }
