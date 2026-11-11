@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CodeSparRail } from "../src/api/rail.js";
 import { createCodeSparClient } from "../src/api/client.js";
 import { railErrorOf } from "../src/engine.js";
-import { EXECUTOR_LABELS, executorLabel, executorOf, isExecutorRefusal, RECORDED_EXECUTOR } from "../src/executor.js";
+import { confirmsExecutor, EXECUTOR_LABELS, executorLabel, executorOf, executorProvider, isExecutorRefusal, publicExecutor, RECORDED_EXECUTOR, withNoRealMoney } from "../src/executor.js";
 import type { PaymentRail, RailPayment } from "../src/rail.js";
 import { CORE_STRINGS } from "../src/strings.js";
 import { ESCOLA, harness } from "./helpers.js";
@@ -43,6 +43,8 @@ function railAnswering(paymentBody: Record<string, unknown>): CodeSparRail {
 describe("payment.executor on the rail's answer", () => {
   it("is carried on a settled outcome when the API names it", async () => {
     expect(await railAnswering({ executor: "codespar_simulator" }).pay(payment())).toMatchObject({ status: "settled", executor: "codespar_simulator" });
+    expect(await railAnswering({ executor: "provider_sandbox" }).pay(payment())).toMatchObject({ status: "settled", executor: "provider_sandbox" });
+    // An answer recorded before ent#1983's public rename is carried as it came.
     expect(await railAnswering({ executor: "celcoin_sandbox" }).pay(payment())).toMatchObject({ status: "settled", executor: "celcoin_sandbox" });
   });
 
@@ -89,16 +91,33 @@ describe("the engine keeps it on the execution", () => {
 });
 
 describe("labels", () => {
-  it("are the API's words for each recorded executor; a choice resolves to its recorded executor", () => {
-    expect(executorLabel("codespar_simulator")).toBe("Simulado pela CodeSpar");
-    expect(executorLabel("celcoin_sandbox")).toBe("Integrado (sandbox Celcoin)");
+  it("are the API's words for each executor, by either name, each saying \"sem dinheiro real\" (Test only)", () => {
+    expect(executorLabel("codespar_simulator")).toBe("Simulado pela CodeSpar · sem dinheiro real");
+    expect(executorLabel("provider_sandbox")).toBe("Sandbox do provedor · sem dinheiro real");
+    expect(executorLabel("celcoin_sandbox")).toBe("Integrado (sandbox Celcoin) · sem dinheiro real");
     expect(executorLabel("someone_else")).toBe("someone_else");
+    expect(withNoRealMoney("Integrado (sandbox Celcoin) · sem dinheiro real")).toBe("Integrado (sandbox Celcoin) · sem dinheiro real");
     expect(RECORDED_EXECUTOR).toEqual({ codespar_simulator: "codespar_simulator", provider_sandbox: "celcoin_sandbox" });
-    expect(Object.keys(EXECUTOR_LABELS).sort()).toEqual(["celcoin_sandbox", "codespar_simulator"]);
+    expect(Object.keys(EXECUTOR_LABELS).sort()).toEqual(["celcoin_sandbox", "codespar_simulator", "provider_sandbox"]);
+  });
+
+  it("ent#1983: a choice is confirmed by its public name or the one before the rename, never by another executor", () => {
+    expect(confirmsExecutor("provider_sandbox", "provider_sandbox")).toBe(true);
+    expect(confirmsExecutor("provider_sandbox", "celcoin_sandbox")).toBe(true);
+    expect(confirmsExecutor("provider_sandbox", "codespar_simulator")).toBe(false);
+    expect(confirmsExecutor("codespar_simulator", "codespar_simulator")).toBe(true);
+    expect(confirmsExecutor("codespar_simulator", "provider_sandbox")).toBe(false);
+    expect(confirmsExecutor("codespar_simulator", null)).toBe(false);
+    expect(publicExecutor("celcoin_sandbox")).toBe("provider_sandbox");
+    expect(publicExecutor("mercadopago")).toBeNull();
+    expect(executorProvider({ executor: "provider_sandbox", executor_provider: "celcoin" })).toBe("celcoin");
+    expect(executorProvider({ executor: "celcoin_sandbox" })).toBe("celcoin");
+    expect(executorProvider({ executor: "provider_sandbox" })).toBeNull();
+    expect(executorProvider({ executor: "codespar_simulator", executor_provider: null })).toBeNull();
   });
 
   it("every executor refusal has a line in both locales", () => {
-    for (const code of ["funding_source_executor_required", "simulation_refused_live", "executor_test_only", "provider_sandbox_not_ready"]) {
+    for (const code of ["funding_source_executor_required", "simulation_refused_live", "executor_test_only", "provider_sandbox_not_ready", "executor_provider_not_selectable"]) {
       expect(isExecutorRefusal(code)).toBe(true);
       expect(CORE_STRINGS["pt-BR"].executorHint(code)).toBeTruthy();
       expect(CORE_STRINGS.en.executorHint(code)).toBeTruthy();

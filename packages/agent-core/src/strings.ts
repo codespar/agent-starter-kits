@@ -33,6 +33,8 @@ const pt = {
         return "a chave é de um projeto Live: a escolha de executor (simulador ou sandbox do provedor) existe só em projeto Test; nada foi criado";
       case "provider_sandbox_not_ready":
         return "o sandbox do provedor deste projeto não está pronto; nada foi assinado e nada foi trocado pelo simulador";
+      case "executor_provider_not_selectable":
+        return "o provedor por trás de provider_sandbox é resolvido pela CodeSpar antes da assinatura e não vai no pedido; envie só `executor`. Nada foi criado";
       default:
         return "quem executa um pagamento de teste é escolhido no consentimento, antes da assinatura: o simulador da CodeSpar ou o sandbox do provedor";
     }
@@ -140,6 +142,8 @@ const en: CoreStrings = {
         return "the key belongs to a Live project: choosing an executor (the simulator or the provider's sandbox) exists only in a Test project; nothing was created";
       case "provider_sandbox_not_ready":
         return "this project's provider sandbox is not ready; nothing was signed and nothing was switched to the simulator";
+      case "executor_provider_not_selectable":
+        return "the provider behind provider_sandbox is resolved by CodeSpar before the signature and is never sent in the request; send only `executor`. Nothing was created";
       default:
         return "who executes a test payment is chosen at the consent, before signing: the CodeSpar simulator or the provider's sandbox";
     }

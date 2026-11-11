@@ -17,13 +17,16 @@ function execution(over: Partial<Execution>): Execution {
 describe("executorLines", () => {
   it("a payment the simulator settled names it, with the API's label", () => {
     const settled = execution({ outcomes: [{ index: 0, attempt_id: "att_0", status: "settled", receipt_id: "rcpt_1", executor: "codespar_simulator" }] });
-    expect(executorLines(settled, setup("pt-BR"))).toEqual(["  executado por: Simulado pela CodeSpar (codespar_simulator)"]);
-    expect(executorLines(settled, setup("en"))).toEqual(["  executed by: Simulado pela CodeSpar (codespar_simulator)"]);
+    expect(executorLines(settled, setup("pt-BR"))).toEqual(["  executado por: Simulado pela CodeSpar · sem dinheiro real (codespar_simulator)"]);
+    expect(executorLines(settled, setup("en"))).toEqual(["  executed by: Simulado pela CodeSpar · sem dinheiro real (codespar_simulator)"]);
   });
 
   it("the provider's sandbox reads as its own label", () => {
-    const settled = execution({ outcomes: [{ index: 0, attempt_id: "att_0", status: "settled", executor: "celcoin_sandbox" }] });
-    expect(executorLines(settled, setup("pt-BR"))).toEqual(["  executado por: Integrado (sandbox Celcoin) (celcoin_sandbox)"]);
+    // ent#1983: the public name, and the name before the rename (a replay recorded earlier); both say "sem dinheiro real".
+    const settled = execution({ outcomes: [{ index: 0, attempt_id: "att_0", status: "settled", executor: "provider_sandbox" }] });
+    expect(executorLines(settled, setup("pt-BR"))).toEqual(["  executado por: Sandbox do provedor · sem dinheiro real (provider_sandbox)"]);
+    const legacy = execution({ outcomes: [{ index: 0, attempt_id: "att_0", status: "settled", executor: "celcoin_sandbox" }] });
+    expect(executorLines(legacy, setup("pt-BR"))).toEqual(["  executado por: Integrado (sandbox Celcoin) · sem dinheiro real (celcoin_sandbox)"]);
   });
 
   it("a Test mandate signed without an executor: the line says to sign a new one naming it", () => {

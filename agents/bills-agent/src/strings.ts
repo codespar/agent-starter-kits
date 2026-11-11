@@ -31,10 +31,10 @@ const pt = {
   consentPayee: (name: string, alias: string) => `  favorecido: ${name} (${alias})`,
   consentValidity: (tokenExpiresAt: string) => `  validade: 1 ano    (o token do consentimento vale até ${tokenExpiresAt})`,
   consentValidityDays: (days: number, tokenExpiresAt: string) => `  validade: ${days} dias    (o token do consentimento vale até ${tokenExpiresAt})`,
-  consentExecutor: (label: string, executor: string, choice: string) =>
+  consentExecutor: (label: string, executor: string, choice: string, provider: string | null = null) =>
     choice === "codespar_simulator"
       ? `  executor: ${label} (${executor}): sem KYC, sem conta bancária, nenhum provedor chamado; o pagamento de teste não move dinheiro`
-      : `  executor: ${label} (${executor}): a conta de sandbox do provedor ligada a este consumidor`,
+      : `  executor: ${label} (${executor}${provider ? `, provedor ${provider}, resolvido pela CodeSpar` : ""}): a conta de sandbox do provedor ligada a este consumidor; sem dinheiro real, mesmo quando o sandbox confirma o pagamento`,
   consentExecutorNotConfirmed: (choice: string, answered: string | null) =>
     `A API não confirmou o executor pedido (${choice}; respondeu ${answered ?? "nenhum"}). Nada foi assinado nem salvo. O executor explícito chega com a API da ent#1983; até lá, o pagamento de teste sob pix-consent é recusado.`,
   consentExecutorSignedOther: (mandateId: string, confirmed: string, signed: string | null) =>
@@ -77,10 +77,10 @@ export const STRINGS: LocaleTable<typeof pt & KitStrings> = {
     consentPayee: (name, alias) => `  payee: ${name} (${alias})`,
     consentValidity: (tokenExpiresAt) => `  valid for: 1 year    (the consent token is valid until ${tokenExpiresAt})`,
     consentValidityDays: (days, tokenExpiresAt) => `  valid for: ${days} days    (the consent token is valid until ${tokenExpiresAt})`,
-    consentExecutor: (label, executor, choice) =>
+    consentExecutor: (label, executor, choice, provider = null) =>
       choice === "codespar_simulator"
         ? `  executor: ${label} (${executor}): no KYC, no bank account, no provider called; the test payment moves no money`
-        : `  executor: ${label} (${executor}): the provider's sandbox account bound to this consumer`,
+        : `  executor: ${label} (${executor}${provider ? `, provider ${provider}, resolved by CodeSpar` : ""}): the provider's sandbox account bound to this consumer; no real money, even when the sandbox confirms the payment`,
     consentExecutorNotConfirmed: (choice, answered) =>
       `The API did not confirm the executor asked for (${choice}; it answered ${answered ?? "none"}). Nothing was signed or saved. The explicit executor comes with the API of ent#1983; until then, the test payment under pix-consent is refused.`,
     consentExecutorSignedOther: (mandateId, confirmed, signed) =>

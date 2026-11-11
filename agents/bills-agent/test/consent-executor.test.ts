@@ -173,9 +173,9 @@ describe("the quickstart asks for the CodeSpar simulator, explicitly", () => {
     const c = await consent();
     await c.run;
     const before = c.before()!.join("\n");
-    expect(before).toContain(`executor: ${SIM_LABEL} (codespar_simulator): sem KYC, sem conta bancária, nenhum provedor chamado`);
+    expect(before).toContain(`executor: ${SIM_LABEL} · sem dinheiro real (codespar_simulator): sem KYC, sem conta bancária, nenhum provedor chamado`);
     const after = c.said.slice(c.before()!.length).join("\n");
-    expect(after).toContain(`Executor do mandato: ${SIM_LABEL}.`);
+    expect(after).toContain(`Executor do mandato: ${SIM_LABEL} · sem dinheiro real.`);
   });
 
   it("in English too", async () => {
@@ -185,8 +185,8 @@ describe("the quickstart asks for the CodeSpar simulator, explicitly", () => {
     routes["POST /v1/test/fund"] = fundOk;
     const c = await consent({ locale: "en" });
     await c.run;
-    expect(c.before()!.join("\n")).toContain(`executor: ${SIM_LABEL} (codespar_simulator): no KYC, no bank account, no provider called`);
-    expect(c.said.join("\n")).toContain(`Mandate executor: ${SIM_LABEL}.`);
+    expect(c.before()!.join("\n")).toContain(`executor: ${SIM_LABEL} · sem dinheiro real (codespar_simulator): no KYC, no bank account, no provider called`);
+    expect(c.said.join("\n")).toContain(`Mandate executor: ${SIM_LABEL} · sem dinheiro real.`);
   });
 });
 
@@ -238,7 +238,7 @@ describe("a Live key", () => {
 });
 
 describe("the bank-integration example (integrated proof) asks for the provider's sandbox", () => {
-  it("init carries executor provider_sandbox; the label is the provider's; the mandate stays on the Celcoin source", async () => {
+  it("init carries executor provider_sandbox; the label is the provider's; the mandate stays on the Celcoin source (an API before the public rename)", async () => {
     const example = integratedExample(loadMandate(join(AGENT_DIR, "mandate.example.json")), PROOF);
     routes["GET /v1/consumers/funding-sources"] = celcoinSources;
     routes["POST /v1/consents/init"] = initAnswer("celcoin_sandbox", SANDBOX_LABEL);
@@ -247,11 +247,49 @@ describe("the bank-integration example (integrated proof) asks for the provider'
     const mandate = await c.run;
     expect(posted("/v1/consents/init")[0]!.body["executor"]).toBe("provider_sandbox");
     expect(posted("/v1/consents/tok_exec/submit")[0]!.body["rail"]).toBe("pix-consent");
-    expect(c.before()!.join("\n")).toContain(`executor: ${SANDBOX_LABEL} (celcoin_sandbox)`);
+    expect(c.before()!.join("\n")).toContain(`executor: ${SANDBOX_LABEL} · sem dinheiro real (celcoin_sandbox, provedor celcoin, resolvido pela CodeSpar)`);
     expect(mandate.canonical?.["funding_source_id"]).toBe(CELCOIN_FS);
     expect(mandate.cap_minor).toBe(INTEGRATED_CAP_MINOR);
     expect(posted("/v1/test/fund")).toHaveLength(0);
     expect(consentExecutorFor({ integrated: PROOF })).toBe("provider_sandbox");
+  });
+
+  it("ent#1983 public names: provider_sandbox with the provider apart and real_money false is confirmed, and the request never names a provider", async () => {
+    const example = integratedExample(loadMandate(join(AGENT_DIR, "mandate.example.json")), PROOF);
+    const PUBLIC_LABEL = "Integrado (sandbox Celcoin) · sem dinheiro real";
+    const view = { executor_provider: "celcoin", environment: "test", real_money: false };
+    routes["GET /v1/consumers/funding-sources"] = celcoinSources;
+    routes["POST /v1/consents/init"] = (b) => {
+      const a = initAnswer("provider_sandbox", PUBLIC_LABEL)(b);
+      return { ...a, body: { ...(a.body as object), ...view } };
+    };
+    routes["POST /v1/consents/tok_exec/submit"] = (b) => {
+      const a = submitAnswer(example, "provider_sandbox", PUBLIC_LABEL, {}, CELCOIN_FS)(b);
+      return { ...a, body: { ...(a.body as object), ...view } };
+    };
+    const c = await consent({ integrated: true });
+    const mandate = await c.run;
+    expect(mandate.canonical?.["funding_source_id"]).toBe(CELCOIN_FS);
+    const before = c.before()!.join("\n");
+    expect(before).toContain(`executor: ${PUBLIC_LABEL} (provider_sandbox, provedor celcoin, resolvido pela CodeSpar)`);
+    expect(before).toContain("sem dinheiro real, mesmo quando o sandbox confirma o pagamento");
+    expect(c.said.join("\n")).toContain(`Executor do mandato: ${PUBLIC_LABEL}.`);
+    for (const p of [...posted("/v1/consents/init"), ...posted("/v1/consents/tok_exec/submit")]) {
+      expect(p.body).not.toHaveProperty("provider");
+      expect(p.body).not.toHaveProperty("executor_provider");
+      expect((p.body["intent"] ?? {}) as object).not.toHaveProperty("provider");
+    }
+  });
+
+  it("400 executor_provider_not_selectable: the API's words and what to do, nothing signed", async () => {
+    routes["GET /v1/consumers/funding-sources"] = celcoinSources;
+    routes["POST /v1/consents/init"] = () =>
+      error(400, "executor_provider_not_selectable", "the provider is resolved by the server; send only `executor`. Nothing was created", { field: "provider" });
+    const c = await consent({ integrated: true });
+    await expect(c.run).rejects.toMatchObject({ name: "ConsentRefusedError", code: "executor_provider_not_selectable" });
+    expect(c.said.join("\n")).toMatch(/resolvido pela CodeSpar antes da assinatura/);
+    expect(posted("/v1/consents/tok_exec/submit")).toHaveLength(0);
+    expect(existsSync(c.mandatePath)).toBe(false);
   });
 
   it("409 provider_sandbox_not_ready at init: what is missing and the next steps are said, the simulator is named, and NOT taken", async () => {
