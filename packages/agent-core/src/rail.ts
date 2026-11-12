@@ -210,7 +210,7 @@ export function sameWireActor(a: WireActor | null, b: WireActor | null): boolean
 export type RailLookup = RailOutcome | { status: "in_flight" } | undefined;
 
 export interface PaymentRail {
-  readonly name: "stub" | "codespar" | "stub-charge" | "codespar-charge" | "iniciador-sweeping" | "codespar-proposal";
+  readonly name: "stub" | "codespar" | "stub-charge" | "codespar-charge" | "simulated-pull" | "codespar-proposal";
   pay(payment: RailPayment): Promise<RailOutcome>;
   /**
    * Answers the outcome of an attempt already presented, `in_flight` while the rail is still on it, or `undefined` when the rail

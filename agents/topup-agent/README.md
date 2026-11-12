@@ -31,7 +31,7 @@ log say so (`fallback` in `channel.jsonl`).
 | The model proposes, the code pulls | `codespar_charge` creates an execution in `drafted`; only `ExecutionEngine` reaches `executing`, and only then does the rail call the bank. |
 | One account, two limits, both sides | The mandate has one account (`minha-conta`). `TOPUP_TOTAL_CENTS` / `TOPUP_TX_LIMIT_CENTS` (default R$ 10,00 / R$ 5,00) are read ONCE (`sweepingLimits`) and become both the bank authorization's limits and the mandate's `cap_minor` / `per_tx_cap_minor`. |
 | The link is created only after the yes | The prompt asks first; the bank authorization is created by the rail when the approved execution is dispatched. The link expires about a minute after it is created. |
-| One pull per approval | The payment request is made by the first look that sees `AUTHORISED`, after a marker is written to state.db. A lost answer is `uncertain` forever after, never re-sent. |
+| One pull per approval | The payment request is made by the first look that sees the authorization approved, after a marker is written to state.db. A lost answer is `uncertain` forever after, never re-sent. |
 
 ## What is sandbox (`maturity` in `agent.yaml`)
 
@@ -44,6 +44,10 @@ The rail is an offline fixture (`FixtureSweepingApi`): the same state machine a
 real pull follows, no network. `--payer pays|expires|never` (or
 `TOPUP_STUB_PAYER`) decides what the person does at the simulated bank. There
 is no `--rail api` in this kit.
+
+The two limit variables are now `TOPUP_TOTAL_CENTS` and `TOPUP_TX_LIMIT_CENTS`.
+The names earlier versions of this kit read are no longer read: a `.env` that
+still sets only those runs with the defaults.
 
 ## What it applies alone (`guardrails.json`)
 

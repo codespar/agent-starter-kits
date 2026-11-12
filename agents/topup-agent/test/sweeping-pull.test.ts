@@ -34,18 +34,14 @@ afterAll(() => {
 });
 
 const CONFIG: SweepingRailConfig = {
-  creditorId: "creditor-test",
-  triggerId: "trigger-manual",
-  participantId: "participant-banco-de-testes",
-  taxId: "00000000000",
+  payee: "creditor-test",
   limits: { total_minor: 1000, per_tx_minor: 500 },
-  riskSignals: () => ({ type: "MANUAL", deviceId: "0011223344556677", osVersion: "6.8.0", userTimeZoneOffset: "-03", language: "pt", screenDimensions: { height: 1080, width: 1920 }, accountTenure: "2026-10-21" }),
 };
 
-const AUTH_ID = "urn:fake:auth-1";
+const AUTH_ID = "consent-fake-1";
 const PAY_ID = "pay-1";
 const E2E = "E00000000202610222049abcdef12345";
-const LINK = "https://bank.example/consent?request_uri=urn:x";
+const LINK = "https://bank.example/consent/x";
 
 function payment(over: Partial<RailPayment> = {}): RailPayment {
   return {
@@ -68,9 +64,9 @@ interface Call {
 }
 
 /** A fake bank behind the rail's four calls. `authStatus` is what the bank says about the authorization at each read. */
-function fakeBank(options: { authStatus?: string[]; rejection?: string; paymentCreate?: "ok" | "lost" | "422" | "429"; authRead?: 401 | 404 | 429 | 503; paymentStatus?: 403 | 429; slowPaymentMs?: number; authCreateLostOnce?: boolean } = {}) {
+function fakeBank(options: { authStatus?: string[]; reason?: string; paymentCreate?: "ok" | "lost" | "422" | "429"; authRead?: 401 | 404 | 429 | 503; paymentStatus?: 403 | 429; slowPaymentMs?: number; authCreateLostOnce?: boolean } = {}) {
   const calls: Call[] = [];
-  const authStatus = [...(options.authStatus ?? ["AUTHORISED"])];
+  const authStatus = [...(options.authStatus ?? ["approved"])];
   let loseAuthCreate = options.authCreateLostOnce ?? false;
   const refused = (status: number, what: string) => new SweepingApiError(status, `http_${status}`, `${what} -> ${status}`);
   const api: SweepingApi = {
@@ -80,7 +76,7 @@ function fakeBank(options: { authStatus?: string[]; rejection?: string; paymentC
         loseAuthCreate = false;
         throw new SweepingApiError(0, "network", "create authorization: no answer");
       }
-      return { authorizationId: AUTH_ID, status: "AWAITING_AUTHORISATION", authUrl: LINK, rejection: null };
+      return { consentId: AUTH_ID, status: "waiting", consentUrl: LINK, reason: null };
     },
     async getAuthorization(id: string): Promise<AuthorizationView> {
       calls.push({ op: "getAuthorization", body: null });
@@ -88,7 +84,7 @@ function fakeBank(options: { authStatus?: string[]; rejection?: string; paymentC
       if (options.authRead) throw refused(options.authRead, "read authorization");
       const status = authStatus.length > 1 ? authStatus.shift()! : authStatus[0]!;
       // The link comes back with the status while the bank waits, and not after.
-      return { authorizationId: AUTH_ID, status, authUrl: status === "AWAITING_AUTHORISATION" ? LINK : null, rejection: options.rejection ?? null };
+      return { consentId: AUTH_ID, status, consentUrl: status === "waiting" ? LINK : null, reason: options.reason ?? null };
     },
     async createPayment(_id: string, r: PaymentRequest): Promise<PaymentView> {
       calls.push({ op: "createPayment", body: r });
@@ -96,13 +92,13 @@ function fakeBank(options: { authStatus?: string[]; rejection?: string; paymentC
       if (options.slowPaymentMs) await new Promise((done) => setTimeout(done, options.slowPaymentMs));
       if (options.paymentCreate === "429") throw refused(429, "create payment");
       if (options.paymentCreate === "422") throw refused(422, "create payment");
-      return { id: PAY_ID, status: "CONSENT_AUTHORIZED", endToEndId: E2E };
+      return { id: PAY_ID, status: "pending", endToEndId: E2E };
     },
     async getPaymentStatus(_id: string, paymentId: string): Promise<PaymentView> {
       calls.push({ op: "getPaymentStatus", body: null });
       if (options.paymentStatus) throw refused(options.paymentStatus, "read payment");
       if (paymentId !== PAY_ID) throw refused(404, "read payment");
-      return { id: PAY_ID, status: "PAYMENT_COMPLETED", endToEndId: E2E };
+      return { id: PAY_ID, status: "completed", endToEndId: E2E };
     },
   };
   const count = (op: Op) => calls.filter((c) => c.op === op).length;
@@ -122,7 +118,7 @@ describe("the error's two readings", () => {
 
 describe("the pull rail", () => {
   it("pay() creates the authorization and answers accepted with the consent link; the looks pay once and settle on the end-to-end id", async () => {
-    const fake = fakeBank({ authStatus: ["AWAITING_AUTHORISATION", "AUTHORISED"] });
+    const fake = fakeBank({ authStatus: ["waiting", "approved"] });
     const rail = new SweepingPullRail(store(), fake.api, CONFIG, true);
     const accepted = await rail.pay(payment());
     expect(accepted.status).toBe("accepted");
@@ -141,19 +137,18 @@ describe("the pull rail", () => {
     expect(fake.calls.length).toBe(before);
     expect(fake.count("createPayment")).toBe(1);
     const pull = fake.calls.find((c) => c.op === "createPayment")!.body as PaymentRequest;
-    expect(pull).toMatchObject({ amount: 100, creditorId: "creditor-test", triggerId: "trigger-manual", externalId: "att_1-pull" });
-    expect(pull.riskSignals.type).toBe("MANUAL");
-    // The authorization carries the same two limits the mandate holds, for the configured creditor and trigger.
+    expect(pull).toMatchObject({ amountMinor: 100, payee: "creditor-test", reference: "att_1-pull" });
+    // The authorization carries the same two limits the mandate holds, for the configured payee.
     expect(fake.count("createAuthorization")).toBe(1);
     const asked = fake.calls.find((c) => c.op === "createAuthorization")!.body as AuthorizationRequest;
-    expect(asked).toMatchObject({ externalId: "att_1", totalAllowedAmount: 1000, transactionLimit: 500, creditorId: "creditor-test", triggerId: "trigger-manual" });
+    expect(asked).toMatchObject({ reference: "att_1", totalLimitMinor: 1000, perPullLimitMinor: 500, payee: "creditor-test" });
 
     const receipt = await rail.receipt("pay-1", payment().actor);
     expect(receipt).toMatchObject({ kind: "charge", receipt_sig: null, receipt_sig_ed25519: null, chain: null, payment: { amount_minor: 100, payee: "creditor-test" } });
   });
 
   it("presenting the same attempt again creates nothing new", async () => {
-    const fake = fakeBank({ authStatus: ["AWAITING_AUTHORISATION"] });
+    const fake = fakeBank({ authStatus: ["waiting"] });
     const rail = new SweepingPullRail(store(), fake.api, CONFIG, true);
     await rail.pay(payment());
     await rail.pay(payment());
@@ -178,7 +173,7 @@ describe("the pull rail", () => {
     expect(fake.count("createPayment")).toBe(1);
   });
 
-  it("an authorization request with no answer leaves a record, and the next look makes it again under the same externalId", async () => {
+  it("an authorization request with no answer leaves a record, and the next look makes it again under the same reference", async () => {
     const fake = fakeBank({ authCreateLostOnce: true });
     const rail = new SweepingPullRail(store(), fake.api, CONFIG, true);
     expect(await rail.pay(payment())).toMatchObject({ status: "uncertain", code: "authorization_unconfirmed" });
@@ -187,7 +182,7 @@ describe("the pull rail", () => {
     expect(looked).toMatchObject({ status: "accepted", transaction_id: AUTH_ID, instrument: { consent_url: LINK } });
     const creates = fake.calls.filter((c) => c.op === "createAuthorization");
     expect(creates).toHaveLength(2);
-    expect(creates.map((c) => c.body?.externalId)).toEqual(["att_1", "att_1"]);
+    expect(creates.map((c) => c.body?.reference)).toEqual(["att_1", "att_1"]);
     // Issued once it answered: later looks read it, they do not make another.
     await rail.lookup("att_1", payment());
     expect(fake.count("createAuthorization")).toBe(2);
@@ -232,7 +227,7 @@ describe("the pull rail", () => {
     expect(fake.count("createPayment")).toBe(1);
   });
 
-  it("two readers that both see AUTHORISED send one payment request: the marker is claimed once, the other reads it in flight", async () => {
+  it("two readers that both see it approved send one payment request: the marker is claimed once, the other reads it in flight", async () => {
     const fake = fakeBank({ slowPaymentMs: 50 });
     const first = store();
     // Two handles on the same state.db, as two processes would have.
@@ -248,10 +243,10 @@ describe("the pull rail", () => {
   });
 
   it("an expired link fails as charge_expired, a rejected one as charge_cancelled", async () => {
-    const expired = new SweepingPullRail(store(), fakeBank({ authStatus: ["REJECTED"], rejection: "REJEITADO_TEMPO_EXPIRADO_ACCOUNT_HOLDER_VALIDATION" }).api, CONFIG, true);
+    const expired = new SweepingPullRail(store(), fakeBank({ authStatus: ["expired"], reason: "not_approved_in_time" }).api, CONFIG, true);
     await expired.pay(payment());
     expect(await expired.lookup("att_1", payment())).toMatchObject({ status: "failed", code: "charge_expired" });
-    const rejected = new SweepingPullRail(store(), fakeBank({ authStatus: ["REJECTED"], rejection: "REJEITADO_USUARIO" }).api, CONFIG, true);
+    const rejected = new SweepingPullRail(store(), fakeBank({ authStatus: ["rejected"], reason: "declined_by_person" }).api, CONFIG, true);
     await rejected.pay(payment());
     expect(await rejected.lookup("att_1", payment())).toMatchObject({ status: "failed", code: "charge_cancelled" });
   });
@@ -285,11 +280,11 @@ describe("the bank's link is not kept in state.db", () => {
 
   it("the record holds ids and statuses only; after a restart the link comes back from the authorization read", async () => {
     const s = store();
-    const fake = fakeBank({ authStatus: ["AWAITING_AUTHORISATION", "AUTHORISED"] });
+    const fake = fakeBank({ authStatus: ["waiting", "approved"] });
     const first = await new SweepingPullRail(s, fake.api, CONFIG, true).pay(payment());
     expect(first).toMatchObject({ status: "accepted", instrument: { consent_url: LINK } });
     const atRest = s.getCursor("sweeping:att_1") ?? "";
-    for (const piece of ["request_uri", "bank.example", "auth_url"]) expect(atRest).not.toContain(piece);
+    for (const piece of ["consent/x", "bank.example", "auth_url"]) expect(atRest).not.toContain(piece);
     // A new process over the same state.db, the bank still waiting: the link again, read from the bank.
     const restarted = new SweepingPullRail(s, fake.api, CONFIG, true);
     expect(await restarted.lookup("att_1", payment())).toMatchObject({ status: "accepted", instrument: { consent_url: LINK } });
@@ -298,18 +293,18 @@ describe("the bank's link is not kept in state.db", () => {
 
   it("a record written with the link by an earlier version loses it at its next write, and the pull goes on", async () => {
     const s = store();
-    const fake = fakeBank({ authStatus: ["AUTHORISED"] });
+    const fake = fakeBank({ authStatus: ["approved"] });
     const rail = new SweepingPullRail(s, fake.api, CONFIG, true);
     await rail.pay(payment());
     s.setCursor("sweeping:att_1", JSON.stringify({ ...JSON.parse(s.getCursor("sweeping:att_1")!), auth_url: LINK }));
     expect(await rail.lookup("att_1", payment())).toMatchObject({ status: "settled" });
-    expect(s.getCursor("sweeping:att_1")).not.toContain("request_uri");
+    expect(s.getCursor("sweeping:att_1")).not.toContain("bank.example");
   });
 
   it("the offline fixture answers the link while it waits", async () => {
     const s = store();
     const api = new FixtureSweepingApi(s);
-    const created = await api.createAuthorization({ externalId: "att_1" } as Parameters<FixtureSweepingApi["createAuthorization"]>[0]);
-    expect(created.authUrl).toMatch(/request_uri=/);
+    const created = await api.createAuthorization({ reference: "att_1", payee: "creditor-test", totalLimitMinor: 1000, perPullLimitMinor: 500 });
+    expect(created.consentUrl).toMatch(/\/consent\//);
   });
 });

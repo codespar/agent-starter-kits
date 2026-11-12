@@ -12,7 +12,7 @@
 import { relative } from "node:path";
 import { consentWords, formatBRL, loadMandate, railErrorOf, type Execution, type Mandate } from "@codespar/agent-core";
 import { defineAgent, toldKey, type AgentKit } from "@codespar/agent-runtime";
-import { FixtureSweepingApi, SweepingPullRail, fixtureRiskSignals, sweepingLimits, type FixtureFate, type SweepingLimits } from "./modules/sweeping-pull.js";
+import { FixtureSweepingApi, SweepingPullRail, sweepingLimits, type FixtureFate, type SweepingLimits } from "./modules/sweeping-pull.js";
 import { STRINGS } from "./strings.js";
 import { endToEndOf, makeHandlers } from "./topup.js";
 
@@ -74,7 +74,7 @@ whatsapp: --backend simulator|cloud-api  --conversation <name>  --scripted`,
     const rail = new SweepingPullRail(
       ctx.store,
       fixture,
-      { creditorId: mandate.beneficiaries[0]!.payee, triggerId: "trigger-fixture", participantId: "participant-fixture", taxId: "00000000000", limits, riskSignals: fixtureRiskSignals, ...(ctx.now ? { clock: ctx.now } : {}) },
+      { payee: mandate.beneficiaries[0]!.payee, limits, ...(ctx.now ? { clock: ctx.now } : {}) },
       true,
     );
     return {
