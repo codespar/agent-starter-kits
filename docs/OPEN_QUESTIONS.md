@@ -1479,16 +1479,15 @@ So the file is placed by hand by whoever holds the organization's key. The agent
 
 **Open:** whether this becomes a command, in the kit or in the CLI, has not been decided by the API's owner. Until it is, the README describes the manual path and nothing else.
 
-## 66. The topup-agent pulls through Iniciador, not through the CodeSpar API (2026-10-27)
+## 66. The topup-agent pulls on an offline simulation; a pull to a real bank goes through the CodeSpar API (2026-10-27, amended 2026-11-12)
 
-`agents/topup-agent` pulls money from the person's own bank into their own account through Iniciador's Open Finance sweeping REST (`consumer.sandbox.inic.dev/v1/sweeping/*`), proved by hand on 2026-10-22. The CodeSpar API has no pull today, so the rail calls Iniciador directly, and four things follow:
+`agents/topup-agent` pulls money from the person's own bank into their own account (Open Finance sweeping). The kit has no client of a payment provider: its rail runs on an offline simulation of the bank (`FixtureSweepingApi`), and a pull to a real bank goes through the CodeSpar API. Three things follow for the kit:
 
-- **The core sees a receivable.** `pay()` creates the bank authorization and answers `accepted` with the consent link as a new `ChargeInstrument.consent_url`; the looks read the authorization and, at the first `AUTHORISED`, make the one payment. The core gained the field, the rail name `iniciador-sweeping`, and the `sweeping-pull` maturity next to `bolepix-receivables` in the charge-tool rule of `checkAgent`.
-- **Two calls per attempt, the second from a look.** `reconcile` is read-only on every other rail. Here the look that first sees `AUTHORISED` makes the payment, after a marker in state.db, and never again: a lost answer is `uncertain` until a human looks at the bank. The sweeping spec lists no 409 for a duplicate `externalId` on create-payment (probe README, doubt 7), so the marker is the only guard.
+- **The core sees a receivable.** `pay()` asks for the bank authorization and answers `accepted` with the consent link as `ChargeInstrument.consent_url`; the looks read the authorization and, once the person approved it, make the one payment. The core has the field, the rail name and the `sweeping-pull` maturity next to `bolepix-receivables` in the charge-tool rule of `checkAgent`.
 - **Nothing is sealed.** The record under `runs/<run-id>/receipts/` is local; there is no chain, no HMAC and no Ed25519 signature for a pull. The Pix end-to-end id is the only reference anyone outside can check.
-- **The wait is inside the turn.** As for a bolepix, the run looks (every 2 s on the sandbox) until the pull closes or `--wait` runs out, and messages the person sends meanwhile are read after. A background looker that answers "still waiting for the bank" while the conversation goes on would be a runtime change for every await-payer agent.
+- **The wait is inside the turn.** As for a bolepix, the run looks until the pull closes or `--wait` runs out, and messages the person sends meanwhile are read after. A background looker that answers "still waiting for the bank" while the conversation goes on would be a runtime change for every await-payer agent.
 
-**Open:** whether a pull belongs in the CodeSpar API (which would seal it like a payment), the AUTOMATIC trigger (not provisioned in the sandbox), and what `riskSignals` an agent with no device should send.
+**Open:** whether the CodeSpar API seals a pull like a payment, and so whether `receipt-verification` can leave `blocked` for this kit.
 
 ## 67. Zod GHSA-mrhx-c7xc-m3w5: where the kit parses, and why Zod 4 waits for the SDK (2026-10-29)
 

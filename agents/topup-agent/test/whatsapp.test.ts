@@ -1,6 +1,6 @@
 /**
  * The pull over the WhatsApp channel, on the offline fixture: a real process,
- * no key of any kind, the WHATSAPP_* and INICIADOR_* variables blanked so a
+ * no key of any kind, the WHATSAPP_* variables blanked so a
  * machine with credentials in its shell runs the same test as the CI.
  *
  * Needs the local Cloud API emulator (`npm run whatsapp:emulator`) and SKIPS
@@ -43,7 +43,7 @@ describe.skipIf(!emulatorUp)("the pull over WhatsApp", () => {
   it("asks for a yes, sends the bank's link as its own message, and closes with the end-to-end id", () => {
     const stateDir = mkdtempSync(join(tmpdir(), "topup-wa-"));
     tempDirs.push(stateDir);
-    const blank = Object.fromEntries(["INICIADOR_CLIENT_ID", "INICIADOR_CLIENT_SECRET", "INICIADOR_TEST_TAX_ID", "INICIADOR_CREDITOR_ID", "INICIADOR_TRIGGER_ID", "INICIADOR_PARTICIPANT_ID", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET"].map((k) => [k, ""]));
+    const blank = Object.fromEntries(["WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET"].map((k) => [k, ""]));
     const result = spawnSync(
       process.execPath,
       [BIN, "start", "--channel", "whatsapp", "--conversation", "recarga", "--scripted", "--simulate-payer", "--mode", "mandate", "--transcript", "scenarios/happy-path.transcript.jsonl", "--json", "--now", "2026-10-27T14:00:00-03:00"],

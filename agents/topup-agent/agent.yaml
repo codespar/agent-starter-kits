@@ -19,7 +19,7 @@ events: [commerce.charge.created, commerce.charge.paid, commerce.charge.expired,
 channels: [terminal, whatsapp]
 locale: pt-BR             # pt-BR | en: the lines the code prints; `--locale` overrides per run. The model replies in the language the person types either way
 maturity:
-  sweeping-pull: sandbox          # Iniciador's sweeping sandbox, trigger MANUAL, simulated bank (Mocktora); `--rail api`. The stub rail is an offline fixture
+  sweeping-pull: sandbox          # offline simulation of the bank (the stub rail); a pull to a real bank goes through the CodeSpar API
   receipt-verification: blocked   # the pull is not a CodeSpar payment: nothing is sealed, no Ed25519 signature exists for it
 scenarios: ./scenarios/
 evals: ./evals/
