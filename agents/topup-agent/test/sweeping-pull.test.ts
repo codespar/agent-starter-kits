@@ -143,6 +143,10 @@ describe("the pull rail", () => {
     const pull = fake.calls.find((c) => c.op === "createPayment")!.body as PaymentRequest;
     expect(pull).toMatchObject({ amount: 100, creditorId: "creditor-test", triggerId: "trigger-manual", externalId: "att_1-pull" });
     expect(pull.riskSignals.type).toBe("MANUAL");
+    // The authorization carries the same two limits the mandate holds, for the configured creditor and trigger.
+    expect(fake.count("createAuthorization")).toBe(1);
+    const asked = fake.calls.find((c) => c.op === "createAuthorization")!.body as AuthorizationRequest;
+    expect(asked).toMatchObject({ externalId: "att_1", totalAllowedAmount: 1000, transactionLimit: 500, creditorId: "creditor-test", triggerId: "trigger-manual" });
 
     const receipt = await rail.receipt("pay-1", payment().actor);
     expect(receipt).toMatchObject({ kind: "charge", receipt_sig: null, receipt_sig_ed25519: null, chain: null, payment: { amount_minor: 100, payee: "creditor-test" } });
