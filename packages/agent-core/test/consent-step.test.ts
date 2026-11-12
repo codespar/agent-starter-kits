@@ -1,5 +1,5 @@
 /**
- * A pull with two consent pages in one attempt (Iniciador JSR: register the
+ * A pull with two consent pages in one attempt (Pix with a passkey: register the
  * passkey, then sign the payment) has each page shown once. `markShown` keys
  * a `consent_step` apart from the attempt; without one the key is the
  * attempt's alone, so a sweeping pull and the markers already in a state.db

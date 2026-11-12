@@ -225,7 +225,7 @@ export interface ChargeInstrument {
   /**
    * Which of a pull's consent pages `consent_url` is, when a rail hands the
    * payer more than one in one attempt: `enroll` registers a passkey at the
-   * bank, `sign` approves this one payment with it (Iniciador JSR). It picks
+   * bank, `sign` approves this one payment with it (Pix with a passkey). It picks
    * the words the payer reads and keys the once-only presentation, so the
    * second page is shown after the first. Absent on a single consent page
    * (sweeping), which reads and presents as it always has.

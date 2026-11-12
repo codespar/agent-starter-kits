@@ -69,7 +69,7 @@ describe("the rail the kit builds", () => {
     expect((await built.rail.pay(payment(payee, 300))).status).toBe("accepted");
 
     expect(asked).toHaveLength(1);
-    expect(asked[0]).toMatchObject({ totalAllowedAmount: built.mandate.cap_minor, transactionLimit: built.mandate.per_tx_cap_minor, creditorId: payee });
+    expect(asked[0]).toMatchObject({ totalLimitMinor: built.mandate.cap_minor, perPullLimitMinor: built.mandate.per_tx_cap_minor, payee });
   });
 
   it("uses R$ 10,00 and R$ 5,00 when neither variable is set", () => {

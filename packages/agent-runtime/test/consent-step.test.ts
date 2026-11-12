@@ -1,6 +1,6 @@
 /**
  * What the payer reads for each consent page, and that a pull with two of
- * them in one attempt (Iniciador JSR) puts both in the conversation, in
+ * them in one attempt (Pix with a passkey) puts both in the conversation, in
  * order, once each. A consent link with no `consent_step` (sweeping) keeps
  * the bank's words.
  */
