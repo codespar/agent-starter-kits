@@ -140,7 +140,7 @@ try {
   execFileSync("npm", ["install", "--no-audit", "--no-fund", "--ignore-scripts", resolve(tgz)], { cwd: dir, stdio: "inherit" });
   writeFileSync(join(dir, "smoke.mjs"), SMOKE);
   // No key of any kind in the child: the simulator and the replay are the whole world here.
-  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/KEY|TOKEN|SECRET|CODESPAR_|ANTHROPIC|GEMINI|INICIADOR/.test(name)));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/KEY|TOKEN|SECRET|CODESPAR_|ANTHROPIC|GEMINI/.test(name)));
   execFileSync(process.execPath, ["smoke.mjs"], { cwd: dir, stdio: "inherit", env });
 } finally {
   rmSync(dir, { recursive: true, force: true });

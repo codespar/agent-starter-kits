@@ -1,39 +1,32 @@
 /**
  * Everything about this agent the shared runner cannot know: the pull rail
- * (Iniciador's sweeping sandbox with `--rail api`, an offline fixture
- * otherwise), the mandate the two limits come into, the tool handlers, the
+ * (an offline simulation of the bank; a pull to a real bank goes through the
+ * CodeSpar API), the mandate the two limits come into, the tool handlers, the
  * words the person and the operator read, and what a one-shot prints as JSON.
  *
  * To the core a pull is a receivable (`settlement: await-payer`): the rail
  * answers `accepted` with the bank's consent link, the runner shows it and
  * looks until the person approved at the bank and the money landed, or the
- * link expired. There is no sandbox payer route: in the sandbox the person
- * approves on the simulated bank's page (Mocktora), by hand.
+ * link expired.
  */
 import { relative } from "node:path";
 import { consentWords, formatBRL, loadMandate, railErrorOf, type Execution, type Mandate } from "@codespar/agent-core";
-import { defineAgent, toldKey, type AgentKit, type SandboxPayer } from "@codespar/agent-runtime";
-import { HttpSweepingApi } from "./iniciador.js";
-import { FixtureSweepingApi, SweepingPullRail, fixtureRiskSignals, manualRiskSignals, sweepingLimits, type FixtureFate, type SweepingLimits } from "./modules/sweeping-pull.js";
+import { defineAgent, toldKey, type AgentKit } from "@codespar/agent-runtime";
+import { FixtureSweepingApi, SweepingPullRail, fixtureRiskSignals, sweepingLimits, type FixtureFate, type SweepingLimits } from "./modules/sweeping-pull.js";
 import { STRINGS } from "./strings.js";
 import { endToEndOf, makeHandlers } from "./topup.js";
 
-/** The variables `--rail api` needs, by name only. The values live in the agent's `.env` or the shell, never in a tracked file. */
-const API_ENV = ["INICIADOR_CLIENT_ID", "INICIADOR_CLIENT_SECRET", "INICIADOR_TEST_TAX_ID", "INICIADOR_CREDITOR_ID", "INICIADOR_TRIGGER_ID", "INICIADOR_PARTICIPANT_ID"] as const;
-
 /**
- * The mandate with the two limits the bank authorization also carries, and,
- * on the sandbox, the configured creditor as its one account. The alias the
- * model names stays `minha-conta`; what it resolves to is the person's.
+ * The mandate with the two limits the bank authorization also carries. The
+ * alias the model names stays `minha-conta`; what it resolves to is the person's.
  */
-function mandateFor(base: Mandate, limits: SweepingLimits, creditorId?: string): Mandate {
+function mandateFor(base: Mandate, limits: SweepingLimits): Mandate {
   const account = base.beneficiaries[0];
   if (!account || base.beneficiaries.length !== 1) throw new Error("topup-agent: the mandate must name exactly one account, the person's own");
   return {
     ...base,
     cap_minor: limits.total_minor,
     per_tx_cap_minor: limits.per_tx_minor,
-    ...(creditorId ? { merchant_allowlist: [creditorId], beneficiaries: [{ ...account, payee: creditorId }] } : {}),
   };
 }
 
@@ -42,10 +35,8 @@ const kit: AgentKit = {
   // A pull from the person's own bank, not a charge a payer settles and not a CodeSpar payment: no CodeSpar receipt exists for it.
   hosted: { outcomeKinds: ["answer", "pull"] },
   scenarioRail: "stub",
-  // The live rail is Iniciador's sandbox; buildRail requires its credentials and never calls the CodeSpar API.
+  // No live rail in this kit: the pull runs on the offline simulation, and `--rail api` is refused in buildRail.
   apiRailKey: "none",
-  // The same six buildRail requires: with all of them in the shell, a poll after `start --rail api` reads the bank, not the fixture.
-  apiRailEnv: API_ENV,
 
   labels: {
     defaultUser: "usr_operator",
@@ -61,12 +52,10 @@ const kit: AgentKit = {
   npm start -- --input "quero colocar R$ 1 na minha conta"      one turn (--json for machine output)
   npm start -- --scenario <name>                               run a scenario pack (see scenarios/)
   npm start -- --channel whatsapp --conversation recarga       the conversation channel (needs npm run whatsapp:emulator at the repo root)
-  npm start -- --channel whatsapp --conversation recarga --rail api --wait 300
-                                                               the same against Iniciador's sweeping sandbox (INICIADOR_* in the environment)
   npm run poll -- --channel whatsapp --conversation recarga    back to a conversation whose pull completed after the run ended
-options: --mode mandate|human  --provider anthropic|gemini|replay  --transcript <file>  --rail stub|api  --user <id>
-         --wait <seconds>  how long a run looks at the bank before leaving the pull to \`npm run poll\` (api default 60)
-         --payer pays|expires|never (stub only: what the person does at the simulated bank)  --json
+options: --mode mandate|human  --provider anthropic|gemini|replay  --transcript <file>  --rail stub  --user <id>
+         --wait <seconds>  how long a run looks at the bank before leaving the pull to \`npm run poll\`
+         --payer pays|expires|never (what the person does at the simulated bank)  --json
          --now <ISO 8601>  --locale pt-BR|en
 whatsapp: --backend simulator|cloud-api  --conversation <name>  --scripted`,
 
@@ -74,36 +63,7 @@ whatsapp: --backend simulator|cloud-api  --conversation <name>  --scripted`,
     const limits = sweepingLimits(ctx.env);
     const base = ctx.mandate ?? loadMandate(ctx.manifest.resolvePath(ctx.manifest.manifest.mandate_schema));
     if (ctx.kind === "api") {
-      const missing = API_ENV.filter((name) => !ctx.env[name]?.trim());
-      if (missing.length > 0) throw new Error(`--rail api needs ${missing.join(", ")} (see the README; the values never go in a tracked file)`);
-      const env = (name: (typeof API_ENV)[number]) => ctx.env[name]!.trim();
-      const creditorId = env("INICIADOR_CREDITOR_ID");
-      const api = new HttpSweepingApi({ baseUrl: ctx.env["INICIADOR_BASE_URL"], credentials: { clientId: env("INICIADOR_CLIENT_ID"), clientSecret: env("INICIADOR_CLIENT_SECRET") } });
-      const rail = new SweepingPullRail(
-        ctx.store,
-        api,
-        {
-          creditorId,
-          triggerId: env("INICIADOR_TRIGGER_ID"),
-          participantId: env("INICIADOR_PARTICIPANT_ID"),
-          taxId: env("INICIADOR_TEST_TAX_ID"),
-          limits,
-          riskSignals: manualRiskSignals(ctx.stateDir),
-          redirectURL: ctx.env["INICIADOR_REDIRECT_URL"],
-          ...(ctx.now ? { clock: ctx.now } : {}),
-        },
-        true,
-      );
-      const payer: SandboxPayer = {
-        kind: "api",
-        async pay() {
-          return { ok: false, detail: "the person approves at the bank's page; the sweeping sandbox has no payer route" };
-        },
-        behave() {
-          /* a person, not a fixture */
-        },
-      };
-      return { rail, mandate: mandateFor(base, limits, creditorId), pollIntervalMs: 2000, payer };
+      throw new Error("topup-agent has no live rail in this kit: the pull runs on the offline simulation (--rail stub); a pull to a real bank goes through the CodeSpar API");
     }
     // TOPUP_STUB_PAYER=pays|expires|never: what the fixture person does at the bank, from a test process.
     const fates: Record<string, FixtureFate> = { pays: "approves", expires: "expires", never: "never" };

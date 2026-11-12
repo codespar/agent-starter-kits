@@ -1,13 +1,15 @@
 /**
  * Module `sweeping-pull`: the rail that pulls money from the person's own bank
- * account into their own account at CodeSpar's partner, through Iniciador's
- * Open Finance sweeping. The core sees it as a receivable: `pay()` creates the
+ * account into their own account, through Open Finance sweeping. In this kit
+ * it runs against an offline simulation of the bank (`FixtureSweepingApi`);
+ * a pull to a real bank goes through the CodeSpar API, not through a client
+ * in this repository. The core sees it as a receivable: `pay()` creates the
  * bank authorization and answers `accepted` with the consent link as the
  * instrument; every later `lookup()` reads the authorization and, once the
  * person approved it at the bank, makes the ONE payment the approved execution
  * covers and reads it until it completes.
  *
- * One attempt, two calls on the wire, and only the first is made by `pay()`.
+ * One attempt, two calls, and only the first is made by `pay()`.
  * The second (the payment) is made by the look that first sees AUTHORISED, and
  * it is made at most once: a marker is written to state.db BEFORE the request
  * goes out, so a crash or a lost answer leaves a marker without a payment id,
@@ -18,11 +20,100 @@
  * and the caps were checked by `ExecutionEngine` before `pay()` was called; the
  * rail refuses a payee that is not the configured creditor all the same.
  */
-import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { sha256Hex, type Actor, type ChargeInstrument, type PaymentRail, type RailLookup, type RailOutcome, type RailPayment, type RailReceipt, type StateStore } from "@codespar/agent-core";
-import { AUTHORIZATION_TERMINAL, IniciadorError, PAYMENT_TERMINAL, type AuthorizationRequest, type AuthorizationView, type PaymentRequest, type PaymentView, type RiskSignals, type SweepingApi } from "../iniciador.js";
+
+/** Authorization statuses that end the wait for the payer. AUTHORISED is the only one that leads to a payment. */
+export const AUTHORIZATION_TERMINAL = new Set(["AUTHORISED", "CONSUMED", "REJECTED", "REVOKED", "ERROR", "CANCELED", "EXPIRED"]);
+export const PAYMENT_TERMINAL = new Set(["PAYMENT_COMPLETED", "CONSENT_REJECTED", "PAYMENT_REJECTED", "ERROR", "EXPIRED", "CANCELED"]);
+
+/** What one authorization asks the bank for. The two limits are the mandate's caps (see `sweepingLimits`), so the bank and the core cannot disagree. */
+export interface AuthorizationRequest {
+  externalId: string;
+  taxId: string;
+  participantId: string;
+  creditorId: string;
+  triggerId: string;
+  totalAllowedAmount: number;
+  transactionLimit: number;
+  redirectURL?: string | undefined;
+}
+
+export interface PaymentRequest {
+  externalId: string;
+  creditorId: string;
+  triggerId: string;
+  amount: number;
+  description: string;
+  riskSignals: RiskSignals;
+}
+
+/** MANUAL riskSignals: device telemetry the payment carries. The simulation uses fixed values (`fixtureRiskSignals`). */
+export interface RiskSignals {
+  type: "MANUAL";
+  deviceId: string;
+  osVersion: string;
+  userTimeZoneOffset: string;
+  language: string;
+  screenDimensions: { height: number; width: number };
+  accountTenure: string;
+}
+
+export interface AuthorizationView {
+  authorizationId: string;
+  status: string;
+  authUrl: string | null;
+  /** `rejection.reason.code` when the bank or the clock ended it. */
+  rejection: string | null;
+}
+
+export interface PaymentView {
+  id: string;
+  status: string;
+  endToEndId: string | null;
+}
+
+/** The four calls the rail makes. The offline fixture implements them in memory; tests implement them too. */
+export interface SweepingApi {
+  createAuthorization(request: AuthorizationRequest): Promise<AuthorizationView>;
+  getAuthorization(authorizationId: string): Promise<AuthorizationView>;
+  createPayment(authorizationId: string, request: PaymentRequest): Promise<PaymentView>;
+  getPaymentStatus(authorizationId: string, paymentId: string): Promise<PaymentView>;
+}
+
+/**
+ * A call that did not succeed. `status` is the HTTP-like status, or 0 when no
+ * answer came back: the request may or may not have landed.
+ */
+export class SweepingApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SweepingApiError";
+  }
+
+  /**
+   * No answer (0) or a 5xx: whether the call took effect is unknown. Every
+   * 4xx is a certain refusal, 408 and 429 included: the server says it did
+   * not process the request (a timeout waiting for it, a rate limit), so
+   * nothing took effect.
+   */
+  get uncertain(): boolean {
+    return this.status === 0 || this.status >= 500;
+  }
+
+  /**
+   * For a READ only: an answer the next look may not repeat. Besides the
+   * uncertain ones, a 401, a 408 and a 429 say nothing about the
+   * authorization or the payment, so a read that got one is looked at again.
+   * `uncertain` stays the rule for a request that could have taken effect.
+   */
+  get transientRead(): boolean {
+    return this.uncertain || this.status === 401 || this.status === 408 || this.status === 429;
+  }
+}
 
 export interface SweepingLimits {
   /** `configuration.totalAllowedAmount` and the mandate's `cap_minor`. */
@@ -45,8 +136,8 @@ export function sweepingLimits(env: NodeJS.ProcessEnv): SweepingLimits {
     if (!Number.isInteger(n) || n <= 0) throw new Error(`${name} must be a positive integer in centavos, got ${raw}`);
     return n;
   };
-  const limits = { total_minor: read("INICIADOR_TOTAL_CENTS", DEFAULT_LIMITS.total_minor), per_tx_minor: read("INICIADOR_TX_LIMIT_CENTS", DEFAULT_LIMITS.per_tx_minor) };
-  if (limits.per_tx_minor > limits.total_minor) throw new Error("INICIADOR_TX_LIMIT_CENTS cannot exceed INICIADOR_TOTAL_CENTS");
+  const limits = { total_minor: read("TOPUP_TOTAL_CENTS", DEFAULT_LIMITS.total_minor), per_tx_minor: read("TOPUP_TX_LIMIT_CENTS", DEFAULT_LIMITS.per_tx_minor) };
+  if (limits.per_tx_minor > limits.total_minor) throw new Error("TOPUP_TX_LIMIT_CENTS cannot exceed TOPUP_TOTAL_CENTS");
   return limits;
 }
 
@@ -198,10 +289,10 @@ export class SweepingPullRail implements PaymentRail {
       } catch (e) {
         // A clear refusal (404, 403) will not change on the next look, and no payment was asked for yet: the attempt failed.
         // A 401, 408 or 429 says nothing about the authorization: looked at again, never final.
-        if (e instanceof IniciadorError && !e.transientRead) return this.finish(attemptId, record, { status: "failed", code: "authorization_unreadable", message: messageOf(e) });
+        if (e instanceof SweepingApiError && !e.transientRead) return this.finish(attemptId, record, { status: "failed", code: "authorization_unreadable", message: messageOf(e) });
         return { status: "uncertain", code: "authorization_unreadable", message: messageOf(e) };
       }
-      // While it waits, the bank answers the link again with the status (as observed on the sandbox): that copy wins over this process's.
+      // While it waits, the bank answers the link again with the status: that copy wins over this process's.
       if (auth.authUrl) this.authLinks.set(attemptId, auth.authUrl);
       if (!AUTHORIZATION_TERMINAL.has(auth.status)) return this.awaiting(attemptId, record, auth.status);
       if (auth.status !== "AUTHORISED") return this.finish(attemptId, record, authorizationFailure(auth));
@@ -229,7 +320,7 @@ export class SweepingPullRail implements PaymentRail {
       try {
         created = await this.api.createPayment(record.authorization_id, request);
       } catch (e) {
-        if (e instanceof IniciadorError && !e.uncertain) return this.finish(attemptId, record, { status: "failed", code: "charge_issuer_error", message: messageOf(e) });
+        if (e instanceof SweepingApiError && !e.uncertain) return this.finish(attemptId, record, { status: "failed", code: "charge_issuer_error", message: messageOf(e) });
         this.save(attemptId, { ...record, payment: { ...record.payment, lost_at: this.clock().toISOString() } });
         return { status: "uncertain", code: "pull_dispatch_uncertain", needs_human: true, message: `the payment request got no clear answer (${messageOf(e)}); it is NOT retried: check the authorization at the bank` };
       }
@@ -249,7 +340,7 @@ export class SweepingPullRail implements PaymentRail {
     } catch (e) {
       // A clear refusal (403, 404) will not change on the next look, but the payment was asked for and may have moved money: a human checks, it is not called failed.
       // A 401, 408 or 429 is looked at again.
-      if (e instanceof IniciadorError && !e.transientRead) return { status: "uncertain", code: "payment_unreadable", needs_human: true, message: `${messageOf(e)}; the payment was requested and may have completed: check the authorization at the bank` };
+      if (e instanceof SweepingApiError && !e.transientRead) return { status: "uncertain", code: "payment_unreadable", needs_human: true, message: `${messageOf(e)}; the payment was requested and may have completed: check the authorization at the bank` };
       return { status: "uncertain", code: "payment_unreadable", message: messageOf(e) };
     }
     const endToEndId = seen.endToEndId ?? record.payment.end_to_end_id ?? null;
@@ -257,7 +348,7 @@ export class SweepingPullRail implements PaymentRail {
     if (seen.status !== "PAYMENT_COMPLETED") return this.finish(attemptId, record, { status: "failed", code: "charge_issuer_error", message: `the bank ended the pull ${seen.status}` });
     const settled: RailOutcome = {
       status: "settled",
-      // The Pix end-to-end id is what the person and their bank can look up; the payment id is Iniciador's.
+      // The Pix end-to-end id is what the person and their bank can look up; the payment id is the bank side's.
       transaction_id: endToEndId ?? paymentId,
       receipt_id: paymentId,
       money_moved: !this.sandbox,
@@ -330,11 +421,11 @@ function fixtureAuthUrl(authorizationId: string): string {
 }
 
 function messageOf(e: unknown): string {
-  return e instanceof IniciadorError ? e.message : "unexpected error reading the bank";
+  return e instanceof SweepingApiError ? e.message : "unexpected error reading the bank";
 }
 
 function failure(e: unknown, what: string): RailOutcome {
-  if (e instanceof IniciadorError && !e.uncertain) return { status: "failed", code: "charge_issuer_error", message: `the ${what} was refused: ${e.message}` };
+  if (e instanceof SweepingApiError && !e.uncertain) return { status: "failed", code: "charge_issuer_error", message: `the ${what} was refused: ${e.message}` };
   return { status: "uncertain", code: "authorization_unconfirmed", message: `the ${what} got no clear answer: ${messageOf(e)}` };
 }
 
@@ -344,21 +435,6 @@ function authorizationFailure(auth: AuthorizationView): RailOutcome {
   if (expired) return { status: "failed", code: "charge_expired", message: `the consent link was not approved in time (${auth.rejection ?? auth.status})` };
   if (auth.status === "ERROR") return { status: "failed", code: "charge_issuer_error", message: "the bank ended the authorization in ERROR" };
   return { status: "failed", code: "charge_cancelled", message: `the authorization ended ${auth.status}${auth.rejection ? ` (${auth.rejection})` : ""}` };
-}
-
-/** MANUAL riskSignals with a device id kept in the agent's state directory (gitignored): the issuer correlates by device. */
-export function manualRiskSignals(stateDir: string): () => RiskSignals {
-  return () => {
-    const file = join(stateDir, "iniciador-device-id");
-    let deviceId: string;
-    if (existsSync(file)) deviceId = readFileSync(file, "utf8").trim();
-    else {
-      mkdirSync(stateDir, { recursive: true });
-      deviceId = randomBytes(8).toString("hex");
-      writeFileSync(file, `${deviceId}\n`, { mode: 0o600 });
-    }
-    return { type: "MANUAL", deviceId, osVersion: "6.8.0", userTimeZoneOffset: "-03", language: "pt", screenDimensions: { height: 1080, width: 1920 }, accountTenure: "2026-10-21" };
-  };
 }
 
 /**
@@ -380,10 +456,10 @@ interface FixtureAuth {
 }
 
 /**
- * The offline Iniciador: the same four calls, state in state.db, no network.
+ * The offline bank: the same four calls, state in state.db, no network.
  * The person's decision at the bank is the fate: approve at the first look
  * (default), let the link expire, reject it, or never act. A payment completes
- * at its first read, as the sandbox's did (3 s after create on 2026-10-22).
+ * at its first read.
  */
 export class FixtureSweepingApi implements SweepingApi {
   constructor(
@@ -409,7 +485,7 @@ export class FixtureSweepingApi implements SweepingApi {
 
   async getAuthorization(authorizationId: string): Promise<AuthorizationView> {
     const auth = this.auth(authorizationId);
-    if (!auth) throw new IniciadorError(404, "NOT_FOUND", "fixture: no such authorization");
+    if (!auth) throw new SweepingApiError(404, "NOT_FOUND", "fixture: no such authorization");
     let next = { ...auth, looks: auth.looks + 1 };
     if (auth.status === "AWAITING_AUTHORISATION") {
       if (auth.fate === "approves") next = { ...next, status: "AUTHORISED" };
@@ -417,13 +493,13 @@ export class FixtureSweepingApi implements SweepingApi {
       else if (auth.fate === "rejects") next = { ...next, status: "REJECTED", rejection: "REJEITADO_USUARIO" };
     }
     this.saveAuth(authorizationId, next);
-    // As the sandbox does: the link comes back with the status while the bank waits for the person.
+    // The link comes back with the status while the bank waits for the person.
     return { authorizationId, status: next.status, authUrl: next.status === "AWAITING_AUTHORISATION" ? fixtureAuthUrl(authorizationId) : null, rejection: next.rejection };
   }
 
   async createPayment(authorizationId: string, r: PaymentRequest): Promise<PaymentView> {
     const auth = this.auth(authorizationId);
-    if (auth?.status !== "AUTHORISED") throw new IniciadorError(422, "AUTHORIZATION_NOT_AUTHORISED", "fixture: the authorization is not AUTHORISED");
+    if (auth?.status !== "AUTHORISED") throw new SweepingApiError(422, "AUTHORIZATION_NOT_AUTHORISED", "fixture: the authorization is not AUTHORISED");
     const id = `pay_fixture_${sha256Hex(r.externalId).slice(0, 12)}`;
     const e2e = `E00000000${sha256Hex(id).slice(0, 23).toUpperCase()}`;
     this.store.setCursor(`sweeping-fixture:pay:${id}`, JSON.stringify({ status: "CONSENT_AUTHORIZED", endToEndId: e2e }));
@@ -432,7 +508,7 @@ export class FixtureSweepingApi implements SweepingApi {
 
   async getPaymentStatus(_authorizationId: string, paymentId: string): Promise<PaymentView> {
     const raw = this.store.getCursor(`sweeping-fixture:pay:${paymentId}`);
-    if (!raw) throw new IniciadorError(404, "NOT_FOUND", "fixture: no such payment");
+    if (!raw) throw new SweepingApiError(404, "NOT_FOUND", "fixture: no such payment");
     const p = JSON.parse(raw) as { endToEndId: string };
     const completed = { status: "PAYMENT_COMPLETED", endToEndId: p.endToEndId };
     this.store.setCursor(`sweeping-fixture:pay:${paymentId}`, JSON.stringify(completed));

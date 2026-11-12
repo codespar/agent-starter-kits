@@ -2,7 +2,7 @@
   "name": "@codespar/topup-agent",
   "version": "0.1.0",
   "private": true,
-  "description": "The person's agent that tops up their own account from their own bank: asks over WhatsApp, sends the bank's consent link (Open Finance sweeping, Iniciador sandbox), waits for the approval, pulls the amount once and reports the Pix end-to-end id.",
+  "description": "The person's agent that tops up their own account from their own bank: asks over WhatsApp, sends the bank's consent link (Open Finance sweeping, offline simulation), waits for the approval, pulls the amount once and reports the Pix end-to-end id.",
   "license": "MIT",
   "type": "module",
   "scripts": {

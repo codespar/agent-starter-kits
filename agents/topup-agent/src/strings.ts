@@ -29,7 +29,7 @@ const pt = {
   toldUndecided: (state: string) => `O pedido expirou sem decisão (${state}). Nada foi puxado.`,
   toldNeedsHuman: "Não consegui confirmar com o banco se a puxada foi feita. Confira no seu banco antes de pedir de novo; nada será reenviado daqui.",
 
-  bankName: "Banco de Testes (sandbox do Iniciador)",
+  bankName: "Banco de Testes (simulado)",
 };
 
 export const STRINGS: LocaleTable<typeof pt & KitStrings> = {
@@ -57,6 +57,6 @@ export const STRINGS: LocaleTable<typeof pt & KitStrings> = {
     toldUndecided: (state) => `The request expired without a decision (${state}). Nothing was pulled.`,
     toldNeedsHuman: "I could not confirm with the bank whether the pull was made. Check at your bank before asking again; nothing will be re-sent from here.",
 
-    bankName: "Banco de Testes (Iniciador sandbox)",
+    bankName: "Banco de Testes (simulated)",
   },
 };
