@@ -69,6 +69,13 @@ export interface RailAnswer {
   message: string;
 }
 
+/** A provider-side approval, deliberately separate from the local approval artifact id. */
+export interface RailApproval {
+  attempt_id: string;
+  approval_id: string;
+  expires_at?: string;
+}
+
 export interface Execution<S extends ExecutionState = ExecutionState> {
   id: string;
   run_id: string;
@@ -111,6 +118,8 @@ export interface Execution<S extends ExecutionState = ExecutionState> {
    * log. An entry whose attempt later gains an outcome is superseded by it.
    */
   uncertain_answers?: RailAnswer[];
+  /** Provider approval holds that still have no attempt outcome. */
+  rail_approvals?: RailApproval[];
   history: TransitionRecord[];
   created_at: string;
   updated_at: string;

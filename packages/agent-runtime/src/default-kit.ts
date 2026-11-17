@@ -47,6 +47,7 @@ export const DEFAULT_STRINGS: LocaleTable<KitStrings> = {
     prompt: "> ",
     approveQuestion: "  Aprovar? [s/N] ",
     uncertainDispatch: "  desfecho desconhecido no trilho; rode `npm run resume` para reconciliar (nunca repita a operação)",
+    awaitingProviderApproval: (ids = []) => `  o pagamento aguarda aprovação de uma pessoa (${ids.join(", ")}); rode \`npm run resume\` depois da decisão`,
     notAuthorized: "o mandato não autoriza",
   },
   en: {
@@ -56,6 +57,7 @@ export const DEFAULT_STRINGS: LocaleTable<KitStrings> = {
     prompt: "> ",
     approveQuestion: "  Approve? [y/N] ",
     uncertainDispatch: "  outcome unknown on the rail; run `npm run resume` to reconcile (never repeat the operation)",
+    awaitingProviderApproval: (ids = []) => `  payment awaits a person's approval (${ids.join(", ")}); run \`npm run resume\` after the decision`,
     notAuthorized: "the mandate does not authorize it",
   },
 };

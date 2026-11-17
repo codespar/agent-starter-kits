@@ -22,7 +22,7 @@ import { NoMandateError, defineAgent, describePayment, type AgentKit } from "@co
 import { ConsentRefusedError, loadLocalMandate, runEmbeddedConsent } from "./modules/embedded-consent.js";
 import { assertMandateBinding, integratedExample, integratedProofFrom } from "./modules/integrated-proof.js";
 import { STRINGS } from "./strings.js";
-import { codesparLedger, codesparPay, listBills } from "./modules/pix-out.js";
+import { codesparLedger, codesparPay, heldDetail, holdsSameRequest, listBills } from "./modules/pix-out.js";
 
 const mandatePath = (agentDir: string) => join(agentDir, ".codespar", "mandate.json");
 
@@ -36,6 +36,11 @@ const kit: AgentKit = {
     missingReceiptKind: "receipt_missing_locally",
     missingReceiptDetail: (receiptId, runId) => `receipt ${receiptId} is not in runs/${runId}/receipts`,
     stillExecuting: (e) => `${e.id}: still executing — ${e.detail}; nothing was re-sent`,
+  },
+  policyExtension: ({ store }) => (execution, { mandate }) => {
+    // Every gate: a request drafted before the hold existed is refused when it is approved or executed.
+    const previous = store.listExecutions({ state: "executing", mandate_id: mandate.id }).find((e) => holdsSameRequest(e, execution));
+    return previous ? { reason: "duplicate_awaiting_approval", detail: heldDetail(previous) } : undefined;
   },
   strings: STRINGS,
 
@@ -75,7 +80,12 @@ options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript 
 
   handlers: (s) => ({ codespar_pay: codesparPay, codespar_ledger: codesparLedger, list_bills: listBills(s.config) }),
 
-  describeExecution: describePayment,
+  // A refused repeat of a held request also says, in the run's locale, which provider approval it waits on.
+  describeExecution: (execution, setup) => {
+    const held = execution.state === "denied" ? setup.engine.list({ state: "executing" }).find((e) => holdsSameRequest(e, execution)) : undefined;
+    const waiting = held ? setup.strings.awaitingProviderApproval?.(held.rail_approvals?.map((approval) => approval.approval_id) ?? []) : undefined;
+    return [...describePayment(execution, setup), ...(waiting ? [waiting] : [])];
+  },
 
   oneShotPayload: ({ setup: s, reply, toolCalls, executions }) => ({
     run_id: s.runId,

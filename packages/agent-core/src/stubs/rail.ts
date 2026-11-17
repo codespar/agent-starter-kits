@@ -51,6 +51,8 @@ export interface StubRailOptions {
    * until the execution exists.
    */
   uncertainPayees?: string[];
+  /** Payees whose attempt is held for a person, like `confirm_each` on the API. */
+  approvalPayees?: string[];
   /** Test hook: called after the attempt is persisted and before the outcome is returned. */
   afterDispatch?: (attemptId: string) => void;
   /** Attempt ids whose first lookup answers `in_flight` and whose second lookup finds the provider finished (settled), with no pay() in between. */
@@ -115,6 +117,16 @@ export class StubRail implements PaymentRail {
     this.uncertainArmed = true;
   }
 
+  /** Applies the human decision to a recorded provider approval without presenting a new attempt. */
+  setApprovalDecision(attemptId: string, decision: "approved" | "denied" | "expired"): void {
+    const existing = this.store.stubRailGet(attemptId);
+    if (!existing || (existing.outcome as Recorded).status !== "awaiting_approval") throw new Error(`stub: ${attemptId} is not awaiting approval`);
+    const outcome: RailOutcome = decision === "approved"
+      ? settledOutcome(attemptId, { stub: true, approval_decision: decision })
+      : { status: "failed", code: `psp_approval_${decision}`, message: `stub: provider approval ${decision}`, raw: { stub: true, approval_decision: decision } };
+    this.store.stubRailReplace(attemptId, existing.request, outcome, this.clock().toISOString());
+  }
+
   async pay(payment: RailPayment): Promise<RailOutcome> {
     const dispatch = this.dispatches++;
     // The same refusal the CodeSpar rail makes before its call, so a scenario exercises it.
@@ -141,6 +153,8 @@ export class StubRail implements PaymentRail {
     const at = this.clock().toISOString();
     const outcome: RailOutcome = this.options.refusePayees?.includes(payment.payee) || this.options.refuseDispatches?.includes(dispatch)
       ? { status: "failed", code: "psp_dispatch_failed", message: `stub: provider refused payee ${maskPayee(payment.payee)}` }
+      : this.options.approvalPayees?.includes(payment.payee)
+        ? { status: "awaiting_approval", approval_id: `apr_stub_${sha256Hex(payment.attempt_id).slice(0, 16)}`, raw: { stub: true, payment_state: "awaiting_approval" } }
       : settledOutcome(payment.attempt_id, { stub: true, attempt_id: payment.attempt_id, at });
     this.payCount += 1;
     this.store.stubRailPut(payment.attempt_id, request, outcome, at);

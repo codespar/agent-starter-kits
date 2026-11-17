@@ -32,6 +32,18 @@ export const listBills = (config: KitConfig): ToolHandler => async (_input, ctx)
   };
 };
 
+/**
+ * The same request, already held by the provider for a person's approval.
+ * The hold itself is the test, not the execution's reason: an unknown
+ * sibling attempt renames the reason and the hold is still there.
+ */
+export const holdsSameRequest = (held: Execution, execution: Execution): boolean =>
+  held.id !== execution.id && held.state === "executing" && (held.rail_approvals?.length ?? 0) > 0 && held.mandate.id === execution.mandate.id && held.items_hash === execution.items_hash;
+
+/** The refusal's detail: the execution that holds the request, and the provider approvals it waits on. */
+export const heldDetail = (held: Execution): string =>
+  `execution ${held.id} is already awaiting provider approval: ${held.rail_approvals?.map((approval) => approval.approval_id).join(", ") ?? "none"}; \`npm run resume\` reads the decision`;
+
 export const codesparPay: ToolHandler = async (raw, ctx) => {
   const input = raw as PayInput;
   if (input.action !== "pix") throw new Error(`codespar_pay: unsupported action ${String(input.action)}; this agent only does pix`);
@@ -50,7 +62,15 @@ export const codesparPay: ToolHandler = async (raw, ctx) => {
     ctx.onNotRun?.({ ref: items.map((item) => item.payee).join(", "), why: "refused", detail: draft.reason });
     return { status: "refused", reason: draft.reason, message: draft.message, paid: false };
   }
+  // Any refusal of a request that is already held is reported as the hold: a window cap the hold
+  // itself fills is checked before the kit's envelope, and would otherwise hide the original.
+  const held = draft.execution.state === "denied" ? ctx.engine.list({ state: "executing" }).find((e) => holdsSameRequest(e, draft.execution)) : undefined;
   const execution = await ctx.onExecution(draft.execution);
+  if (held) {
+    // The duplicate is not counted as an execution of this run (`runOutcome`), so the line is; a cap's refusal counts as itself.
+    if (execution.reason === "duplicate_awaiting_approval") ctx.onNotRun?.({ ref: items.map((item) => item.payee).join(", "), why: "in_progress", detail: heldDetail(held) });
+    return { status: "in_progress", execution_id: held.id, approval_ids: held.rail_approvals?.map((approval) => approval.approval_id) ?? [], paid: false };
+  }
   return {
     status: execution.state,
     execution_id: execution.id,

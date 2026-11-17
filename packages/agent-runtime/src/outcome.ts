@@ -52,7 +52,8 @@ export function refusalLine(refusal: DraftRefusal): string {
 export function runOutcome(executions: readonly Execution[], notRun: readonly NotRunLine[]): RunOutcome {
   const out: RunOutcome = { settled: 0, failed: 0, declined: 0, already_paid: 0, open: 0 };
   for (const e of executions) {
-    if (!isTerminal(e.state)) out.open += 1;
+    if (e.reason === "duplicate_awaiting_approval") continue;
+    else if (!isTerminal(e.state)) out.open += 1;
     else if (e.state === "denied" || e.state === "expired") out.declined += 1;
     // Closed with no attempt on record: the execution is the one thing to count.
     else if (e.outcomes.length === 0) out[e.state === "settled" ? "settled" : isDeclinedReason(e.reason) ? "declined" : "failed"] += 1;

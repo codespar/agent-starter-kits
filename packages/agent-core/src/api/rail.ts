@@ -43,6 +43,22 @@ function executorOfPayment(payment: unknown): { executor?: string } {
   return typeof executor === "string" && executor ? { executor } : {};
 }
 
+/**
+ * The approval hold is a flat 403 body; the SDK deliberately leaves it unknown.
+ * The first presentation names it in `reason` (`error: "policy_denied"`), the
+ * replay of a pending attempt in `error` (`reason: "policy_rule"`). Either way
+ * it is a hold only with the approval's id, and never when `payment_state`
+ * says something else. The replay's `reason` is not
+ * matched: a hold read as a refusal closes a payment a person can still
+ * approve, and a refusal read as a hold is corrected by the next look.
+ */
+function approvalHoldOf(body: unknown): { approval_id: string; expires_at?: string } | undefined {
+  if (!body || typeof body !== "object" || !("approval_id" in body) || typeof body.approval_id !== "string" || !body.approval_id) return undefined;
+  const named = ("reason" in body && body.reason === "approval_required") || ("error" in body && body.error === "approval_required");
+  if (!named || ("payment_state" in body && body.payment_state !== "awaiting_approval")) return undefined;
+  return { approval_id: body.approval_id, ...("expires_at" in body && typeof body.expires_at === "string" ? { expires_at: body.expires_at } : {}) };
+}
+
 export class CodeSparRail implements PaymentRail {
   readonly name = "codespar" as const;
 
@@ -91,6 +107,8 @@ export class CodeSparRail implements PaymentRail {
       };
     } catch (err) {
       const failure = describeApiError(err);
+      const hold = failure.status === 403 ? approvalHoldOf(failure.body) : undefined;
+      if (hold) return { status: "awaiting_approval", ...hold, raw: failure.body };
       // Not a refusal: the other presentation may already have reached the provider, so "nothing moved" would be a claim nobody can make.
       if (failure.code === ATTEMPT_IN_FLIGHT) return { status: "uncertain", code: failure.code, message: failure.message };
       if (isUncertain(failure)) return { status: "uncertain", code: failure.code, message: failure.message };

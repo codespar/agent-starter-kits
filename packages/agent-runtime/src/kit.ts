@@ -142,6 +142,8 @@ export interface KitStrings {
   approveQuestion: string;
   /** What the console says when a dispatch ended with an unknown outcome. */
   uncertainDispatch: string;
+  /** What the console says when the provider, rather than the kit, needs a person's approval. */
+  awaitingProviderApproval?(approvalIds: string[]): string;
   /** Who refuses a blocked execution: "o mandato não autoriza", "the policy does not authorize". */
   notAuthorized: string;
   /** `await-payer` only: the line printed every few looks while the payer has not acted. */

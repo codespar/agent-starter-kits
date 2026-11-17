@@ -69,4 +69,19 @@ describe("outcomeExitCode", () => {
   it("0 when a line is held by an earlier run and this run left nothing executing", () => {
     expect(outcomeExitCode(runOutcome([], [{ ref: "a", why: "in_progress" }]), [])).toBe(0);
   });
+
+  it("0 when this run records a duplicate provider approval hold", () => {
+    const duplicate = execution("denied", { reason: "duplicate_awaiting_approval" });
+    const counted = runOutcome([duplicate], []);
+    expect(counted).toMatchObject({ open: 0, failed: 0, declined: 0 });
+    expect(outcomeExitCode(counted, [duplicate])).toBe(0);
+  });
+
+  it("a repeated held request is one open line, and exits 0", () => {
+    // What the bills agent leaves on a repeat (its approval-hold test): the refused duplicate and the line that names the hold.
+    const duplicate = execution("denied", { reason: "duplicate_awaiting_approval" });
+    const counted = runOutcome([duplicate], [{ ref: "escola", why: "in_progress" }]);
+    expect(counted).toEqual({ settled: 0, failed: 0, declined: 0, already_paid: 0, open: 1 });
+    expect(outcomeExitCode(counted, [duplicate])).toBe(0);
+  });
 });

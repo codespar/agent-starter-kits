@@ -24,7 +24,7 @@ import { checkQuote, quoteFromApproval } from "./quote.js";
 import { sameWireActor, spendApprovalOf, wireActorOf, type PaymentRail, type RailOutcome, type RailPayment, type SealedSpendApproval, type SpendApproval } from "./rail.js";
 import { sameApprovalHash } from "./receipt-chain.js";
 import type { MandateStatusReport, MandateStatusSource } from "./revocation.js";
-import { isTerminal, transition, type Execution, type ExecutionState, type RailAnswer } from "./state-machine.js";
+import { isTerminal, transition, type Execution, type ExecutionState, type RailAnswer, type RailApproval } from "./state-machine.js";
 import type { StateStore } from "./state/store.js";
 import type { Actor, ApprovalArtifact, ApprovalMode, ChargeInstrument, ExecutionBatch, ExecutionComposition, ExecutionItem, ExecutionReason, ItemOutcome } from "./types.js";
 
@@ -455,6 +455,7 @@ export class ExecutionEngine {
     const outcomes: ItemOutcome[] = [...execution.outcomes];
     const unknown: string[] = [];
     const unknownAnswers: RailAnswer[] = [];
+    const railApprovals: RailApproval[] = [...(execution.rail_approvals ?? [])];
     const sealMismatches: string[] = [];
     this.deps.store.updateOutbox(execution.idempotency_key, "sent", undefined, this.clock().toISOString());
 
@@ -493,6 +494,13 @@ export class ExecutionEngine {
         unknownAnswers.push({ attempt_id: payment.attempt_id, code: outcome.code, message: outcome.message });
         continue;
       }
+      if (outcome.status === "awaiting_approval") {
+        const approval = { attempt_id: payment.attempt_id, approval_id: outcome.approval_id, ...(outcome.expires_at ? { expires_at: outcome.expires_at } : {}) };
+        const prior = railApprovals.findIndex((a) => a.attempt_id === payment.attempt_id);
+        if (prior >= 0) railApprovals[prior] = approval;
+        else railApprovals.push(approval);
+        continue;
+      }
       if (outcome.status === "failed") {
         outcomes.push({ index, attempt_id: payment.attempt_id, status: "failed", code: outcome.code, message: outcome.message, error: `${outcome.code}: ${outcome.message}`, ...(outcome.held ? { held: outcome.held } : {}) });
         continue;
@@ -509,7 +517,7 @@ export class ExecutionEngine {
     }
     const answers = [...(execution.uncertain_answers ?? []).filter((a) => !unknownAnswers.some((u) => u.attempt_id === a.attempt_id)), ...unknownAnswers];
     const closed = this.close(
-      { ...execution, outcomes, ...(Object.keys(generations).length > 0 ? { attempt_generations: generations } : {}), ...(answers.length > 0 ? { uncertain_answers: answers } : {}) },
+      { ...execution, outcomes, ...(Object.keys(generations).length > 0 ? { attempt_generations: generations } : {}), ...(answers.length > 0 ? { uncertain_answers: answers } : {}), ...(railApprovals.length > 0 ? { rail_approvals: railApprovals } : {}) },
       payments.length,
       unknown.join("; ") || undefined,
     );
@@ -529,14 +537,19 @@ export class ExecutionEngine {
    */
   private close(execution: Execution<"executing">, attempts: number, unknownDetail?: string): Execution {
     const at = this.clock().toISOString();
-    const updated: Execution<"executing"> = { ...execution, updated_at: at };
+    const { rail_approvals: recordedApprovals, ...withoutRecordedApprovals } = execution;
+    const approvals = recordedApprovals?.filter((approval) => !execution.outcomes.some((outcome) => outcome.attempt_id === approval.attempt_id)) ?? [];
+    const updated: Execution<"executing"> = { ...withoutRecordedApprovals, ...(approvals.length > 0 ? { rail_approvals: approvals } : {}), updated_at: at };
     const accepted = execution.outcomes.filter((o) => o.status === "accepted");
     if (accepted.length > 0) {
       return this.leaveAwaiting(updated, `${accepted.length} receivable(s) issued and unpaid: ${accepted.map((o) => o.transaction_id ?? o.attempt_id).join(", ")}`);
     }
-    if (execution.outcomes.length < attempts) {
+    // A provider hold names an attempt the rail knows. Any other missing
+    // attempt is still unknown and needs a person before this can be a hold.
+    if (execution.outcomes.length + approvals.length < attempts) {
       return this.leaveUnresolved(updated, unknownDetail ?? `${execution.outcomes.length} of ${attempts} attempt(s) have an outcome`);
     }
+    if (approvals.length > 0) return this.leaveAwaitingApproval(updated);
     const failed = decisiveFailure(execution.outcomes);
     if (failed) {
       this.deps.store.updateOutbox(execution.idempotency_key, "failed", execution.outcomes, at);
@@ -562,6 +575,16 @@ export class ExecutionEngine {
     }
     // A poll that keeps looking at an attempt already out logs each distinct answer once, not once per look.
     const stored = this.deps.store.appendEvent({ run_id: this.deps.runId, execution_id: execution.id, event_id: `uncertain:${execution.id}:${sha256Hex(detail).slice(0, 16)}`, type: "execution.uncertain", payload: { detail, ...(options.needsHuman ? { needs_human: true } : {}) }, at: kept.updated_at });
+    if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
+    return kept;
+  }
+
+  private leaveAwaitingApproval(execution: Execution<"executing">): Execution {
+    const approvals = execution.rail_approvals ?? [];
+    const detail = `provider approval pending: ${approvals.map((approval) => approval.approval_id).join(", ")}`;
+    const kept: Execution<"executing"> = { ...execution, reason: "rail_awaiting_approval", detail, updated_at: this.clock().toISOString() };
+    this.deps.store.saveExecution(kept);
+    const stored = this.deps.store.appendEvent({ run_id: this.deps.runId, execution_id: execution.id, event_id: `approval-hold:${execution.id}:${sha256Hex(JSON.stringify(approvals)).slice(0, 16)}`, type: "execution.awaiting_approval", payload: { approvals }, at: kept.updated_at });
     if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
     return kept;
   }
@@ -689,6 +712,7 @@ export class ExecutionEngine {
     }
 
     const outcomes: ItemOutcome[] = [...execution.outcomes];
+    const railApprovals: RailApproval[] = [...(execution.rail_approvals ?? [])];
     const sealMismatches: string[] = [];
     let unresolved: string | undefined;
     // An attempt already out whose look answered uncertain: said, once per answer, instead of passed over.
@@ -704,9 +728,9 @@ export class ExecutionEngine {
         run_id: this.deps.runId,
         execution_id: execution.id,
         // A poll that sees the same thing twice logs it once; a change in what it sees is a new line.
-        ...(prior ? { event_id: `reconcile:${payment.attempt_id}:${found}:${seen && seen.status === "accepted" ? `${seen.instrument.status}:${seen.instrument.payable}` : seen && seen.status === "uncertain" ? seen.code : ""}` } : {}),
+        ...(prior || seen?.status === "awaiting_approval" ? { event_id: `reconcile:${payment.attempt_id}:${found}:${seen && seen.status === "accepted" ? `${seen.instrument.status}:${seen.instrument.payable}` : seen && seen.status === "uncertain" ? seen.code : seen && seen.status === "awaiting_approval" ? `${seen.approval_id}:${seen.expires_at ?? ""}` : ""}` } : {}),
         type: "rail.reconcile",
-        payload: { attempt_id: payment.attempt_id, found, ...(seen && seen.status === "uncertain" ? { code: seen.code, message: seen.message, ...(seen.needs_human ? { needs_human: true } : {}) } : {}) },
+        payload: { attempt_id: payment.attempt_id, found, ...(seen && seen.status === "uncertain" ? { code: seen.code, message: seen.message, ...(seen.needs_human ? { needs_human: true } : {}) } : {}), ...(seen && seen.status === "awaiting_approval" ? { approval_id: seen.approval_id, ...(seen.expires_at ? { expires_at: seen.expires_at } : {}) } : {}) },
         at: this.clock().toISOString(),
       });
       if (stored) this.deps.bundle.event({ ...stored, actor: this.agentActor });
@@ -724,6 +748,13 @@ export class ExecutionEngine {
         // be careful about here, and stopping would mean a later attempt's
         // settlement is never recorded at all.
         unresolved ??= `attempt ${payment.attempt_id}: ${seen ? seen.status : "unknown to the rail"}; a human decides, nothing is re-sent`;
+        continue;
+      }
+      if (seen.status === "awaiting_approval") {
+        const approval = { attempt_id: payment.attempt_id, approval_id: seen.approval_id, ...(seen.expires_at ? { expires_at: seen.expires_at } : {}) };
+        const at = railApprovals.findIndex((a) => a.attempt_id === payment.attempt_id);
+        if (at >= 0) railApprovals[at] = approval;
+        else railApprovals.push(approval);
         continue;
       }
       const replace = (outcome: ItemOutcome) => {
@@ -749,7 +780,10 @@ export class ExecutionEngine {
       const mismatch = await this.ingestSettlement(execution, index, payment, seen.receipt_id, prior ? CHARGE_PAID : PAYMENT_SUCCEEDED);
       if (mismatch) sealMismatches.push(mismatch);
     }
-    const updated: Execution<"executing"> = { ...(execution as Execution<"executing">), outcomes };
+    const approvals = railApprovals.filter((approval) => !outcomes.some((outcome) => outcome.attempt_id === approval.attempt_id));
+    const withoutRecordedApprovals: Execution<"executing"> = { ...(execution as Execution<"executing">) };
+    delete withoutRecordedApprovals.rail_approvals;
+    const updated: Execution<"executing"> = { ...withoutRecordedApprovals, outcomes, ...(approvals.length > 0 ? { rail_approvals: approvals } : {}) };
     let reconciled = unresolved ? this.leaveUnresolved(updated, unresolved) : this.close(updated, payments.length);
     // Only an execution still open: a look that settled every other attempt is not held back by one that did not answer.
     if (outUncertain && reconciled.state === "executing" && !unresolved) reconciled = this.leaveUnresolved(reconciled as Execution<"executing">, outUncertain, { needsHuman, once: true });
@@ -1135,6 +1169,8 @@ function assertCompositionBinding(composition: ExecutionComposition): void {
  */
 function railAnswer(outcome: RailOutcome): Record<string, unknown> {
   switch (outcome.status) {
+    case "awaiting_approval":
+      return { approval_id: outcome.approval_id, ...(outcome.expires_at ? { expires_at: outcome.expires_at } : {}) };
     case "accepted":
       return { transaction_id: outcome.transaction_id, sandbox: outcome.sandbox };
     case "settled":

@@ -131,7 +131,10 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
     say(transitionLine(current));
     if (setup.settlement === "immediate") {
       receiptLines(current, setup, say);
-      if (current.state === "executing") say(words.uncertainDispatch);
+      if (current.state === "executing") {
+        const approvals = current.rail_approvals?.map((approval) => approval.approval_id);
+        say(current.reason === "rail_awaiting_approval" && approvals?.length ? words.awaitingProviderApproval?.(approvals) ?? words.uncertainDispatch : words.uncertainDispatch);
+      }
     }
   }
 
@@ -144,7 +147,8 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
       say(`${transitionLine(current)}${text.afterLooks(result.rounds, result.seconds, result.timed_out)}`);
       receiptLines(current, setup, say);
     } else if (current.state === "executing") {
-      say(words.uncertainDispatch);
+      const approvals = current.rail_approvals?.map((approval) => approval.approval_id);
+      say(current.reason === "rail_awaiting_approval" && approvals?.length ? words.awaitingProviderApproval?.(approvals) ?? words.uncertainDispatch : words.uncertainDispatch);
     }
     const told = current;
     announceOutcome(told, counterparty, (line) => tell(line, told));

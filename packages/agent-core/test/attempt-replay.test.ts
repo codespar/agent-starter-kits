@@ -117,6 +117,46 @@ describe("CodeSparRail reads every answer to a repeated attempt_id (ent#1671)", 
     expect(await rail().lookup("ska_replay_0", payment())).toMatchObject({ status: "uncertain", code: "psp_attempt_uncertain" });
   });
 
+  it("approval_required: an approval hold is not a refusal on either presentation", async () => {
+    answer = {
+      status: 403,
+      body: { error: "policy_denied", reason: "approval_required", approval_id: "apr_api_123", expires_at: "2026-11-13T02:04:49.000Z" },
+    };
+    for (const outcome of [await rail().pay(payment()), await rail().lookup("ska_replay_0", payment())]) {
+      expect(outcome).toEqual({ status: "awaiting_approval", approval_id: "apr_api_123", expires_at: "2026-11-13T02:04:49.000Z", raw: answer.body });
+    }
+  });
+
+  it("approval_required: the replay of a pending hold names it in `error`, and is the same hold", async () => {
+    // The body the API answered a re-presented pending attempt with in Test on 2026-11-17 (OPEN_QUESTIONS §68).
+    answer = {
+      status: 403,
+      body: { error: "approval_required", reason: "policy_rule", approval_id: "apr_api_123", expires_at: "2026-11-13T02:04:49.000Z", payment_state: "awaiting_approval", attempt_id: "ska_replay_0", hold_ref: "1" },
+    };
+    for (const outcome of [await rail().pay(payment()), await rail().lookup("ska_replay_0", payment())]) {
+      expect(outcome).toEqual({ status: "awaiting_approval", approval_id: "apr_api_123", expires_at: "2026-11-13T02:04:49.000Z", raw: answer.body });
+    }
+  });
+
+  it("approval_required is a hold on both spend routes, but only with its complete flat body", async () => {
+    const envelope = new CodeSparRail(createCodeSparClient({ apiKey: "csk_test_unit_0000", baseUrl, timeoutMs: 5_000 }), { canonical: { any: "envelope" } as never, signature: "a".repeat(64) });
+    answer = { status: 403, body: { error: "policy_denied", reason: "approval_required", approval_id: "apr_api_456" } };
+    for (const outcome of [await rail().pay(payment()), await envelope.pay(payment())]) {
+      expect(outcome).toMatchObject({ status: "awaiting_approval", approval_id: "apr_api_456" });
+    }
+
+    for (const body of [
+      { error: "policy_denied", reason: "limit_exceeded", approval_id: "apr_api_456" },
+      { error: "policy_denied", reason: "approval_required" },
+      { error: "policy_denied", reason: "approval_required", approval_id: "" },
+      { error: "policy_denied", reason: "approval_required", approval_id: "apr_api_456", payment_state: "denied" },
+      { error: "policy_denied", reason: "approval_required", approval_id: "apr_api_456", payment_state: null },
+    ]) {
+      answer = { status: 403, body };
+      expect(await rail().pay(payment())).toMatchObject({ status: "failed", code: "policy_denied" });
+    }
+  });
+
   it("psp_attempt_conflict: failed with no money, and the id is spent", async () => {
     answer = refusal("psp_attempt_conflict");
     expect(await rail().pay(payment())).toEqual({ status: "failed", code: "psp_attempt_conflict", message: "api: psp_attempt_conflict", spent: true });
@@ -186,6 +226,26 @@ describe("the stub rail answers a repeat the way the API does", () => {
     expect(await b.lookup("ska_replay_0", payment())).toEqual({ status: "in_flight" });
     expect(await b.lookup("ska_replay_0", payment())).toMatchObject({ status: "settled" });
     expect(b.payCount).toBe(0);
+  });
+
+  it("approval hold: the same attempt keeps the same provider approval", async () => {
+    const r = stub({ approvalPayees: [ESCOLA] });
+    const first = await r.pay(payment());
+    expect(first).toMatchObject({ status: "awaiting_approval" });
+    expect(await r.lookup("ska_replay_0", payment())).toEqual(first);
+    expect(r.payCount).toBe(1);
+  });
+
+  it("approval hold: the same attempt settles or conflicts after the person's decision", async () => {
+    for (const [decision, expected] of [["approved", "settled"], ["denied", "failed"], ["expired", "failed"]] as const) {
+      const r = stub({ approvalPayees: [ESCOLA] });
+      await r.pay(payment());
+      r.setApprovalDecision("ska_replay_0", decision);
+      const outcome = await r.lookup("ska_replay_0", payment());
+      expect(outcome).toMatchObject({ status: expected });
+      if (expected === "failed") expect(outcome).toMatchObject({ code: "psp_attempt_conflict", spent: true });
+      expect(r.payCount).toBe(1);
+    }
   });
 });
 

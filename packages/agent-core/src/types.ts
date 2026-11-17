@@ -114,6 +114,10 @@ export type ExecutionReason =
   | "denied_by_approver"
   | "rail_failed"
   | "rail_uncertain"
+  /** The provider holds the attempt for a person; no money moved and no new attempt is sent. */
+  | "rail_awaiting_approval"
+  /** An identical request is already held by the provider under this mandate. */
+  | "duplicate_awaiting_approval"
   /**
    * An attempt already out answered `uncertain` with `needs_human`: the rail
    * cannot tell what happened and will not ask again. Still `executing`;

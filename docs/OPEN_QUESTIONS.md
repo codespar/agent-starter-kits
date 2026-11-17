@@ -1528,3 +1528,41 @@ No Zod schema parses an inbound webhook, a WhatsApp message or a model output.
 - An `overrides` forcing Zod 4 under the SDK is not taken: the SDK's schemas use the 3.x one-argument `z.record`, and its behaviour on Zod 4 is not tested.
 
 **Open, for the SDK's owner:** a release of `@codespar/sdk` that accepts Zod 4 (`^3.25.0 || ^4.0.0`, as `@anthropic-ai/sdk` does). With it, the kit moves its pins to Zod 4 in one PR with the suite green, and the audit clears. Until then, `npm audit` keeps reporting this advisory, and this section is the reason. If a bound is wanted before that, it goes on the consent answer: a cap on `merchant_allowlist` checked before the parse.
+
+## 68. A spend held for provider approval is a flat 403, not a failed payment (2026-11-12, replay seen 2026-11-17)
+
+With `confirm_each` in test mode, `POST /v1/consumer-payments/execute` answers 403 with a flat body, not the usual `error: { code, message }` envelope:
+
+```json
+{
+  "error": "policy_denied",
+  "reason": "approval_required",
+  "ruleId": "agent-autonomy",
+  "approval_id": "apv_…",
+  "expires_at": "2026-11-13T02:04:49.000Z",
+  "autonomy": { "level": "confirm_each", "reasons": ["…"] },
+  "payment_state": "awaiting_approval",
+  "attempt_id": "att_…_0",
+  "hold_ref": "…"
+}
+```
+
+Re-presenting the same `attempt_id` while the approval is pending answers 403 again, with the same `approval_id` but the hold named in another field (seen in Test on 2026-11-17):
+
+```json
+{
+  "error": "approval_required",
+  "reason": "policy_rule",
+  "approval_id": "apv_…",
+  "expires_at": "2026-11-18T14:08:52.316Z",
+  "payment_state": "awaiting_approval",
+  "attempt_id": "att_…_0",
+  "hold_ref": "…"
+}
+```
+
+The rail reads a hold from a 403 that carries a non-empty `approval_id` and names `approval_required` in the top-level `reason` (first presentation) or `error` (replay); it keeps `expires_at`. `ruleId`, `autonomy`, `payment_state`, `attempt_id` and `hold_ref` remain opaque. The SDK does not type this 403 body, so the parsing is intentionally narrow and validates just those fields.
+
+After approval and settlement the same presentation answers 200 with the original payment body and `idempotent_replay: true`; after denial or expiry it answers 409 `psp_attempt_conflict`. The core keeps the execution `executing` with `rail_awaiting_approval` and `reconcile` makes that same presentation. The bills kit additionally refuses, at every gate, a fresh execution under the same mandate with the same resolved `items_hash` while an execution with a recorded hold is still `executing`, so a repeated request names the original execution and its pending provider approval, on the console too, instead of creating another attempt. A hold that expired or was denied keeps refusing the repeat until `npm run resume` or `npm run reconcile` reads the 409. This is a limited duplicate rule until kits#113 supplies an obligation key: the same items in another order are another `items_hash`, and a request repeated after the payment settled is paid again.
+
+Not done here: the hosted channel (`packages/agent-runtime/src/hosted/`) has no case for `execution.awaiting_approval`, so a hold emits no `outcome.pending` there, and a run left `executing` by one is reported `awaiting_payer` like any other open run. Its contract enum is unchanged.
