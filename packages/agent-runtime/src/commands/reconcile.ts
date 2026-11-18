@@ -20,13 +20,16 @@ export async function reconcile(agent: Agent, argv: string[]): Promise<number> {
     for (const e of s.engine.list()) {
       if (e.state === "executing") {
         const closed = await s.engine.reconcile(e.id);
-        const kind = closed.state === "executing" ? (awaitsPayer && closed.reason === "awaiting_settlement" ? "awaiting_payer" : "still_uncertain") : "closed_from_rail";
+        const kind = closed.state === "executing" ? (closed.reason === "rail_awaiting_approval" ? "awaiting_approval" : awaitsPayer && closed.reason === "awaiting_settlement" ? "awaiting_payer" : "still_uncertain") : "closed_from_rail";
         findings.push({ execution_id: e.id, kind, detail: `executing -> ${closed.state}${awaitsPayer && closed.detail ? ` (${closed.detail})` : ""}` });
         continue;
       }
       for (const o of e.outcomes) {
-        if (o.receipt_id && !existsSync(join(runsDir(agent), e.run_id, "receipts", `${o.receipt_id}.json`))) {
-          findings.push({ execution_id: e.id, kind: s.kit.labels.missingReceiptKind, detail: s.kit.labels.missingReceiptDetail(o.receipt_id, e.run_id) });
+        const receiptRunId = o.receipt_id
+          ? s.store.listEvents({ execution_id: e.id }).find((event) => event.type === "receipt.saved" && (event.payload as { receipt_id?: string }).receipt_id === o.receipt_id)?.run_id ?? e.run_id
+          : e.run_id;
+        if (o.receipt_id && !existsSync(join(runsDir(agent), receiptRunId, "receipts", `${o.receipt_id}.json`))) {
+          findings.push({ execution_id: e.id, kind: s.kit.labels.missingReceiptKind, detail: s.kit.labels.missingReceiptDetail(o.receipt_id, receiptRunId) });
         }
       }
       const outbox = s.store.getOutbox(e.idempotency_key);

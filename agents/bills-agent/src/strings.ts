@@ -17,6 +17,7 @@ const pt = {
   prompt: "> ",
   approveQuestion: "  Aprovar este pagamento? [s/N] ",
   uncertainDispatch: "  desfecho desconhecido no trilho; rode `npm run resume` para reconciliar (nunca repita o pagamento)",
+  awaitingProviderApproval: (ids: string[] = []) => `  o pagamento aguarda aprovação de uma pessoa (${ids.join(", ")}); rode \`npm run resume\` depois da decisão`,
   notAuthorized: "o mandato não autoriza",
 
   consentHeader: "O mandato ainda não existe. Este é o consentimento que o titular assina (sandbox):",
@@ -63,6 +64,7 @@ export const STRINGS: LocaleTable<typeof pt & KitStrings> = {
     prompt: "> ",
     approveQuestion: "  Approve this payment? [y/N] ",
     uncertainDispatch: "  outcome unknown on the rail; run `npm run resume` to reconcile (never repeat the payment)",
+    awaitingProviderApproval: (ids = []) => `  payment awaits a person's approval (${ids.join(", ")}); run \`npm run resume\` after the decision`,
     notAuthorized: "the mandate does not authorize it",
 
     consentHeader: "The mandate does not exist yet. This is the consent the account holder signs (sandbox):",

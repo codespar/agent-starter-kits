@@ -81,6 +81,13 @@ export interface RailPayment {
 
 export type RailOutcome =
   | {
+      /** The provider accepted the attempt but requires a person's approval before it can settle. */
+      status: "awaiting_approval";
+      approval_id: string;
+      expires_at?: string;
+      raw: unknown;
+    }
+  | {
       /**
        * The rail took the attempt and the outcome comes later: a receivable
        * was issued and its payer has not acted yet. The execution stays

@@ -35,7 +35,7 @@ A spend presented again under the same attempt id is answered with the earlier p
 
 ## Reconcile never re-dispatches
 
-An execution left in `executing` is looked up on the rail, attempt by attempt. A recorded settled or failed outcome closes it; `in_flight`, `uncertain` or unknown leaves it in `executing` with `reason: rail_uncertain` for a human. The single exception is an outbox row still `pending` (the state changed, no call was ever made): those attempts go out once, under the same ids.
+An execution left in `executing` is looked up on the rail, attempt by attempt. A recorded settled or failed outcome closes it; `in_flight`, `uncertain` or unknown leaves it in `executing` with `reason: rail_uncertain` for a human. An attempt the provider holds for a person's approval leaves it in `executing` with `reason: rail_awaiting_approval` and the approval's id in `rail_approvals`; the look presents that same attempt, and the person's decision closes it. The hold's `expires_at` is recorded and nothing local acts on it: an expiry closes the execution when the next look reads the provider's 409, not on a timer. The single exception is an outbox row still `pending` (the state changed, no call was ever made): those attempts go out once, under the same ids.
 
 ## The conversation loop
 
