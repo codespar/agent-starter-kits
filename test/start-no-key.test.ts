@@ -72,6 +72,30 @@ describe("npm start, interactive, with no model key and no transcript", () => {
     expect(terminal).not.toMatch(/Error:|\n\s+at /);
   });
 
+  it("says it runs on the stub rail when there is no CodeSpar key and no --rail (Playground export parity, 26/11)", async () => {
+    const agent = await loadAgent(HELLO_DIR);
+    await start(agent, ["--locale", "en"]);
+    expect(written.join("")).toContain("[stub] no CODESPAR_API_KEY");
+  });
+
+  it("--provider anthropic with no model key stops before anything, naming the variable and the file", async () => {
+    const agent = await loadAgent(HELLO_DIR);
+    const code = await start(agent, ["--provider", "anthropic", "--locale", "en"]);
+    const terminal = written.join("");
+    expect(code).toBe(1);
+    expect(setupCalls.count).toBe(0);
+    expect(terminal).toContain("ANTHROPIC_API_KEY is not set, and --provider anthropic asks for that model");
+    expect(terminal).toContain("agents/hello-agent/.env");
+    expect(terminal).not.toMatch(/Error:|\n\s+at /);
+  });
+
+  it("--provider anthropic with the .env.example placeholder counts as no key", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-your_key_here");
+    const agent = await loadAgent(HELLO_DIR);
+    expect(await start(agent, ["--provider", "anthropic", "--locale", "en"])).toBe(1);
+    expect(setupCalls.count).toBe(0);
+  });
+
   it("goes on to set up the run when a key is there", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "placeholder-model-key");
     const agent = await loadAgent(HELLO_DIR);
@@ -91,6 +115,7 @@ describe("npm start -- --scenario, with no model key", () => {
       timeout: 60_000,
     });
     expect(result.stderr).toContain("== scenario happy-path");
+    expect(result.stderr).toContain("[replay] scenario happy-path repeats its recorded conversation; no model is called. [stub] The rail is the local stub: nothing reaches CodeSpar.");
     expect(result.stderr).not.toContain("no ANTHROPIC_API_KEY or GEMINI_API_KEY and no transcript");
     expect(result.status).toBe(0);
   });

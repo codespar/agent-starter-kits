@@ -17,7 +17,7 @@ import { CORE_STRINGS, NotATestKeyError, WHATSAPP_LANGUAGE, declaredReplies, loa
 import { join } from "node:path";
 import type { Agent } from "../agent.js";
 import type { RailKind } from "../kit.js";
-import { envFileOf, resolveProvider, resolveRailKind, setup, type ProviderKind } from "../setup.js";
+import { ANTHROPIC_KEY_PLACEHOLDER, envFileOf, resolveProvider, resolveRailKind, setup, type ProviderKind } from "../setup.js";
 import { checkScenario, listScenarios, loadScenario, runScenario, scenariosDir } from "../scenarios.js";
 import { closeTerminal, defaultAsk, handleExecution, interactive } from "../terminal.js";
 import { loadTemplates, resolveConversation } from "../channels/index.js";
@@ -59,6 +59,16 @@ interface Args {
   /** The language of what the code prints; absent means agent.yaml's `locale`, else pt-BR. */
   locale?: Locale;
   help: boolean;
+}
+
+/** The variable a model named with `--provider` reads, when it is not there; undefined when nothing is missing. */
+export function missingModelKey(env: NodeJS.ProcessEnv, provider: ProviderKind | undefined): "ANTHROPIC_API_KEY" | "GEMINI_API_KEY" | undefined {
+  if (provider === "anthropic") {
+    const key = env["ANTHROPIC_API_KEY"]?.trim();
+    return !key || key === ANTHROPIC_KEY_PLACEHOLDER ? "ANTHROPIC_API_KEY" : undefined;
+  }
+  if (provider === "gemini") return env["GEMINI_API_KEY"]?.trim() ? undefined : "GEMINI_API_KEY";
+  return undefined;
 }
 
 export function parseArgs(argv: string[], awaitsPayer: boolean): Args {
@@ -152,6 +162,13 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     return 1;
   }
 
+  // A model asked for by name needs its key: said here, naming the variable and the file, before a mandate is asked for or a run is opened.
+  const modelKeyMissing = missingModelKey(process.env, args.provider);
+  if (modelKeyMissing) {
+    say(`${modelKeyMissing} is not set, and --provider ${args.provider} asks for that model: put the key in ${envFileOf(agent.dir)} or export it. Without --provider and with no model key, the kit replays a recorded conversation (--scenario <name>) instead.`);
+    return 1;
+  }
+
   // A recording that is not there is said by its path, before a mandate is asked for or a run is opened.
   if (args.transcript !== undefined && !isFile(args.transcript)) {
     say(`no transcript at ${args.transcript}`);
@@ -159,6 +176,11 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
   }
 
   if (args.scenario) return runScenarioCommand(agent, args, railKind, locale, say);
+
+  // No CODESPAR_API_KEY and no --rail: the run is on the local stub rail. Said once, so a run that reaches nothing never looks like one that did.
+  if (args.rail === undefined && railKind === "stub" && agent.kit.apiRailKey !== "none") {
+    say("[stub] no CODESPAR_API_KEY: payments and charges run on the local stub rail; nothing reaches CodeSpar. Set the key (a csk_test_ key) and pass --rail api to use the CodeSpar Test API.");
+  }
 
   // A channel is a conversation, so the flags a one-shot and a scenario pack use have no meaning on one.
   if (args.channel === "whatsapp" && (args.input !== undefined || args.scenario !== undefined)) {
@@ -267,6 +289,8 @@ async function runScenarioCommand(agent: Agent, args: Args, railKind: RailKind, 
     return 2;
   }
   const modes = args.mode ? [args.mode] : scenario.modes;
+  // What a scenario runs on, said before it runs: the recorded conversation, never a model, and the stub rail unless the API was asked for.
+  say(`[replay] scenario ${scenario.name} repeats its recorded conversation; no model is called.${rail === "stub" ? " [stub] The rail is the local stub: nothing reaches CodeSpar." : ""}`);
   const results = [];
   for (const mode of modes) {
     say(`== scenario ${scenario.name} — approval: ${mode}${picksRail ? ` — rail: ${rail}` : ""}`);

@@ -55,6 +55,7 @@ import type { PlatformReads } from "./reads.js";
 import { assembleSetup, loadAgentFiles, type Setup } from "../setup.js";
 import { decideByGesture, followUp, handleExecution, type BatchGestureRecord } from "../terminal.js";
 import { RUN_ID } from "./contract.js";
+import { exportCommands } from "./export-commands.js";
 import type {
   ActorView,
   ApprovalBinding,
@@ -109,8 +110,11 @@ export interface ApprovalPort {
  */
 export type RailPort = { executor: "simulator" } | { executor: "codespar-test"; proposals: ProposalRail; mandate?: Mandate; reads?: PlatformReads };
 
-/** The model mode, pinned at create. `replay` is the example's own recorded transcript; `model` is the host's runtime, under its budgets. */
-export type ModelPort = { mode: "replay" } | { mode: "model"; runtime: AgentRuntime };
+/**
+ * The model mode, pinned at create. `replay` is the example's own recorded transcript; `model` is the host's runtime, under its budgets.
+ * `model` names the host's model when it says which: the export hands it to the person, so their run asks for the same one.
+ */
+export type ModelPort = { mode: "replay" } | { mode: "model"; runtime: AgentRuntime; model?: string };
 
 export interface HostedPorts {
   identity: IdentityPort;
@@ -739,12 +743,8 @@ export class HostedRun {
     const approvals = bundle.readApprovals().map(({ signature: _signature, ...rest }) => this.maskDeep(rest));
     const receipts = bundle.listReceipts().map((f) => this.maskDeep(bundle.readReceipt(f)));
     const d = this.kit.descriptor;
-    const b = this.image.binding;
-    const commands = [
-      `npx degit codespar/agent-starter-kits/agents/${d.id}#${d.source.commit} ${d.id}`,
-      `cd ${d.id} && npm install`,
-      b.modelMode === "replay" && b.exampleId ? `npm start -- --scenario ${b.exampleId} --mode ${b.approvalMode} --locale ${b.locale}` : `npm start -- --mode ${b.approvalMode} --locale ${b.locale}`,
-    ];
+    const model = this.ports.model.mode === "model" ? this.ports.model.model : undefined;
+    const commands = exportCommands(d, this.image.binding, { model });
     return {
       v: 1,
       descriptor: d,
