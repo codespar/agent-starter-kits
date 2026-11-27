@@ -4,7 +4,7 @@
  * terminal channel share, whatever the agent is; what the agent brings is the
  * rail, the tool handlers and the policy extension, through its kit.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import {
   AgentLoop,
@@ -41,6 +41,7 @@ import {
   type ToolContext,
   type ToolHandler,
   CODESPAR_KEY_PLACEHOLDER,
+  assertTestKey,
 } from "@codespar/agent-core";
 import { AnthropicRuntime } from "@codespar/agent-core/providers/anthropic";
 import { GeminiRuntime } from "@codespar/agent-core/providers/gemini";
@@ -48,6 +49,8 @@ import type { ApiClient } from "@codespar/sdk";
 import { envName, type Agent } from "./agent.js";
 import type { AgentKit, KitConfig, KitStrings, RailBuild, RailKind, SandboxPayer, Settlement } from "./kit.js";
 import type { PlatformReads } from "./hosted/reads.js";
+import { ProposalPaymentRail } from "./hosted/proposals.js";
+import { PlaygroundContextError, PlaygroundContextSchema, httpProposalRail, playgroundMandate, type PlaygroundContext } from "./proposals-api.js";
 
 /** The `.env.example` placeholder counts as no key: a copied example must replay, not call Anthropic with a fake key. */
 export const ANTHROPIC_KEY_PLACEHOLDER = "sk-ant-your_key_here";
@@ -98,6 +101,35 @@ export interface SetupOptions {
   say?: ((line: string) => void) | undefined;
   /** `--locale`. Absent: the manifest's `locale`, else pt-BR. */
   locale?: Locale | undefined;
+  /** `--playground`: the Playground run's conversation and mandate, for `--rail proposals` (proposals-api.ts). */
+  playground?: PlaygroundContext | undefined;
+}
+
+const PLAYGROUND_FILE = "playground.json";
+
+/** The Playground context a `--rail proposals` start saved in this state dir; undefined when none (or unreadable). */
+function readSavedPlayground(stateDir: string): PlaygroundContext | undefined {
+  const path = join(stateDir, PLAYGROUND_FILE);
+  if (!existsSync(path)) return undefined;
+  const ok = PlaygroundContextSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+  return ok.success ? ok.data : undefined;
+}
+
+/**
+ * `--rail proposals`: the platform's proposals over HTTP with the project's Test key, under the run's mandate. No consent,
+ * no funding, no payment: the key drafts and reads, a person pays on the card. A start without the context, or without a
+ * test key, stops here and says which.
+ */
+function proposalsRailOf(env: NodeJS.ProcessEnv, store: StateStore, stateDir: string, ctx: PlaygroundContext | undefined): RailBuild {
+  if (!ctx) throw new PlaygroundContextError("--rail proposals needs --playground <context>, which the Playground's Código tab puts in the start command: copy the commands again from the run");
+  const apiKey = assertTestKey(env["CODESPAR_API_KEY"]);
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(stateDir, PLAYGROUND_FILE), JSON.stringify(ctx, null, 2) + "\n");
+  const rail = new ProposalPaymentRail(
+    httpProposalRail({ apiKey, baseUrl: env["CODESPAR_API_URL"]?.trim() || undefined, mandateId: ctx.mandate.id, conversationId: ctx.conversation_id }),
+    store,
+  );
+  return { rail, mandate: playgroundMandate(ctx), pollIntervalMs: 3_000 };
 }
 
 export interface Setup {
@@ -203,20 +235,26 @@ export function setup(agent: Agent, options: SetupOptions = {}): Setup {
   const gate = new LocalMandateStatusStub(store, now);
   const signer = loadOrCreateLocalApprovalKey(stateDir);
 
-  const railKind = resolveRailKind(env, options.rail, agent.kit);
-  const built = buildRailOf(agent, {
-    kind: railKind,
-    env,
-    agentDir: agent.dir,
-    stateDir,
-    manifest: files.manifest,
-    store,
-    gate,
-    now,
-    mandate: options.mandate,
-    stubRail: options.stubRail,
-    envVar: (name) => env[envName(agent, name)],
-  });
+  // A state dir a Playground export started (`--rail proposals --playground`) stays on that rail for every later command
+  // (resume, reconcile, inspect), so a proposal is read back through the same path it was drafted on.
+  const savedPlayground = readSavedPlayground(stateDir);
+  const railKind = options.rail ?? (savedPlayground && !options.mandate ? "proposals" : resolveRailKind(env, undefined, agent.kit));
+  const built =
+    railKind === "proposals"
+      ? proposalsRailOf(env, store, stateDir, options.playground ?? savedPlayground)
+      : buildRailOf(agent, {
+          kind: railKind,
+          env,
+          agentDir: agent.dir,
+          stateDir,
+          manifest: files.manifest,
+          store,
+          gate,
+          now,
+          mandate: options.mandate,
+          stubRail: options.stubRail,
+          envVar: (name) => env[envName(agent, name)],
+        });
 
   const runId = options.runId ?? newRunId(mode);
   const bundle = new ProofBundle(runs, runId);

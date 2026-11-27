@@ -56,6 +56,7 @@ import { assembleSetup, loadAgentFiles, type Setup } from "../setup.js";
 import { decideByGesture, followUp, handleExecution, type BatchGestureRecord } from "../terminal.js";
 import { RUN_ID } from "./contract.js";
 import { exportCommands } from "./export-commands.js";
+import { PlaygroundContextSchema, type PlaygroundContext } from "../proposals-api.js";
 import type {
   ActorView,
   ApprovalBinding,
@@ -108,7 +109,16 @@ export interface ApprovalPort {
  * `codespar-test`: each attempt is a platform proposal drafted through `proposals`; a person pays it, the platform dispatches it.
  * The kit gets no client and no key. `mandate` is the one the host binds the kit's own policy to; absent, the kit's example.
  */
-export type RailPort = { executor: "simulator" } | { executor: "codespar-test"; proposals: ProposalRail; mandate?: Mandate; reads?: PlatformReads };
+export type RailPort =
+  | { executor: "simulator" }
+  | {
+      executor: "codespar-test";
+      proposals: ProposalRail;
+      mandate?: Mandate;
+      reads?: PlatformReads;
+      /** The run's conversation, where its proposals' cards are: the export names it, so the exported start drafts there. */
+      conversationId?: string;
+    };
 
 /**
  * The model mode, pinned at create. `replay` is the example's own recorded transcript; `model` is the host's runtime, under its budgets.
@@ -744,7 +754,7 @@ export class HostedRun {
     const receipts = bundle.listReceipts().map((f) => this.maskDeep(bundle.readReceipt(f)));
     const d = this.kit.descriptor;
     const model = this.ports.model.mode === "model" ? this.ports.model.model : undefined;
-    const commands = exportCommands(d, this.image.binding, { model });
+    const commands = exportCommands(d, this.image.binding, { model, playground: playgroundContextOf(this.ports.rail) });
     return {
       v: 1,
       descriptor: d,
@@ -1192,4 +1202,28 @@ export function snapshotOf(image: RunImage, store: StateStore, descriptor: Hoste
         }
       : null,
   };
+}
+
+/**
+ * What the export tells the exported start about a `codespar-test` run: its conversation and its mandate, the mandate's
+ * caps and expiry and its receivers by alias and name. No key (a receiver's payee is its alias, the server resolves it), no
+ * signature. Undefined when the host named neither (an older host): the exported start then says what is missing.
+ */
+export function playgroundContextOf(rail: RailPort): PlaygroundContext | undefined {
+  if (rail.executor !== "codespar-test" || !rail.mandate || !rail.conversationId) return undefined;
+  const m = rail.mandate;
+  const ok = PlaygroundContextSchema.safeParse({
+    v: 1,
+    conversation_id: rail.conversationId,
+    mandate: {
+      id: m.id,
+      purpose: m.purpose,
+      cap_minor: m.cap_minor,
+      per_tx_cap_minor: m.per_tx_cap_minor,
+      ...(m.periodic_cap ? { periodic_cap: m.periodic_cap } : {}),
+      expires_at: m.expires_at,
+      beneficiaries: m.beneficiaries.map((b) => ({ alias: b.alias, name: b.name })),
+    },
+  });
+  return ok.success ? ok.data : undefined;
 }

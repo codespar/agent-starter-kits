@@ -23,6 +23,7 @@ import { closeTerminal, defaultAsk, handleExecution, interactive } from "../term
 import { loadTemplates, resolveConversation } from "../channels/index.js";
 import { startWhatsApp, type WhatsAppBackendName } from "./start-whatsapp.js";
 import { outcomeExitCode, refusalLine, sayOutcome } from "../outcome.js";
+import { decodePlaygroundContext, PROPOSALS_STRINGS, type PlaygroundContext } from "../proposals-api.js";
 
 const EXIT_CODES = `exit (--input): 0 nothing failed (settled, already paid, denied, expired or still open: the last line counts each payment); 1 a payment failed or a line was refused before a draft, and 1 wins over 3; 3 nothing failed and an execution of this run was left executing (npm run reconcile). A line an earlier run still holds is open and exits 0.`;
 
@@ -58,6 +59,8 @@ interface Args {
   scripted: boolean;
   /** The language of what the code prints; absent means agent.yaml's `locale`, else pt-BR. */
   locale?: Locale;
+  /** `--playground`: the run's conversation and mandate, for `--rail proposals` (a Playground export). */
+  playground?: PlaygroundContext;
   help: boolean;
 }
 
@@ -97,7 +100,7 @@ export function parseArgs(argv: string[], awaitsPayer: boolean): Args {
     } else if (a === "--transcript") args.transcript = next();
     else if (a === "--rail") {
       const v = next();
-      if (v !== "stub" && v !== "api") throw new Error("--rail must be stub or api");
+      if (v !== "stub" && v !== "api" && v !== "proposals") throw new Error("--rail must be stub, api or proposals");
       args.rail = v;
     } else if (a === "--user") args.user = next();
     else if (awaitsPayer && a === "--wait") {
@@ -121,6 +124,7 @@ export function parseArgs(argv: string[], awaitsPayer: boolean): Args {
     } else if (a === "--conversation") args.conversation = next();
     else if (a === "--scripted") args.scripted = true;
     else if (a === "--locale") args.locale = parseLocale(next());
+    else if (a === "--playground") args.playground = decodePlaygroundContext(next());
     else if (a === "--help" || a === "-h") args.help = true;
     else throw new Error(`unknown argument ${a}`);
   }
@@ -156,7 +160,13 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
 
   // Sandbox by construction: a live key dies here, before anything else runs.
   const railKind = resolveRailKind(process.env, args.rail, agent.kit);
-  const keyProblem = railKind === "api" && agent.kit.apiRailKey !== "none" ? testKeyProblem(process.env["CODESPAR_API_KEY"]) : undefined;
+  const keyProblem =
+    (railKind === "api" && agent.kit.apiRailKey !== "none") || railKind === "proposals" ? testKeyProblem(process.env["CODESPAR_API_KEY"]) : undefined;
+  // The Playground's proposals need the run's conversation and mandate: said before anything, naming the flag.
+  if (railKind === "proposals" && !args.playground) {
+    say("--rail proposals needs --playground <context>, which the Playground's Código tab puts in the start command: copy the commands again from the run");
+    return 1;
+  }
   if (keyProblem) {
     say(new NotATestKeyError(keyProblem, envFileOf(agent.dir)).message);
     return 1;
@@ -232,7 +242,8 @@ export async function start(agent: Agent, argv: string[]): Promise<number> {
     }
   }
 
-  const s = setup(agent, { mode: args.mode, rail: railKind, provider, transcript, now, say, locale });
+  const s = setup(agent, { mode: args.mode, rail: railKind, provider, transcript, now, say, locale, ...(args.playground ? { playground: args.playground } : {}) });
+  if (railKind === "proposals" && args.playground) say(PROPOSALS_STRINGS[locale].started(args.playground.conversation_id, args.playground.mandate.id));
   if (args.payer) s.payer?.behave(args.payer);
   const approver = { id: args.user ?? s.kit.labels.defaultUser, channel: "terminal" };
   const startedAt = Date.now();
@@ -284,6 +295,11 @@ async function runScenarioCommand(agent: Agent, args: Args, railKind: RailKind, 
   const scenario = loadScenario(agent, args.scenario!);
   const picksRail = agent.kit.scenarioRail === "requested";
   const rail: RailKind = picksRail ? railKind : "stub";
+  // A scenario replays a recorded run on the kit's own rails; the Playground's proposals are a live conversation's.
+  if (rail === "proposals") {
+    say(`scenario ${scenario.name} replays a recorded run on the stub or the API rail; --rail proposals is for a Playground run's export`);
+    return 2;
+  }
   if (picksRail && !scenario.rails.includes(rail)) {
     say(`scenario ${scenario.name} runs on ${scenario.rails.join("/")} only (asked: ${rail})`);
     return 2;
