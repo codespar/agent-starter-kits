@@ -26,7 +26,9 @@
  * (CONTRATO v1.6). On `codespar-test` a charging kit (its executor requires
  * `platform.charges`) charges through the host's charge port: a receive
  * proposal the person sends on its card, which the platform issues as a Collect
- * charge at the provider's sandbox and its Test payer pays. That path is the
+ * charge at the provider's sandbox and its Test payer pays. The lines describe
+ * that path in the present tense and never say this run's charge was sent or
+ * paid: an export may be taken before that, or after a refusal. That path is the
  * Playground's own (the run's routes and the proposal card), not a public route
  * a kit outside the dashboard can call. The kit's standalone API rail
  * (`POST /v1/charges`) stays blocked in `agent.yaml` while the sandbox does
@@ -77,7 +79,7 @@ const TEXT = {
     firstTurn: (id: string, text: string) => `Exemplo ${id}: no Playground, a primeira mensagem foi ${JSON.stringify(text)}.`,
     replay: (id: string) => `Sem chave: o exemplo ${id} roda no trilho simulado (stub) e repete a conversa gravada (replay). Nada chega à CodeSpar.`,
     chargeHosted:
-      "No Playground, a cobrança rodou no Test integrado pela plataforma: uma proposta de recebimento que uma pessoa enviou no cartão da proposta, emitida pelo Collect no sandbox do provedor e paga pelo pagador de teste da CodeSpar. Esse caminho usa rotas internas do Playground, não uma rota pública, e não se reproduz fora do dashboard.",
+      "No Playground, a cobrança deste kit roda no Test integrado pela plataforma: é uma proposta de recebimento que uma pessoa envia no cartão da proposta, emitida pelo Collect no sandbox do provedor e paga pelo pagador de teste da CodeSpar. Esse caminho usa rotas internas do Playground, não uma rota pública, e não se reproduz fora do dashboard.",
     chargeLocal:
       "Aqui o kit roda no trilho simulado (stub), sem chave da CodeSpar: a conversa, o pedido ou acordo, a política e a aprovação são os mesmos do kit; a emissão da cobrança e o pagador são simulados e nada chega à CodeSpar. O trilho api do kit (POST /v1/charges) segue bloqueado enquanto o sandbox não emite um bolepix pagável por essa rota.",
   },
@@ -90,7 +92,7 @@ const TEXT = {
     firstTurn: (id: string, text: string) => `Example ${id}: in the Playground, the first message was ${JSON.stringify(text)}.`,
     replay: (id: string) => `No key: example ${id} runs on the simulated rail (stub) and repeats the recorded conversation (replay). Nothing reaches CodeSpar.`,
     chargeHosted:
-      "In the Playground, the charge ran on the integrated Test through the platform: a receive proposal a person sent on the proposal card, issued by Collect at the provider's sandbox and paid by the CodeSpar Test payer. That path uses the Playground's internal routes, not a public route, and does not reproduce outside the dashboard.",
+      "In the Playground, this kit's charge runs on the integrated Test through the platform: a receive proposal a person sends on the proposal card, issued by Collect at the provider's sandbox and paid by the CodeSpar Test payer. That path uses the Playground's internal routes, not a public route, and does not reproduce outside the dashboard.",
     chargeLocal:
       "Here the kit runs on the simulated rail (stub), with no CodeSpar key: the conversation, the order or agreement, the policy and the approval are the kit's own; issuing the charge and the payer are simulated, and nothing reaches CodeSpar. The kit's api rail (POST /v1/charges) stays blocked while the sandbox does not issue a payable bolepix through it.",
   },

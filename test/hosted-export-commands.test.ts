@@ -114,6 +114,8 @@ describe("a charge on the integrated Test: the export says what reproduces outsi
       const all = lines.join("\n");
       expect(all).toContain("pelo Collect no sandbox do provedor e paga pelo pagador de teste da CodeSpar");
       expect(all).toContain("rotas internas do Playground, não uma rota pública, e não se reproduz fora do dashboard");
+      // The path is described, not this run: an export taken before the charge was sent (or after a refusal) claims nothing.
+      expect(all).not.toMatch(/rodou|enviou|foi paga/);
       expect(all).toContain("Aqui o kit roda no trilho simulado (stub), sem chave da CodeSpar");
       expect(all).toContain("O trilho api do kit (POST /v1/charges) segue bloqueado");
       expect(all).not.toMatch(/CODESPAR_API_KEY|--rail api|consentimento para o mandato/);
@@ -132,6 +134,7 @@ describe("a charge on the integrated Test: the export says what reproduces outsi
       expect(all).toContain("paid by the CodeSpar Test payer");
       expect(all).toContain("internal routes, not a public route, and does not reproduce outside the dashboard");
       expect(all).toContain("api rail (POST /v1/charges) stays blocked");
+      expect(all).not.toMatch(/\bran\b|\bsent on\b|was paid/);
       expect(lines).toContain(`echo 'No key: example ${exampleId} runs on the simulated rail (stub) and repeats the recorded conversation (replay). Nothing reaches CodeSpar.'`);
       expect(lines[lines.length - 1]).toBe(`npm start --workspace=agents/${name} -- --scenario ${exampleId} --rail stub --mode mandate --locale en`);
     });

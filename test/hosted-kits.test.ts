@@ -238,6 +238,9 @@ describe("hosted, on the simulator, from each kit's own example", () => {
     const bundle = JSON.stringify(exported.events);
     expect(bundle).toContain("nfse.not_run");
     expect(bundle).not.toMatch(/invoice\.opened|nfse_stub/);
+    // The run's own export starts the kit on its stub rail: the integrated charge does not reproduce outside (CONTRATO v1.6).
+    expect(exported.code.commands[exported.code.commands.length - 1]).toBe("npm start --workspace=agents/checkout-agent -- --scenario aula-experimental --rail stub --mode human --locale pt-BR");
+    expect(exported.code.commands.join("\n")).not.toMatch(/--rail api|CODESPAR_API_KEY/);
   });
 
   it("a charging kit on a host without the charge port has no codespar-test run: it is refused, never paid out as a payment proposal", async () => {
