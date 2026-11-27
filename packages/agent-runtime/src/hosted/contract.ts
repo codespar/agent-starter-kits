@@ -26,8 +26,11 @@ export const OutcomeKindSchema = z.enum(["answer", "payment", "charge", "order",
 export const EvidenceKindSchema = z.enum(["none", "simulated", "codespar_receipt", "charge_status", "rail_record"]);
 /** The closed list of platform prerequisites a descriptor may name; the host maps each one to readiness. */
 export const PlatformPrerequisiteSchema = z.enum(["platform.test_project", "platform.consumer_mandate", "platform.payouts", "platform.charges"]);
-/** What the platform does not offer yet and an executor would need: listed in `blockedBy`, never worked around. */
-export const PLATFORM_GAPS: readonly string[] = ["platform.charge_proposals"];
+/**
+ * What the platform does not offer yet and an executor would need: listed in `blockedBy`, never worked around. Empty since
+ * v1.6: `platform.charge_proposals` closed when the platform drafted receive proposals for a kit's charges.
+ */
+export const PLATFORM_GAPS: readonly string[] = [];
 export const ApprovalModeSchema = z.enum(["human", "mandate"]);
 export const LocaleNameSchema = z.enum(["pt-BR", "en"]);
 export const ToolEffectSchema = z.enum(["payment", "charge", "read", "state"]);

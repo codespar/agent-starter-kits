@@ -21,6 +21,22 @@
  * `.env`. A start that lacks one stops and names it, before a mandate is asked
  * for or a run is opened. A replay says it runs on the stub rail and repeats
  * the recorded conversation; nothing in it reaches CodeSpar.
+ *
+ * A CHARGE ON THE INTEGRATED TEST IS NOT REPRODUCED, AND THE COMMANDS SAY SO
+ * (CONTRATO v1.6). On `codespar-test` a charging kit (its executor requires
+ * `platform.charges`) charges through the host's charge port: a receive
+ * proposal the person sends on its card, which the platform issues as a Collect
+ * charge at the provider's sandbox and its Test payer pays. The lines describe
+ * that path in the present tense and never say this run's charge was sent or
+ * paid: an export may be taken before that, or after a refusal. That path is the
+ * Playground's own (the run's routes and the proposal card), not a public route
+ * a kit outside the dashboard can call. The kit's standalone API rail
+ * (`POST /v1/charges`) stays blocked in `agent.yaml` while the sandbox does
+ * not issue a payable bolepix through it. So the export of such a run starts
+ * the kit on its stub rail (`--rail stub`, no CodeSpar key asked for) and says
+ * which part reproduces outside (the conversation, the cart or agreement, the
+ * policy and the approval, on a simulated charge and payer) and which part ran
+ * only through the platform. It never hands out `--rail api` for it.
  */
 import type { ExecutorId, HostedKitDescriptor, ModelMode } from "./contract.js";
 
@@ -40,7 +56,15 @@ export interface ExportExtras {
   model?: string | undefined;
 }
 
-type Descriptor = Pick<HostedKitDescriptor, "id" | "source" | "examples" | "needsMandate">;
+type Descriptor = Pick<HostedKitDescriptor, "id" | "source" | "examples" | "needsMandate" | "executors">;
+
+/**
+ * Whether the kit's codespar-test executor charges through the platform's receive proposals (v1.6): it requires
+ * `platform.charges`. Keyed on the executor, not the tool effect: a `charge` tool on another rail is not a receive proposal.
+ */
+export function chargesThroughPlatform(d: Pick<HostedKitDescriptor, "executors">): boolean {
+  return d.executors.some((e) => e.id === "codespar-test" && e.requires.includes("platform.charges"));
+}
 
 /** A model id is written into a shell line: only the characters model ids have. */
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
@@ -54,6 +78,10 @@ const TEXT = {
     consent: "Antes da primeira mensagem, o kit pede o seu consentimento para o mandato de teste.",
     firstTurn: (id: string, text: string) => `Exemplo ${id}: no Playground, a primeira mensagem foi ${JSON.stringify(text)}.`,
     replay: (id: string) => `Sem chave: o exemplo ${id} roda no trilho simulado (stub) e repete a conversa gravada (replay). Nada chega à CodeSpar.`,
+    chargeHosted:
+      "No Playground, a cobrança deste kit roda no Test integrado pela plataforma: é uma proposta de recebimento que uma pessoa envia no cartão da proposta, emitida pelo Collect no sandbox do provedor e paga pelo pagador de teste da CodeSpar. Esse caminho usa rotas internas do Playground, não uma rota pública, e não se reproduz fora do dashboard.",
+    chargeLocal:
+      "Aqui o kit roda no trilho simulado (stub), sem chave da CodeSpar: a conversa, o pedido ou acordo, a política e a aprovação são os mesmos do kit; a emissão da cobrança e o pagador são simulados e nada chega à CodeSpar. O trilho api do kit (POST /v1/charges) segue bloqueado enquanto o sandbox não emite um bolepix pagável por essa rota.",
   },
   en: {
     keys: (env: string, names: string[]) => `Fill in ${env}: ${names.join("; ")}. Without them, the last command stops and says which one is missing.`,
@@ -63,6 +91,10 @@ const TEXT = {
     consent: "Before the first message, the kit asks for your consent to the test mandate.",
     firstTurn: (id: string, text: string) => `Example ${id}: in the Playground, the first message was ${JSON.stringify(text)}.`,
     replay: (id: string) => `No key: example ${id} runs on the simulated rail (stub) and repeats the recorded conversation (replay). Nothing reaches CodeSpar.`,
+    chargeHosted:
+      "In the Playground, this kit's charge runs on the integrated Test through the platform: a receive proposal a person sends on the proposal card, issued by Collect at the provider's sandbox and paid by the CodeSpar Test payer. That path uses the Playground's internal routes, not a public route, and does not reproduce outside the dashboard.",
+    chargeLocal:
+      "Here the kit runs on the simulated rail (stub), with no CodeSpar key: the conversation, the order or agreement, the policy and the approval are the kit's own; issuing the charge and the payer are simulated, and nothing reaches CodeSpar. The kit's api rail (POST /v1/charges) stays blocked while the sandbox does not issue a payable bolepix through it.",
   },
 } as const;
 
@@ -78,7 +110,9 @@ export function exportCommands(d: Descriptor, b: ExportBinding, extras: ExportEx
   const text = TEXT[b.locale];
   const kitDir = `agents/${d.id}`;
   const env = `${kitDir}/.env`;
-  const integrated = b.executor === "codespar-test";
+  // A charge on the integrated Test ran through the platform's own path: outside, the kit runs on its stub rail (see above).
+  const platformCharge = b.executor === "codespar-test" && chargesThroughPlatform(d);
+  const integrated = b.executor === "codespar-test" && !platformCharge;
   const withModel = b.modelMode === "model";
   const replayed = b.modelMode === "replay" && b.exampleId !== null;
   const model = withModel && extras.model && MODEL_ID.test(extras.model) ? extras.model : undefined;
@@ -94,11 +128,12 @@ export function exportCommands(d: Descriptor, b: ExportBinding, extras: ExportEx
   if (model) lines.push(say(text.model(model)));
   if (integrated && d.needsMandate) lines.push(say(text.consent));
   if (withModel && example) lines.push(say(text.firstTurn(example.id, example.turns[0].input)));
+  if (platformCharge) lines.push(say(text.chargeHosted), say(text.chargeLocal));
   if (replayed && !integrated) lines.push(say(text.replay(b.exampleId!)));
 
   const flags = [
     ...(replayed ? ["--scenario", b.exampleId!] : []),
-    ...(integrated ? ["--rail", "api"] : []),
+    ...(integrated ? ["--rail", "api"] : platformCharge ? ["--rail", "stub"] : []),
     ...(withModel ? ["--provider", "anthropic"] : []),
     "--mode",
     b.approvalMode,

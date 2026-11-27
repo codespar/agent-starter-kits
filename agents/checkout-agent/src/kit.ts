@@ -85,7 +85,13 @@ async function placeOrder(s: Setup, customer: string, lines: Array<{ sku: string
 const kit: AgentKit = {
   settlement: "await-payer",
   // A sale: the order the attendant confirms and the charge it issues are two outcomes, each with its own state.
-  hosted: { outcomeKinds: ["answer", "order", "charge"] },
+  hosted: {
+    outcomeKinds: ["answer", "order", "charge"],
+    // bolepix-receivables is lifted ONLY for the codespar-test executor, which goes through the platform's charge port (a
+    // receive proposal the platform issues as a Collect charge at the provider's sandbox). The kit's standalone `--rail api`
+    // (`POST /v1/charges`) stays blocked in agent.yaml while ent#1816 is open (CONTRATO v1.6).
+    platformServes: ["bolepix-receivables"],
+  },
   scenarioRail: "requested",
   executeOnApproval: false,
 
@@ -161,7 +167,7 @@ options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript 
     const envelope = loadEnvelope(setup.guardrails);
     const book = new CartBook(setup.store);
     // On a channel that binds a conversation, the customer is the one it is bound to: read at call time, because the channel binds after setup.
-    const orderDeps = { book, runId: setup.runId, timezone: setup.guardrails.timezone, clock: setup.engine.clock, boundCustomer: () => setup.conversation?.subject, locale: () => setup.locale };
+    const orderDeps = { book, runId: setup.runId, timezone: setup.guardrails.timezone, clock: setup.engine.clock, boundCustomer: () => setup.conversation?.subject, locale: () => setup.locale, rail: setup.rail };
     return {
       ...makeCartHandlers({ ...orderDeps, envelope, onReplaced: (cart, engine) => void followCart(cart, engine, orderDeps) }),
       ...makeChargeHandlers(orderDeps),
@@ -274,11 +280,20 @@ options: --mode human|mandate  --provider anthropic|gemini|replay  --transcript 
     return true;
   },
 
-  /** Checkout §4: a paid order opens its NFS-e, an execution of its own that never moves the sale. */
+  /**
+   * Checkout §4: a paid order opens its NFS-e, an execution of its own that never moves the sale. Hosted on codespar-test
+   * (the sale was a platform proposal) the channel has no invoice issuer: the stub issuer would be a simulation inside an
+   * integrated run, so nothing is issued and the bundle says so (CONTRATO v1.6).
+   */
   followUp: async (execution, setup, say) => {
+    if (setup.rail.name === "codespar-proposal") {
+      if (execution.state === "settled") setup.engine.note("nfse.not_run", execution.id, { detail: "the hosted integrated Test has no invoice issuer; no NFS-e was issued or simulated" });
+      return;
+    }
     await followSale(execution, invoiceDeps(setup, say));
   },
   resumeFollowUps: async (setup, say) => {
+    if (setup.rail.name === "codespar-proposal") return;
     for (const r of await resumeInvoices(invoiceDeps(setup, say))) say(`${r.id}: NFS-e of ${r.sale_execution_id} -> ${r.state}${r.reason ? ` (${r.reason}, ${r.code})` : ""}`);
   },
 

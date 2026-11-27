@@ -90,6 +90,20 @@ describe("buildCatalog", () => {
     const elsewhere = describeKit({ ...agent, kit: { ...agent.kit, apiRailKey: "none" } }, { root: ROOT, commit: COMMIT, shared: SHARED });
     expect(elsewhere.supportedExecutors).toEqual(["simulator"]);
   });
+
+  it("v1.6: a capability the platform serves on codespar-test does not block it, and one that is not in the manifest is refused", async () => {
+    const agent = await loadAgent(TEST_KIT);
+    const dir = mkdtempSync(join(ROOT, "packages/agent-runtime/test/fixtures/kits/.served-"));
+    cpSync(TEST_KIT, dir, { recursive: true });
+    copies.push(dir);
+    const yaml = readFileSync(join(dir, "agent.yaml"), "utf8").replace(/^maturity:\n/m, "maturity:\n  own-rail: blocked\n");
+    writeFileSync(join(dir, "agent.yaml"), yaml);
+    const blocked = describeKit({ ...agent, dir }, { root: ROOT, commit: COMMIT, shared: SHARED });
+    expect(blocked.executors[1]!.blockedBy).toEqual(["own-rail"]);
+    const served = describeKit({ ...agent, dir, kit: { ...agent.kit, hosted: { platformServes: ["own-rail"] } } }, { root: ROOT, commit: COMMIT, shared: SHARED });
+    expect(served.executors[1]!.blockedBy).toEqual([]);
+    expect(() => describeKit({ ...agent, dir, kit: { ...agent.kit, hosted: { platformServes: ["no-such-capability"] } } }, { root: ROOT, commit: COMMIT, shared: SHARED })).toThrow(/platformServes names no-such-capability/);
+  });
 });
 
 describe("treeDigest", () => {

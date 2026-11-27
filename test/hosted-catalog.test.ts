@@ -30,10 +30,13 @@ describe("the hosted catalog of this repository", () => {
     ]);
   });
 
-  it("recommends one executable run per kit that can run on the integrated Test with a model: bills, supplier, hello", async () => {
+  it("recommends one executable run per kit that can run on the integrated Test with a model: bills, supplier, hello, checkout, collections", async () => {
     const runs = [...(await catalog()).values()].flatMap((k) => k.recommendedRuns.map((r) => [k.id, r.example, r.rank]));
     expect(runs).toEqual([
       ["bills-agent", "conta-teste", 1],
+      // The charges (CONTRATO v1.6): within R$ 10-30, the Test payer's per-payment and daily caps.
+      ["checkout-agent", "aula-experimental", 4],
+      ["collections-agent", "acordo-1150", 5],
       ["hello-agent", "conta-plataforma", 3],
       ["supplier-payments-agent", "lote-teste", 2],
     ]);
