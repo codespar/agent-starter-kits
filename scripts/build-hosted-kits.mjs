@@ -33,7 +33,7 @@ const NOT_SHIPPED = new Set(["node_modules", ".codespar", "runs", "test", "evals
 
 const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
 const commit = git("rev-parse", "HEAD");
-if (!argv.includes("--allow-dirty") && git("status", "--porcelain", "--", "agents", "packages", "tsconfig.hosted.json", "tsconfig.hosted-types.json") !== "") {
+if (!argv.includes("--allow-dirty") && git("status", "--porcelain", "--", "agents", "packages", "cookbooks.yaml", "tsconfig.hosted.json", "tsconfig.hosted-types.json") !== "") {
   process.stderr.write("build-hosted-kits: agents/ or packages/ has uncommitted changes; the digests would name files no commit holds (--allow-dirty for a local try)\n");
   process.exit(2);
 }
@@ -137,8 +137,9 @@ for (const name of agentDirs) {
   const { agent } = await import(pathToFileURL(join(PKG, "kits", name, "src/kit.js")).href);
   kits.push(runtime.describeKit(agent, { root: PKG, commit, shared: runtime.ARTIFACT_SHARED, digestOf: (id) => runtime.artifactDigest(PKG, id) }));
 }
-kits.sort((a, b) => (a.id < b.id ? -1 : 1));
-const catalog = runtime.HostedCatalogSchema.parse({ v: 1, contractVersion: runtime.CONTRACT_VERSION, artifact: { name: "@codespar/hosted-kits", version, commit }, kits });
+// The recipes (CONTRATO v1.8) come from cookbooks.yaml at the repository root: the build refuses a hosted recipe whose kit or
+// example does not exist, a slug listed twice, and a kit whose cookbook the file does not host on it.
+const catalog = runtime.assembleCatalog(kits, runtime.loadCookbooks(ROOT), { version, commit });
 writeFileSync(join(PKG, "catalog.json"), JSON.stringify(catalog, null, 2) + "\n");
 writeFileSync(join(OUT, "catalog.json"), JSON.stringify(catalog, null, 2) + "\n");
 // The catalog a host loads must verify against the package as laid out.

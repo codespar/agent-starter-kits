@@ -12,6 +12,7 @@ export * from "./adversarial.js";
 export * from "./inspect.js";
 export * from "./hosted/contract.js";
 export * from "./hosted/catalog.js";
+export * from "./hosted/cookbooks.js";
 export * from "./hosted/run.js";
 export * from "./hosted/proposals.js";
 export * from "./hosted/reads.js";

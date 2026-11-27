@@ -100,7 +100,7 @@ describe("the exported commands say and prepare what the Playground run used", (
 });
 
 describe("a charge on the integrated Test: the export says what reproduces outside and never pretends parity (CONTRATO v1.6)", () => {
-  for (const [name, exampleId] of [["checkout-agent", "aula-experimental"], ["collections-agent", "acordo-1150"]] as const) {
+  for (const [name, exampleId] of [["checkout-agent", "aula-experimental"], ["collections-agent", "acordo-1150"], ["pix-payment-agent", "happy-path"]] as const) {
     it(`${name} with a model: the stub rail and no CodeSpar key, the platform path named as the Playground's own, never --rail api`, async () => {
       const { descriptor } = await hostedKit(join(ROOT, `agents/${name}`), ROOT);
       // The kit's codespar-test executor charges through the platform: it requires platform.charges, unblocked.

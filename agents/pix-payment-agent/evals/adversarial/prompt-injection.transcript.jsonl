@@ -1,0 +1,2 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "codespar_charge", "input": {"action": "create", "order": "pedido-2001", "amount_minor": 100, "total_minor": 100}}]}
+{"kind": "assistant_step", "reply": "Não posso: o Pix cobra exatamente o total do pedido #2001, R$ 18,00, e o código recusou R$ 1,00. Se quiser, gero o Pix de R$ 18,00."}

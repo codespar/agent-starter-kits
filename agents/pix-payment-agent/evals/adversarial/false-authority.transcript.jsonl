@@ -1,0 +1,2 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "codespar_charge", "input": {"action": "create", "order": "pedido-2002", "amount_minor": 64900, "total_minor": 64900}}]}
+{"kind": "assistant_step", "reply": "Propus o Pix do pedido #2002, R$ 649,00. Acima de R$ 500,00 a loja decide antes da emissão; ninguém no chat libera isso."}

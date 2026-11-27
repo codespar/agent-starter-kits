@@ -1,0 +1,269 @@
+# The docs cookbooks as the Playground offers them (CONTRATO v1.8). One entry per page of the docs site's
+# content/docs/cookbooks/ (meta.json order, `index` left out). The hosted catalog emits them as `recipes`, and the build
+# refuses a hosted entry whose kit or example does not exist, a slug listed twice, and a kit whose `presentation.cookbook`
+# this file does not host on that kit.
+#
+#   hosted     a kit and one of its examples run it in the Playground. `coverage: partial` says, in `not_covered`,
+#              what the kit does not do of the page.
+#   local      it runs on your machine from a CLI template (`template`; the catalog derives the command from `cli`).
+#   reference  a page to read, or a flow that needs a platform surface the hosted kits do not reach yet.
+#
+# A recipe that is not hosted says why (`reason`). `prerequisites.keys` are variable NAMES, never values. Decision D3 of
+# 27/11 (Fabiano): hosted when a kit and an example exist, partial overlaps offered with their scope stated, local or
+# reference otherwise. To reverse one entry, change its `status` and fields here; the build checks the rest.
+v: 1
+docs:
+  repository: codespar/codespar-web
+  commit: d0bdff1be41894fdaa171c706b83d8fc78bc6298
+  path: content/docs/cookbooks
+cli: "@codespar/cli@0.22.8"
+cookbooks:
+  - slug: shopping-agent
+    title: { pt-BR: "Agente de compras", en: "Shopping Agent" }
+    status: reference
+    inputs:
+      - { name: store_url, pt-BR: "A loja onde comprar", en: "The store to buy from" }
+      - { name: item, pt-BR: "O que comprar", en: "What to buy" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY]
+      mandate: { pt-BR: "Um mandato de consumidor assinado, com teto e loja permitida.", en: "A signed consumer mandate, with a cap and the store allowed." }
+    expected: { pt-BR: "O agente busca na loja, conduz o checkout e paga o Pix pela carteira, dentro do mandato.", en: "The agent searches the store, drives its checkout and pays the Pix from its wallet, inside the mandate." }
+    reason: { pt-BR: "Roda no Shop do dashboard, não em um kit: nenhum kit hospedado compra numa loja.", en: "It runs in the dashboard's Shop, not in a kit: no hosted kit buys from a store." }
+
+  - slug: pix-payment-agent
+    title: { pt-BR: "Agente de pagamento Pix", en: "Pix Payment Agent" }
+    status: hosted
+    kit: pix-payment-agent
+    example: happy-path
+    coverage: partial
+    not_covered: { pt-BR: "O envio por WhatsApp (Z-API) e o provedor Asaas da página atual: o kit cobra pelo codespar_charge e entrega o QR e o copia-e-cola na própria conversa.", en: "The page's WhatsApp send (Z-API) and Asaas provider: the kit charges through codespar_charge and hands the QR and the copia-e-cola over in the conversation itself." }
+    inputs:
+      - { name: order, pt-BR: "Pedido pedido-2001: café especial 250 g", en: "Order pedido-2001: specialty coffee 250 g" }
+      - { name: amount, pt-BR: "R$ 18,00, o total do pedido", en: "R$ 18.00, the order's total" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY, ANTHROPIC_API_KEY]
+      mandate: { pt-BR: "No Test integrado, o mandato de Test confirmado do Playground diz qual conta recebe; no simulador, a política de exemplo do kit.", en: "In the integrated Test, the Playground's confirmed Test mandate names the account that receives; in the simulator, the kit's example policy." }
+    expected: { pt-BR: "Uma cobrança Pix de R$ 18,00 para o pedido, com QR e copia-e-cola para a cliente; paga pelo pagador de teste, o pedido fica quitado.", en: "One R$ 18.00 Pix charge for the order, with the QR and copia-e-cola for the customer; once the Test payer pays it, the order is settled." }
+
+  - slug: ecommerce-checkout
+    title: { pt-BR: "Checkout de e-commerce", en: "E-Commerce Checkout" }
+    status: hosted
+    kit: checkout-agent
+    example: aula-experimental
+    coverage: partial
+    not_covered: { pt-BR: "A NF-e de produto, a etiqueta de frete e o aviso por WhatsApp. No Test integrado o kit não emite NFS-e. O fluxo completo da página roda localmente pelo template ecommerce-checkout.", en: "The product NF-e, the shipping label and the WhatsApp notice. On the integrated Test the kit issues no NFS-e. The page's full flow runs locally from the ecommerce-checkout template." }
+    template: ecommerce-checkout
+    inputs:
+      - { name: customer, pt-BR: "Cliente: Beatriz", en: "Customer: Beatriz" }
+      - { name: item, pt-BR: "Aula experimental de violão (30 min), R$ 25,00", en: "Guitar trial lesson (30 min), R$ 25.00" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY, ANTHROPIC_API_KEY]
+      mandate: { pt-BR: "No Test integrado, o mandato de Test confirmado do Playground diz qual conta recebe.", en: "In the integrated Test, the Playground's confirmed Test mandate names the account that receives." }
+      connections: [asaas, nfe-io, melhor-envio, z-api]
+    expected: { pt-BR: "O carrinho é precificado pelo catálogo, o pedido é confirmado e uma cobrança de R$ 25,00 com vencimento hoje é gerada e paga.", en: "The cart is priced from the catalog, the order is confirmed and one R$ 25.00 charge due today is issued and paid." }
+
+  - slug: marketplace-payout
+    title: { pt-BR: "Repasse de marketplace", en: "Marketplace Payout" }
+    status: hosted
+    kit: supplier-payments-agent
+    example: lote-teste
+    coverage: partial
+    not_covered: { pt-BR: "A divisão entre taxa da plataforma e repasse ao vendedor: o kit paga um lote, uma linha por recebedor, sem split.", en: "The split between the platform's fee and the seller's payout: the kit pays a batch, one line per receiver, with no split." }
+    inputs:
+      - { name: batch, pt-BR: "Lote de teste: R$ 10,00 por recebedor de teste da plataforma", en: "Test batch: R$ 10.00 per platform test receiver" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY, ANTHROPIC_API_KEY]
+      mandate: { pt-BR: "O mandato de Test confirmado do Playground, com os recebedores de teste.", en: "The Playground's confirmed Test mandate, with the test receivers." }
+      connections: [asaas]
+    expected: { pt-BR: "Cada linha do lote vira uma proposta de pagamento que você decide; cada uma paga tem o seu recibo.", en: "Each line of the batch becomes a payment proposal you decide; each one paid has its receipt." }
+
+  - slug: pay-documents-and-batches
+    title: { pt-BR: "Pagar documentos e lotes", en: "Pay Documents and Batches" }
+    status: hosted
+    kit: supplier-payments-agent
+    example: lote-teste
+    coverage: partial
+    not_covered: { pt-BR: "A leitura de boleto em PDF, QR em imagem, chave Pix e planilha CSV ou XLSX pelo codespar_payables: o kit paga um lote que já existe.", en: "Reading boleto PDFs, QR images, Pix keys and CSV or XLSX lists through codespar_payables: the kit pays a batch that already exists." }
+    inputs:
+      - { name: batch, pt-BR: "Lote de teste: R$ 10,00 por recebedor de teste da plataforma", en: "Test batch: R$ 10.00 per platform test receiver" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY, ANTHROPIC_API_KEY]
+      mandate: { pt-BR: "O mandato de Test confirmado do Playground, com os recebedores de teste.", en: "The Playground's confirmed Test mandate, with the test receivers." }
+    expected: { pt-BR: "Você confere a lista do lote, confirma, e cada item tem o seu resultado: pago com recibo, recusado ou em conferência.", en: "You review the batch's list, confirm it, and each item has its own result: paid with a receipt, refused or under review." }
+
+  - slug: agent-with-wallet
+    title: { pt-BR: "Agente com carteira", en: "Agent with a Wallet" }
+    status: hosted
+    kit: bills-agent
+    example: conta-teste
+    coverage: partial
+    not_covered: { pt-BR: "Criar a carteira, vincular a fonte de recursos e abastecer por Pix de sandbox: o kit paga pela conta de Test do projeto, sob o mandato.", en: "Creating the wallet, binding the funding source and funding it by sandbox Pix: the kit pays from the project's Test account, under the mandate." }
+    inputs:
+      - { name: payee, pt-BR: "Recebedor: conta-teste", en: "Payee: conta-teste" }
+      - { name: amount, pt-BR: "R$ 10,00", en: "R$ 10.00" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY, ANTHROPIC_API_KEY]
+      mandate: { pt-BR: "O mandato de Test confirmado do Playground, com o recebedor de teste.", en: "The Playground's confirmed Test mandate, with the test receiver." }
+    expected: { pt-BR: "O agente propõe R$ 10,00 ao recebedor de teste, você paga a proposta e recebe o recibo.", en: "The agent proposes R$ 10.00 to the test receiver, you pay the proposal and get the receipt." }
+
+  - slug: streaming-chat-agent
+    title: { pt-BR: "Agente de chat com streaming", en: "Streaming Chat Agent" }
+    status: local
+    template: streaming-chat
+    inputs:
+      - { name: message, pt-BR: "Uma mensagem para o agente, no navegador", en: "A message to the agent, in the browser" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY, OPENAI_API_KEY]
+    expected: { pt-BR: "A resposta do agente chega ao navegador por SSE, token a token, com os eventos da sessão.", en: "The agent's answer reaches the browser over SSE, token by token, with the session's events." }
+    reason: { pt-BR: "É uma interface Next.js no seu navegador; o Playground já é o chat e não hospeda o seu app.", en: "It is a Next.js interface in your browser; the Playground is already the chat and does not host your app." }
+
+  - slug: webhook-listener
+    title: { pt-BR: "Ouvinte de webhooks", en: "Webhook Listener" }
+    status: reference
+    inputs:
+      - { name: event, pt-BR: "commerce.payment.succeeded", en: "commerce.payment.succeeded" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY]
+      connections: [asaas, nuvem-fiscal, correios, z-api]
+    expected: { pt-BR: "A cada pagamento confirmado, o seu servidor emite a NF-e, cria o frete e avisa por WhatsApp, sem modelo.", en: "On each confirmed payment, your server issues the NF-e, creates the shipment and notifies on WhatsApp, with no model." }
+    reason: { pt-BR: "Precisa de um endpoint HTTPS público seu recebendo os webhooks; uma execução do Playground não entrega webhooks ao seu servidor.", en: "It needs a public HTTPS endpoint of yours receiving the webhooks; a Playground run does not deliver webhooks to your server." }
+
+  - slug: multi-tenant
+    title: { pt-BR: "Agente multi-tenant", en: "Multi-Tenant Agent" }
+    status: local
+    template: multi-tenant
+    inputs:
+      - { name: tenant, pt-BR: "O cliente (tenant) de cada sessão", en: "Each session's customer (tenant)" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY, OPENAI_API_KEY]
+      connections: [asaas, melhor-envio, z-api]
+    expected: { pt-BR: "Cada tenant roda o seu agente com os seus provedores, isolado e medido por tenant.", en: "Each tenant runs its own agent with its own providers, isolated and metered per tenant." }
+    reason: { pt-BR: "É o padrão de um SaaS seu, com credenciais por cliente; o Playground roda um projeto de Test, não os seus tenants.", en: "It is the pattern of a SaaS of yours, with credentials per customer; the Playground runs one Test project, not your tenants." }
+
+  - slug: spaces-first-customer-test
+    title: { pt-BR: "Sua primeira conta de cliente em Test", en: "Your First Customer Account in Test" }
+    status: reference
+    inputs:
+      - { name: customer, pt-BR: "Um cliente sintético do seu Space", en: "A synthetic customer of your Space" }
+    prerequisites:
+      keys: []
+    expected: { pt-BR: "A conta do cliente abre no sandbox e uma cobrança do Collect cai nela pelo consumer_id.", en: "The customer's account opens in the sandbox and a Collect charge lands in it by its consumer_id." }
+    reason: { pt-BR: "É um passo a passo do dashboard (Spaces), feito no próprio dashboard.", en: "It is a dashboard walkthrough (Spaces), done in the dashboard itself." }
+
+  - slug: crypto-pay-agent
+    title: { pt-BR: "Agente de pagamento cripto", en: "Crypto Pay Agent" }
+    status: reference
+    inputs:
+      - { name: amount, pt-BR: "O valor em stablecoin", en: "The stablecoin amount" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY]
+      connections: [coinbase-commerce, z-api]
+    expected: { pt-BR: "Uma URL de pagamento em stablecoin para o cliente, acompanhada até a liquidação.", en: "A stablecoin payment URL for the customer, followed until it settles." }
+    reason: { pt-BR: "Nenhum kit nem template usa o codespar_crypto_pay.", en: "No kit or template uses codespar_crypto_pay." }
+
+  - slug: webhook-providers
+    title: { pt-BR: "Referência de webhooks por provedor", en: "Webhook Providers Reference" }
+    status: reference
+    prerequisites:
+      keys: []
+    expected: { pt-BR: "Como conferir a assinatura dos webhooks de cada provedor.", en: "How to check each provider's webhook signature." }
+    reason: { pt-BR: "É uma página de referência, sem nada para executar.", en: "It is a reference page, with nothing to run." }
+
+  - slug: sandbox-to-live
+    title: { pt-BR: "Do sandbox à primeira cobrança Live", en: "Sandbox to First Live Charge" }
+    status: hosted
+    kit: hello-agent
+    example: conta-plataforma
+    coverage: partial
+    not_covered: { pt-BR: "Abastecer a carteira de teste, rodar o fluxo e trocar a chave para Live: o kit só lê a conta de Test, e o Playground nunca roda em Live.", en: "Funding the test wallet, running the flow and swapping the key for Live: the kit only reads the Test account, and the Playground never runs in Live." }
+    inputs:
+      - { name: question, pt-BR: "Qual é o saldo da minha conta de teste?", en: "What is my test account's balance?" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY, ANTHROPIC_API_KEY]
+    expected: { pt-BR: "O saldo do seu projeto de Test, só leitura e sem mandato de gasto.", en: "Your Test project's balance, read-only and with no spending mandate." }
+
+  - slug: kyc-onboarding
+    title: { pt-BR: "Onboarding com KYC", en: "KYC Onboarding" }
+    status: reference
+    inputs:
+      - { name: applicant, pt-BR: "Os dados da pessoa ou empresa", en: "The person's or company's details" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY]
+    expected: { pt-BR: "Uma conta de consumidor provisionada depois da aprovação do KYC.", en: "A provisioned consumer account after the KYC approval." }
+    reason: { pt-BR: "As rotas de onboarding não são uma porta dos kits hospedados; rode pela API com a sua chave de Test.", en: "The onboarding routes are not a port of the hosted kits; run it over the API with your Test key." }
+
+  - slug: discover-capability
+    title: { pt-BR: "Achar uma capacidade pela intenção", en: "Find a Capability by Intent" }
+    status: reference
+    inputs:
+      - { name: intent, pt-BR: "Uma frase com o que você quer fazer", en: "A sentence with what you want to do" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY]
+      connections: [asaas]
+    expected: { pt-BR: "O nome da ferramenta que atende a frase.", en: "The name of the tool that answers the sentence." }
+    reason: { pt-BR: "São buscas no catálogo de ferramentas, sem agente nem dinheiro; rode pela API ou pelo MCP.", en: "They are searches over the tool catalog, with no agent and no money; run them over the API or the MCP." }
+
+  - slug: open-finance-consent
+    title: { pt-BR: "Consentimento de Open Finance", en: "Open Finance Consent" }
+    status: reference
+    inputs:
+      - { name: bank, pt-BR: "O banco do consentimento", en: "The consent's bank" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY]
+    expected: { pt-BR: "O consentimento no banco e o extrato ingerido; renovar e revogar.", en: "The consent at the bank and the statement ingested; refresh and revoke." }
+    reason: { pt-BR: "Os consentimentos de dados (/v1/bank-consents) não são uma porta dos kits hospedados. A Recarga usa outro fluxo: um Pix do seu próprio banco, autorizado por você no banco.", en: "Data consents (/v1/bank-consents) are not a port of the hosted kits. Recarga uses another flow: a Pix from your own bank, which you authorize at the bank." }
+
+  - slug: issue-card-on-mandate
+    title: { pt-BR: "Cartão preso a um mandato", en: "Card Bound to a Mandate" }
+    status: reference
+    inputs:
+      - { name: mandate, pt-BR: "O mandato de consumidor assinado", en: "The signed consumer mandate" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY]
+      mandate: { pt-BR: "Um mandato de consumidor assinado.", en: "A signed consumer mandate." }
+    expected: { pt-BR: "Um cartão emitido e governado pelo teto do mandato.", en: "A card issued and governed by the mandate's cap." }
+    reason: { pt-BR: "A emissão de cartões não é uma porta dos kits hospedados; rode pela API com a sua chave de Test.", en: "Card issuing is not a port of the hosted kits; run it over the API with your Test key." }
+
+  - slug: consumer-spend-ledger
+    title: { pt-BR: "O que uma mesada gastou", en: "What an Allowance Spent" }
+    status: hosted
+    kit: bills-agent
+    example: conta-teste
+    coverage: partial
+    not_covered: { pt-BR: "A leitura do feed do razão (codespar_ledger) como a página faz: o kit paga sob o mandato e mostra o recibo, sem listar o razão.", en: "Reading the ledger feed (codespar_ledger) the way the page does: the kit pays under the mandate and shows the receipt, without listing the ledger." }
+    inputs:
+      - { name: payee, pt-BR: "Recebedor: conta-teste", en: "Payee: conta-teste" }
+      - { name: amount, pt-BR: "R$ 10,00", en: "R$ 10.00" }
+    prerequisites:
+      keys: [CODESPAR_API_KEY, ANTHROPIC_API_KEY]
+      mandate: { pt-BR: "O mandato de Test confirmado do Playground.", en: "The Playground's confirmed Test mandate." }
+    expected: { pt-BR: "Um gasto sob o mandato, com a tentativa e o dinheiro que se moveu ditos em separado.", en: "One spend under the mandate, with the attempt and the money that moved stated apart." }
+
+  - slug: approval-guardrail
+    title: { pt-BR: "Segurar um gasto para aprovação", en: "Hold a Spend for Approval" }
+    status: hosted
+    kit: bills-agent
+    example: escalated-above-threshold
+    coverage: partial
+    not_covered: { pt-BR: "Escrever a regra de aprovação pela API e decidir a retenção como operador pela API: no kit, a regra é o escalate_above do próprio kit e quem decide é você, no Playground.", en: "Writing the approval rule over the API and deciding the hold as an operator over the API: in the kit, the rule is the kit's own escalate_above and you decide, in the Playground." }
+    inputs:
+      - { name: payments, pt-BR: "Três pagamentos à escola: R$ 400,00, a mensalidade e R$ 300,00", en: "Three payments to the school: R$ 400.00, the tuition and R$ 300.00" }
+    prerequisites:
+      keys: [ANTHROPIC_API_KEY]
+    expected: { pt-BR: "Com aprovação automática, o favorecido novo e o valor alto param para você decidir; o seguinte, abaixo do limite, sai sozinho.", en: "With automatic approval, the new payee and the large amount stop for you to decide; the next one, below the limit, goes out alone." }
+
+  - slug: audit-chain-verify
+    title: { pt-BR: "Conferir a cadeia de auditoria", en: "Verify the Audit Chain" }
+    status: reference
+    prerequisites:
+      keys: [CODESPAR_API_KEY]
+    expected: { pt-BR: "A trilha ancorada, conferida e exportada, com o manifesto assinado.", en: "The trail anchored, verified and exported, with the signed manifest." }
+    reason: { pt-BR: "As rotas de auditoria não são uma porta dos kits hospedados; rode pela API com a sua chave de Test.", en: "The audit routes are not a port of the hosted kits; run it over the API with your Test key." }
+
+  - slug: projects-and-keys
+    title: { pt-BR: "Projetos, chaves e ambientes", en: "Projects, Keys and Environments" }
+    status: reference
+    prerequisites:
+      keys: [CODESPAR_API_KEY]
+    expected: { pt-BR: "Em qual projeto e ambiente uma chave age, lido do servidor.", en: "Which project and environment a key acts in, read from the server." }
+    reason: { pt-BR: "São leituras da conta com a sua chave, sem agente; rode pela API ou pela CLI.", en: "They are account reads with your key, with no agent; run them over the API or the CLI." }

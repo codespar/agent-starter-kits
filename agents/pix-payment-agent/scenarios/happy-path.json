@@ -1,0 +1,60 @@
+{
+  "name": "happy-path",
+  "description": "The runbook and the integrated Test's first run: Lívia asks to pay order #2001 (specialty coffee 250 g, R$ 18,00) by Pix; the agent reads the order and says what it will charge; she confirms; the store approves (human) or the policy covers it (mandate); one Pix charge of R$ 18,00, due today, is issued with an idempotency key, the QR and the copia-e-cola are shown, the payer pays, the agent says 'pagamento recebido, pedido quitado'. On the simulator the stub rail issues and the stub payer pays; hosted on codespar-test the charge is a platform receive proposal the person sends, the platform issues at the provider's sandbox and its Test payer pays. Same trail in both modes.",
+  "modes": [
+    "human",
+    "mandate"
+  ],
+  "transcript": "./happy-path.transcript.jsonl",
+  "turns": [
+    {
+      "input": "oi, sou a Lívia, quero pagar o pedido 2001 no Pix",
+      "decision": "none"
+    },
+    {
+      "input": "pode gerar",
+      "decision": "approve",
+      "payer": "pays"
+    }
+  ],
+  "expect": {
+    "both": {
+      "states": [
+        "settled"
+      ],
+      "reasons": [
+        null
+      ],
+      "receipts": 1,
+      "settled_total": 1800,
+      "charges_issued": 1,
+      "debtor_messages": 1,
+      "max_cycle_seconds": 40
+    },
+    "human": {
+      "trails": [
+        [
+          "awaiting_approval",
+          "approved",
+          "executing",
+          "settled"
+        ]
+      ],
+      "triggers": [
+        null
+      ]
+    },
+    "mandate": {
+      "trails": [
+        [
+          "approved",
+          "executing",
+          "settled"
+        ]
+      ],
+      "triggers": [
+        null
+      ]
+    }
+  }
+}

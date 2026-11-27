@@ -32,7 +32,17 @@ export const PresentationTextSchema = z
     title: z.string().min(1).max(60),
     summary: z.string().min(1).max(280),
     /** Keyed by scenario pack name; the hosted catalog refuses a manifest that misses a pack or names one that does not exist. */
-    examples: z.record(z.string().regex(/^[a-z0-9-]+$/), z.object({ title: z.string().min(1).max(60), description: z.string().min(1).max(280) }).strict()),
+    examples: z.record(
+      z.string().regex(/^[a-z0-9-]+$/),
+      z
+        .object({
+          title: z.string().min(1).max(60),
+          description: z.string().min(1).max(280),
+          /** Optional: the example's business inputs as a person reads them (an order, an amount, a payee's alias), in order. Never a key or a document. */
+          inputs: z.array(z.object({ label: z.string().min(1).max(40), value: z.string().min(1).max(120) }).strict()).min(1).max(8).optional(),
+        })
+        .strict(),
+    ),
   })
   .strict();
 
@@ -54,6 +64,8 @@ export const PresentationSchema = z
     en: PresentationTextSchema,
     recommended: z.object({ example: z.string().regex(/^[a-z0-9-]+$/), rank: z.number().int().min(1).max(99).optional() }).strict().optional(),
     recommendedRuns: z.array(RecommendedRunSchema).optional(),
+    /** Optional: the docs cookbook slug this agent implements; the hosted catalog refuses one `cookbooks.yaml` does not host on this agent. */
+    cookbook: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).optional(),
   })
   .strict();
 

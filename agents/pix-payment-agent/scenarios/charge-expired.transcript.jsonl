@@ -1,0 +1,4 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "list_orders", "input": {}}]}
+{"kind": "assistant_step", "reply": "Oi, Helena! O pedido #2003, kit de filtros de papel, fica em R$ 24,00. Vou gerar um Pix de R$ 24,00 com vencimento hoje (23/09). Posso gerar?"}
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_2", "name": "codespar_charge", "input": {"action": "create", "order": "pedido-2003", "amount_minor": 2400, "total_minor": 2400}}]}
+{"kind": "assistant_step", "reply": "O Pix venceu sem pagamento, então o pedido #2003 continua em aberto. Se quiser, gero um novo para o mesmo pedido."}

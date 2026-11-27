@@ -125,9 +125,10 @@ describe("treeDigest", () => {
 });
 
 describe("contract fixtures (playground-executavel/fixtures)", () => {
-  it("the catalog fixture is a valid catalog of the six kits", () => {
+  it("the catalog fixture is a valid catalog of the seven kits, with its recipes (v1.8)", () => {
     const catalog = HostedCatalogSchema.parse(json("catalog.json"));
-    expect(catalog.kits.map((k: HostedKitDescriptor) => k.id)).toEqual(["bills-agent", "checkout-agent", "collections-agent", "hello-agent", "supplier-payments-agent", "topup-agent"]);
+    expect(catalog.kits.map((k: HostedKitDescriptor) => k.id)).toEqual(["bills-agent", "checkout-agent", "collections-agent", "hello-agent", "pix-payment-agent", "supplier-payments-agent", "topup-agent"]);
+    expect(catalog.recipes?.length).toBeGreaterThan(0);
     for (const k of catalog.kits) expect(HostedKitDescriptorSchema.safeParse(k).success).toBe(true);
     // topup is not a CodeSpar payment and never claims a CodeSpar receipt.
     const topup = catalog.kits.find((k) => k.outcomeKinds.includes("pull"))!;
