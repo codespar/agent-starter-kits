@@ -249,6 +249,7 @@ export class CollectChargeRail implements PaymentRail {
     }
     const page = await this.page(link.id);
     if (page.kind === "view") return outcomeOfPage(page.view);
+    if (page.kind === "gone") return { status: "failed", code: "charge_cancelled", message: `link ${link.id} was withdrawn before anybody paid it` };
     // Published, and its read did not answer: the link exists and may be paid. Never "not issued".
     return { status: "uncertain", code: page.failure.code, message: `link ${link.id} was published and its read answered ${page.failure.code}: ${page.failure.message}` };
   }
