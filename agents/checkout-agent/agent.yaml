@@ -23,7 +23,7 @@ channels: [terminal, whatsapp]   # WhatsApp through the adapter the collections-
 locale: pt-BR             # pt-BR | en: the lines the code prints (approval, labels, templates); `--locale` overrides per run. The model replies in the language the person types either way
 maturity:
   storefront-cart: sandbox
-  bolepix-receivables: blocked    # ent#1816: the sandbox does not issue a payable bolepix today; the stub rail and the scenarios run the sale
+  bolepix-receivables: sandbox    # --rail api: a Collect link through public routes, paid by the CodeSpar Test payer at the provider's sandbox (D1, 27/11). POST /v1/charges (ent#1816) is not used
   nfse-invoice: sandbox           # NFS-e through codespar_invoice (nfe.io), after `settled`, by code; the stub issuer runs in CI. NF-e (product) waits for an A1 + IE
   receipt-verification: blocked   # the API seals no record for a paid charge: no chain, no signature to verify
 scenarios: ./scenarios/

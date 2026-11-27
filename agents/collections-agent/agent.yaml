@@ -22,7 +22,7 @@ events: [commerce.charge.created, commerce.charge.paid, commerce.charge.expired,
 channels: [terminal, whatsapp]   # the second channel is the one this agent is FOR; `npm run check` confirms channels/whatsapp/ ships a conversation
 locale: pt-BR             # pt-BR | en: the lines the code prints (approval, labels, templates); `--locale` overrides per run. The model replies in the language the person types either way
 maturity:
-  bolepix-receivables: blocked    # ent#1816: the sandbox does not issue a payable bolepix today; the stub rail and the scenarios run the cycle
+  bolepix-receivables: sandbox    # --rail api: a Collect link through public routes, paid by the CodeSpar Test payer at the provider's sandbox (D1, 27/11). POST /v1/charges (ent#1816) is not used
   receipt-verification: blocked   # Ed25519 landed, but the API still seals no record for a paid charge: no chain, no signature to verify
 scenarios: ./scenarios/
 evals: ./evals/

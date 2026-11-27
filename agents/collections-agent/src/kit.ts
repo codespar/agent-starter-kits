@@ -12,12 +12,12 @@
 import { relative } from "node:path";
 import qrcode from "qrcode-terminal";
 import {
-  CodeSparChargeRail,
+  CollectChargeRail,
   StubChargeRail,
   createCodeSparClient,
   assertTestKey,
   loadMandate,
-  payIfPayable,
+  payCollectLinkAsTestPayer,
   formatBRL,
   formatDay,
   CORE_STRINGS,
@@ -33,9 +33,9 @@ import { STRINGS } from "./strings.js";
 const kit: AgentKit = {
   settlement: "await-payer",
   scenarioRail: "requested",
-  // bolepix-receivables is lifted ONLY for the codespar-test executor, which goes through the platform's charge port (a
-  // receive proposal the platform issues as a Collect charge at the provider's sandbox). The kit's standalone `--rail api`
-  // (`POST /v1/charges`) stays blocked in agent.yaml while ent#1816 is open (CONTRATO v1.6).
+  // On codespar-test the charge is the platform's receive proposal (its charge port), a Collect link the platform issues at the
+  // provider's sandbox (CONTRATO v1.6). The kit's standalone `--rail api` charges through the same public Collect routes
+  // (CollectChargeRail, decision D1 of 27/11), so bolepix-receivables is `sandbox` in agent.yaml for both.
   hosted: { platformServes: ["bolepix-receivables"] },
 
   labels: {
@@ -69,17 +69,18 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
       assertTestKey(ctx.env["CODESPAR_API_KEY"]);
       const client = createCodeSparClient({ apiKey: ctx.env["CODESPAR_API_KEY"], baseUrl: ctx.env["CODESPAR_API_URL"], projectId: ctx.env["CODESPAR_PROJECT_ID"] });
       return {
-        rail: new CodeSparChargeRail(client),
+        rail: new CollectChargeRail(client, { receiver: ctx.env["CODESPAR_COLLECT_RECEIVER"]?.trim() || undefined, ...(ctx.now ? { clock: ctx.now } : {}) }),
         mandate,
         api: client,
         pollIntervalMs: 3000,
         payer: {
           kind: "api" as const,
-          async pay(chargeId: string) {
-            const result = await payIfPayable(client, chargeId);
-            if (!result.ok) return { ok: false as const, detail: "refused" in result ? `${result.refused.code}: ${result.refused.message}` : `${result.failure.code}: ${result.failure.message}` };
-            const s = result.state;
-            return { ok: true as const, detail: `sandbox payer: ${s.charge_id} ${s.status} (${s.payment}, ${s.paid_minor} of ${s.quoted_minor}), simulated=${s.simulated}, settled_against=${s.settled_against}, money_moved=${s.money_moved}${s.idempotent_replay ? ", replay" : ""}` };
+          // The platform's Test payer (POST /v1/collect/attempts/{id}/test-pay), once per charge: a real Pix at the provider's sandbox.
+          async pay(linkId: string) {
+            const result = await payCollectLinkAsTestPayer(client, linkId);
+            if (!result.ok) return { ok: false as const, detail: `${result.code}: ${result.message}` };
+            const p = result.payment;
+            return { ok: true as const, detail: `Test payer: attempt ${p.attempt_id}, charge ${p.charge_id}, ${p.amount_minor} BRL minor: ${p.status} at the provider's sandbox${p.end_to_end_id ? ` (${p.end_to_end_id})` : ""}; the charge is paid once Collect records the payment` };
           },
           behave() {
             /* the API's payer is a route, not a fixture; a scenario that needs "expires" declares rails: [stub] */
@@ -179,6 +180,10 @@ whatsapp: --backend simulator|cloud-api  default simulator, which is the local e
     if (instrument.boleto_bank_line) {
       tell(text.boletoLine);
       tell(instrument.boleto_bank_line);
+    }
+    if (instrument.payment_url) {
+      tell(text.paymentPage);
+      tell(instrument.payment_url);
     }
     tell("");
   },

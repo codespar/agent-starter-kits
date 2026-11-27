@@ -227,6 +227,11 @@ export interface ChargeInstrument {
    */
   consent_url?: string | null;
   /**
+   * The page a person opens to pay a Collect link (`/c/<link id>`, the `url` of the link's read): the Pix with due date is
+   * issued there when the payer gives the fields the charger did not prefill. Absent on a rail that issues no link.
+   */
+  payment_url?: string | null;
+  /**
    * Which of a pull's consent pages `consent_url` is, when a rail hands the
    * payer more than one in one attempt: `enroll` registers a passkey at the
    * bank, `sign` approves this one payment with it (Pix with a passkey). It picks

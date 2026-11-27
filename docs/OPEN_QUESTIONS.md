@@ -1568,3 +1568,27 @@ After approval and settlement the same presentation answers 200 with the origina
 Three limits of that rule, left in place. While a hold of the same request is recorded, ANY refusal of the repeat is reported to the model as `in_progress`, naming the held execution: a window cap the hold itself fills, and equally a mandate revoked or paused after the hold. The refusal's own reason stays on the refused execution's row; the reply does not carry it. The rule reads the kit's local state only: another state directory or another machine does not see the hold and dispatches a fresh attempt, which is kits#113's case. And `expires_at` is recorded but nothing local acts on it: an expired approval is learned from the provider's 409, at the next `resume` or `reconcile`.
 
 Not done here: the hosted channel (`packages/agent-runtime/src/hosted/`) has no case for `execution.awaiting_approval`, so a hold emits no `outcome.pending` there, and a run left `executing` by one is reported `awaiting_payer` like any other open run. Its contract enum is unchanged.
+
+## 69. The charging kits' `--rail api` charges through Collect's public routes, not `POST /v1/charges` (2026-11-27)
+
+Decision D1 of 27/11/2026 (Fabiano, through the Playground dev-tool lane): the standalone `--rail api` of `collections-agent` and `checkout-agent` makes the calls the Playground's own charge path makes (enterprise `playground/kits/charge-proposals.ts`), through routes of the public OpenAPI document, with the developer's `csk_test_` key. `packages/agent-core/src/api/collect-rail.ts` is the rail; `CodeSparChargeRail` (`POST /v1/charges`) stays in the core and is no longer what a kit uses.
+
+| Step | Route | Scope |
+|---|---|---|
+| The charge (a link, one charge, one valid payment), the debtor's name prefilled | `POST /v1/collect/links` with `reference: kit:<attempt id>`, `reference_version: "1"` | `collect:write` |
+| In front of payers | `POST /v1/collect/links/{linkId}/publish` | `collect:write` |
+| Status until paid, the Pix copia-e-cola, the payment and its Collect receipt (`clr_`) | `GET /v1/collect/{linkId}` (the payer page's read, no credential needed) | none |
+| The link of an attempt whose create answer was lost | `GET /v1/collect/links?reference=kit:<attempt id>` | `collect:read` |
+| The Test payer, as the payer page: the attempt with the payer fields the link did not prefill | `POST /v1/collect/{linkId}/attempts` (`page_session` = `kitpay_<link id>`) | none |
+| The Test payer pays it (a real Pix at the provider's sandbox, one per charge, Test projects only) | `POST /v1/collect/attempts/{attemptId}/test-pay` | `collect:write` |
+| The receipt, and that the link credited once (`kind: paid` exactly once) | `GET /v1/collect/links/{linkId}/payments` | `collect:read` |
+
+So `bolepix-receivables` is `sandbox` in both manifests: every step of the api rail is a public route. ent#1816 (`POST /v1/charges` not payable in the sandbox) no longer blocks the kits, because the kits no longer call that route.
+
+What differs from the Playground's path, and stays open:
+
+- **The due date.** The public create takes `due_in_days` (1 to 60), not a date; the Playground's link carries `due_on` (ent#2338), which the public schema does not accept. A charge approved as due today is issued due in one day. To reverse: when `CollectVersionInputSchema` takes `due_on`, send the approved date.
+- **The SDK types.** `@codespar/sdk@0.16.16` types the create from before D-B and D-C: `consumer_id` required, no `reference`, and the list's query without `reference`. The rail writes the body against the route (`routes/collect.ts`, `CollectLinkCreateSchema`) and hands it to the typed call as the SDK's type; the page read is an open record in the SDK and is read field by field (`readPageView`). The SDK pin bump (0.16.32 types both) is its own PR.
+- **The receiver.** Without `CODESPAR_COLLECT_RECEIVER`, the create names no `consumer_id` and Collect chooses (the project's default receiver, else its only account of its own; in a Test project, the account the platform opened for it). The Playground names the mandate's consumer when that consumer holds the project's account. The example mandate's `merchant_demo_loja` is not a consumer of anybody's project, so it is not sent.
+- **The receipt's signature.** A Collect receipt is signed with Ed25519 over `codespar-collect-receipt:v1:<receipt_id>:<digest>`, against the same published key set. `npm run verify` checks the payment receipt's signing string, not this one, so the rail keeps the Collect receipt in `raw` and leaves `receipt_sig_ed25519` null; `receipt-verification` stays `blocked`.
+- **Not proven against the API yet.** The unit tests run the rail against a local HTTP server that answers the routes' documented shapes. The Test payer route answered 502 `test_pay_decode_failed` twice in the QA round of 26/11 (enterprise slice ent-B); the end-to-end run with a real `csk_test_` key is the acceptance case "paridade" for Vendas and Cobrança.
