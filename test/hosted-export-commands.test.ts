@@ -12,6 +12,7 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createHostedRun, discoverAgentDirs } from "@codespar/agent-runtime";
+import { exportCommands } from "../packages/agent-runtime/src/hosted/export-commands.js";
 import { hostedKit, ports } from "../packages/agent-runtime/test/hosted-ports.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -47,4 +48,53 @@ describe("the exported commands install outside this repository", () => {
       expect(code.commands.join("\n")).not.toMatch(/agents\/[a-z-]+#|cd [a-z-]+-agent\b/);
     });
   }
+});
+
+describe("the exported commands say and prepare what the Playground run used", () => {
+  const bills = () => hostedKit(join(ROOT, "agents/bills-agent"), ROOT);
+
+  it("integrated Test with a model: the CodeSpar API rail, the model and its id, the example's first message, each key named and none written", async () => {
+    const { descriptor } = await bills();
+    const lines = exportCommands(descriptor, { modelMode: "model", executor: "codespar-test", approvalMode: "mandate", locale: "pt-BR", exampleId: "conta-teste" }, { model: "claude-opus-4-7" });
+    const all = lines.join("\n");
+    expect(lines).toContain("cp -n agents/bills-agent/.env.example agents/bills-agent/.env");
+    expect(all).toMatch(/^echo '.*agents\/bills-agent\/\.env.*CODESPAR_API_KEY.*csk_test_.*console da CodeSpar.*ANTHROPIC_API_KEY/m);
+    expect(all).toContain("echo 'Modelo do Playground: claude-opus-4-7.'");
+    expect(all).toContain("consentimento para o mandato de teste");
+    const first = descriptor.examples.find((e) => e.id === "conta-teste")!.turns[0].input;
+    expect(all).toContain(`a primeira mensagem foi ${JSON.stringify(first)}`);
+    expect(lines[lines.length - 1]).toBe("ANTHROPIC_MODEL=claude-opus-4-7 npm start --workspace=agents/bills-agent -- --rail api --provider anthropic --mode mandate --locale pt-BR");
+    // No key, no flag that confirms a payment, no comment line a zsh would run as a command.
+    expect(all).not.toMatch(/csk_test_[A-Za-z0-9]{12,}|sk-ant-|--approve|--yes|--simulate-payer/);
+    expect(lines.some((l) => l.startsWith("#"))).toBe(false);
+  });
+
+  it("a replay on the simulator says it runs on the stub rail and the recorded conversation, and asks for no key", async () => {
+    const { descriptor } = await bills();
+    const lines = exportCommands(descriptor, { modelMode: "replay", executor: "simulator", approvalMode: "human", locale: "en", exampleId: "happy-path" });
+    expect(lines.join("\n")).not.toMatch(/\.env|API_KEY/);
+    expect(lines).toContain("echo 'No key: example happy-path runs on the simulated rail (stub) and repeats the recorded conversation (replay). Nothing reaches CodeSpar.'");
+    expect(lines[lines.length - 1]).toBe("npm start --workspace=agents/bills-agent -- --scenario happy-path --mode human --locale en");
+  });
+
+  it("a model id that is not one is left out of the shell line", async () => {
+    const { descriptor } = await bills();
+    const lines = exportCommands(descriptor, { modelMode: "model", executor: "simulator", approvalMode: "human", locale: "en", exampleId: null }, { model: "x; rm -rf ~" });
+    expect(lines.join("\n")).not.toContain("rm -rf");
+    expect(lines[lines.length - 1]).toBe("npm start --workspace=agents/bills-agent -- --provider anthropic --mode human --locale en");
+  });
+
+  it("a line with an apostrophe stays one shell word", async () => {
+    const { descriptor } = await bills();
+    const lines = exportCommands(descriptor, { modelMode: "model", executor: "simulator", approvalMode: "human", locale: "en", exampleId: null }, { model: "claude-opus-4-7" });
+    expect(lines).toContain("echo 'The Playground'\\''s model: claude-opus-4-7.'");
+  });
+
+  it("the host's model reaches the export through the model port", async () => {
+    const kit = await bills();
+    const model = { mode: "model" as const, runtime: { name: "host", step: async () => ({ text: "ok" }) }, model: "claude-opus-4-7" };
+    const run = await createHostedRun(kit, ports({ model }), { commandId: "c", modelMode: "model", executor: "simulator", options: { exampleId: "happy-path" } });
+    const { code } = await run.export();
+    expect(code.commands[code.commands.length - 1]).toMatch(/^ANTHROPIC_MODEL=claude-opus-4-7 npm start --workspace=agents\/bills-agent -- --provider anthropic /);
+  });
 });

@@ -51,6 +51,24 @@ npm run verify -- agents/bills-agent/runs/<run-id>/receipts/rcpt_....json --from
 
 Prefer a fresh directory over a clone? `npx -y @codespar/cli@0.18.1 init my-agent --template bills-agent` (or `collections-agent`) scaffolds the same agent.
 
+### A Playground run on your machine
+
+The CodeSpar Playground's **Código** tab hands you the commands for the run you made there. They copy this repository at the commit the run used (not the kit's folder alone: a kit depends on `packages/agent-core` and `packages/agent-runtime`, which are workspace packages and are not on npm), install at the root and start the kit by its workspace:
+
+```sh
+npx degit codespar/agent-starter-kits#<commit> agent-starter-kits
+cd agent-starter-kits && npm install
+npm start --workspace=agents/<kit> -- --mode <human|mandate> --locale <pt-BR|en>
+```
+
+The start command carries what the run used:
+
+- **Integrated Test** (`codespar-test`): `--rail api`. Put a test key (`csk_test_`) in `agents/<kit>/.env`; you create it in the CodeSpar console, under API keys, in test mode. The commands never contain a key. Without it, the start stops and names `CODESPAR_API_KEY` and the file.
+- **Configured model**: `--provider anthropic`, and `ANTHROPIC_MODEL=<model>` when the Playground says which model it ran. Put your `ANTHROPIC_API_KEY` in the same `.env`. Without it, the start stops and names the variable. The commands also echo the example's first message, which is what the Playground sent first.
+- **Replay** (no model): `--scenario <example>`. It runs on the local stub rail and repeats the recorded conversation; it says so when it starts, and nothing reaches CodeSpar.
+
+A start with no `--rail` and no CodeSpar key says `[stub] no CODESPAR_API_KEY` before it runs: on the stub rail nothing reaches CodeSpar. It is the same kit on your machine, not the Playground's run: the integrated Test's proposals and its mandate are the platform's, and your local run signs its own test mandate on the first start.
+
 ## How it works
 
 **The model proposes, the code executes.** Model output can only create an execution in `drafted`. Mandate status, payee allowlist, caps, `escalate_above` and the hash of the approved item list are checked in plain code in [`@codespar/agent-core`](packages/agent-core), and only that code moves an execution to `executing`. The adversarial suite plays a model that obeys every attack (prompt injection, payee swap, split payments to dodge a cap) and still passes, because the core refuses.
