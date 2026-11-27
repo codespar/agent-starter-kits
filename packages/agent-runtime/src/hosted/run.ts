@@ -55,7 +55,7 @@ import type { PlatformReads } from "./reads.js";
 import { assembleSetup, loadAgentFiles, type Setup } from "../setup.js";
 import { decideByGesture, followUp, handleExecution, type BatchGestureRecord } from "../terminal.js";
 import { RUN_ID } from "./contract.js";
-import { exportCommands } from "./export-commands.js";
+import { chargesThroughPlatform, exportCommands } from "./export-commands.js";
 import type {
   ActorView,
   ApprovalBinding,
@@ -118,7 +118,7 @@ export type RailPort = { executor: "simulator" } | { executor: "codespar-test"; 
  * is not a receive proposal.
  */
 export function chargesOf(descriptor: HostedKitDescriptor): boolean {
-  return descriptor.executors.some((e) => e.id === "codespar-test" && e.requires.includes("platform.charges"));
+  return chargesThroughPlatform(descriptor);
 }
 
 /**

@@ -98,3 +98,46 @@ describe("the exported commands say and prepare what the Playground run used", (
     expect(code.commands[code.commands.length - 1]).toMatch(/^ANTHROPIC_MODEL=claude-opus-4-7 npm start --workspace=agents\/bills-agent -- --provider anthropic /);
   });
 });
+
+describe("a charge on the integrated Test: the export says what reproduces outside and never pretends parity (CONTRATO v1.6)", () => {
+  for (const [name, exampleId] of [["checkout-agent", "aula-experimental"], ["collections-agent", "acordo-1150"]] as const) {
+    it(`${name} with a model: the stub rail and no CodeSpar key, the platform path named as the Playground's own, never --rail api`, async () => {
+      const { descriptor } = await hostedKit(join(ROOT, `agents/${name}`), ROOT);
+      // The kit's codespar-test executor charges through the platform: it requires platform.charges, unblocked.
+      const executor = descriptor.executors.find((e) => e.id === "codespar-test")!;
+      expect(executor.requires).toContain("platform.charges");
+      expect(executor.blockedBy).toEqual([]);
+      // ... while the kit's own API rail stays blocked.
+      expect(descriptor.capabilityMaturity["bolepix-receivables"]).toBe("blocked");
+
+      const lines = exportCommands(descriptor, { modelMode: "model", executor: "codespar-test", approvalMode: "human", locale: "pt-BR", exampleId }, { model: "claude-opus-4-7" });
+      const all = lines.join("\n");
+      expect(all).toContain("pelo Collect no sandbox do provedor e paga pelo pagador de teste da CodeSpar");
+      expect(all).toContain("rotas internas do Playground, não uma rota pública, e não se reproduz fora do dashboard");
+      expect(all).toContain("Aqui o kit roda no trilho simulado (stub), sem chave da CodeSpar");
+      expect(all).toContain("O trilho api do kit (POST /v1/charges) segue bloqueado");
+      expect(all).not.toMatch(/CODESPAR_API_KEY|--rail api|consentimento para o mandato/);
+      expect(all).toMatch(/ANTHROPIC_API_KEY/);
+      expect(lines[lines.length - 1]).toBe(`ANTHROPIC_MODEL=claude-opus-4-7 npm start --workspace=agents/${name} -- --rail stub --provider anthropic --mode human --locale pt-BR`);
+      expect(lines.some((l) => l.startsWith("#"))).toBe(false);
+    });
+
+    it(`${name} replayed on the integrated Test: no key at all, the recorded conversation on the stub rail, the same honesty in English`, async () => {
+      const { descriptor } = await hostedKit(join(ROOT, `agents/${name}`), ROOT);
+      const lines = exportCommands(descriptor, { modelMode: "replay", executor: "codespar-test", approvalMode: "mandate", locale: "en", exampleId });
+      const all = lines.join("\n");
+      expect(all).not.toMatch(/\.env|API_KEY|--rail api/);
+      expect(all).toContain("issued by Collect at the provider's sandbox and paid by the CodeSpar Test payer");
+      expect(all).toContain("The kit's api rail (POST /v1/charges) stays blocked");
+      expect(lines).toContain(`echo 'No key: example ${exampleId} runs on the simulated rail (stub) and repeats the recorded conversation (replay). Nothing reaches CodeSpar.'`);
+      expect(lines[lines.length - 1]).toBe(`npm start --workspace=agents/${name} -- --scenario ${exampleId} --rail stub --mode mandate --locale en`);
+    });
+  }
+
+  it("a payment kit on the integrated Test keeps the CodeSpar API rail and says nothing about charges", async () => {
+    const { descriptor } = await hostedKit(join(ROOT, "agents/bills-agent"), ROOT);
+    const all = exportCommands(descriptor, { modelMode: "model", executor: "codespar-test", approvalMode: "human", locale: "pt-BR", exampleId: null }).join("\n");
+    expect(all).toContain("--rail api");
+    expect(all).not.toMatch(/trilho simulado|POST \/v1\/charges/);
+  });
+});

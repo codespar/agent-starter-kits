@@ -44,7 +44,7 @@ presentation:
     examples:
       acordo-1150:
         title: "Acordo à vista, hoje"
-        description: "O devedor do acordo 1150 paga à vista com desconto; a cobrança vence hoje e é paga."
+        description: "Devedor: Bruno Alves. Acordo 1150 (pedido #1150, taxa de entrega em aberto), R$ 30,00. À vista com 10% de desconto: uma cobrança de R$ 27,00, com vencimento hoje, é gerada para ele pagar."
       beneficiary-not-allowed:
         title: "Devedor sem acordo em aberto"
         description: "Uma cobrança para quem não está na carteira não é emitida."
@@ -75,7 +75,7 @@ presentation:
     examples:
       acordo-1150:
         title: "Paid in full, today"
-        description: "The payer of agreement 1150 pays in full with a discount; the charge is due today and is paid."
+        description: "Debtor: Bruno Alves. Agreement 1150 (order #1150, an unpaid delivery fee), R$ 30.00. Paid in full with a 10% discount: one R$ 27.00 charge, due today, is issued for him to pay."
       beneficiary-not-allowed:
         title: "Payer without an open agreement"
         description: "A charge to someone not in the book is not issued."
