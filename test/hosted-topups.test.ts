@@ -77,6 +77,11 @@ describe("topup-agent on codespar-test: the platform's own top-up", () => {
     const making = valid(await run.resume({ commandId: "r1" }));
     expect(making.executions[0]!.state).toBe("executing");
     expect(making.executions[0]!.evidence[0]).toMatchObject({ kind: "rail_record", detail: "top-up made by the person; the bank has not finished it" });
+    // D4: the person already made it; the page that would start another pull of the same top-up is no longer offered.
+    const finishing = making.pending.find((x) => x.kind === "payer");
+    if (!finishing || finishing.kind !== "payer") throw new Error(`expected the person's top-up, got ${JSON.stringify(making.pending)}`);
+    expect(finishing.instrument).toMatchObject({ status: "in_progress", consentUrl: null });
+    expect(making.run.status).toBe("awaiting_payer");
 
     topups.person(payer.chargeId, "completed", { recordId: "swp_fake_1", endToEndId: "E2E-FAKE-1" });
     const done = valid(await run.resume({ commandId: "r2" }));

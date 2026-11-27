@@ -61,9 +61,14 @@ export const TOP_UP_RAIL_CODES = {
   top_up_unresolved: "top_up_unresolved",
 } as const;
 
-/** The instrument of an offer: no Pix, no boleto; the page where the person opens and confirms the top-up. */
+/**
+ * The instrument of an offer: no Pix, no boleto; the page where the person opens and confirms the top-up, ONLY while
+ * nothing was made yet. Once the person made it (`in_progress`, the bank finishing), the page would start another pull
+ * of the same top-up (D4): the instrument carries no page then, whatever the host answered.
+ */
 function offered(read: TopUpRead) {
-  return { payable: false, pix_copy_paste: null, boleto_bank_line: null, boleto_bar_code: null, due_date: null, status: read.state, consent_url: read.topUpUrl };
+  const page = read.state === "awaiting_person" ? read.topUpUrl : null;
+  return { payable: false, pix_copy_paste: null, boleto_bank_line: null, boleto_bar_code: null, due_date: null, status: read.state, consent_url: page };
 }
 
 export class PlatformTopUpRail implements PaymentRail {
