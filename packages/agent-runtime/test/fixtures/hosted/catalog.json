@@ -415,7 +415,7 @@
       ],
       "capabilityMaturity": {
         "storefront-cart": "sandbox",
-        "bolepix-receivables": "blocked",
+        "bolepix-receivables": "sandbox",
         "nfse-invoice": "sandbox",
         "receipt-verification": "blocked"
       },
@@ -977,7 +977,7 @@
         "receipt-verification"
       ],
       "capabilityMaturity": {
-        "bolepix-receivables": "blocked",
+        "bolepix-receivables": "sandbox",
         "receipt-verification": "blocked"
       },
       "supportedModelModes": [

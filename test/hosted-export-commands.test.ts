@@ -99,43 +99,57 @@ describe("the exported commands say and prepare what the Playground run used", (
   });
 });
 
-describe("a charge on the integrated Test: the export says what reproduces outside and never pretends parity (CONTRATO v1.6)", () => {
+describe("a charge on the integrated Test: the export reproduces it through Collect's public routes (CONTRATO v1.6, D1 of 27/11)", () => {
   for (const [name, exampleId] of [["checkout-agent", "aula-experimental"], ["collections-agent", "acordo-1150"]] as const) {
-    it(`${name} with a model: the stub rail and no CodeSpar key, the platform path named as the Playground's own, never --rail api`, async () => {
+    it(`${name} with a model: --rail api with the Test payer, the test key and what it needs named and never written, the routes listed`, async () => {
       const { descriptor } = await hostedKit(join(ROOT, `agents/${name}`), ROOT);
       // The kit's codespar-test executor charges through the platform: it requires platform.charges, unblocked.
       const executor = descriptor.executors.find((e) => e.id === "codespar-test")!;
       expect(executor.requires).toContain("platform.charges");
       expect(executor.blockedBy).toEqual([]);
-      // ... while the kit's own API rail stays blocked.
-      expect(descriptor.capabilityMaturity["bolepix-receivables"]).toBe("blocked");
+      // ... and the kit's own API rail is no longer blocked: every step of it is a public Collect route.
+      expect(descriptor.capabilityMaturity["bolepix-receivables"]).toBe("sandbox");
 
       const lines = exportCommands(descriptor, { modelMode: "model", executor: "codespar-test", approvalMode: "human", locale: "pt-BR", exampleId }, { model: "claude-opus-4-7" });
       const all = lines.join("\n");
-      expect(all).toContain("pelo Collect no sandbox do provedor e paga pelo pagador de teste da CodeSpar");
-      expect(all).toContain("rotas internas do Playground, não uma rota pública, e não se reproduz fora do dashboard");
+      expect(lines).toContain(`cp -n agents/${name}/.env.example agents/${name}/.env`);
+      expect(all).toMatch(/^echo '.*CODESPAR_API_KEY.*csk_test_.*ANTHROPIC_API_KEY/m);
+      expect(all).toContain("emitida como link do Collect no sandbox do provedor e paga pelo pagador de teste da CodeSpar");
+      expect(all).toContain("rotas públicas do Collect");
+      for (const route of ["POST /v1/collect/links", "POST /v1/collect/links/{linkId}/publish", "GET /v1/collect/{linkId}", "GET /v1/collect/links/{linkId}/payments", "POST /v1/collect/{linkId}/attempts", "POST /v1/collect/attempts/{attemptId}/test-pay"]) expect(all).toContain(route);
+      expect(all).toContain("collect:read e collect:write");
+      expect(all).toContain("Uma chave live é recusada antes de qualquer chamada");
+      expect(all).toContain("CODESPAR_COLLECT_RECEIVER");
       // The path is described, not this run: an export taken before the charge was sent (or after a refusal) claims nothing.
       expect(all).not.toMatch(/rodou|enviou|foi paga/);
-      expect(all).toContain("Aqui o kit roda no trilho simulado (stub), sem chave da CodeSpar");
-      expect(all).toContain("O trilho api do kit (POST /v1/charges) segue bloqueado");
-      expect(all).not.toMatch(/CODESPAR_API_KEY|--rail api|consentimento para o mandato/);
-      expect(all).toMatch(/ANTHROPIC_API_KEY/);
-      expect(lines[lines.length - 1]).toBe(`ANTHROPIC_MODEL=claude-opus-4-7 npm start --workspace=agents/${name} -- --rail stub --provider anthropic --mode human --locale pt-BR`);
+      // No internal route, no blocked charge route, no consent step (a charging kit's policy is its own example file).
+      expect(all).not.toMatch(/rotas internas|POST \/v1\/charges|trilho simulado|consentimento para o mandato/);
+      // No key, no flag that approves anything, no comment line a zsh would run as a command.
+      expect(all).not.toMatch(/csk_test_[A-Za-z0-9]{12,}|sk-ant-|--approve|--yes/);
       expect(lines.some((l) => l.startsWith("#"))).toBe(false);
+      expect(lines[lines.length - 1]).toBe(`ANTHROPIC_MODEL=claude-opus-4-7 npm start --workspace=agents/${name} -- --rail api --simulate-payer --wait 300 --provider anthropic --mode human --locale pt-BR`);
     });
 
-    it(`${name} replayed on the integrated Test: no key at all, the recorded conversation on the stub rail, the same honesty in English`, async () => {
+    it(`${name} with a model, in English: the same routes, the apostrophes kept inside one shell word`, async () => {
+      const { descriptor } = await hostedKit(join(ROOT, `agents/${name}`), ROOT);
+      const lines = exportCommands(descriptor, { modelMode: "model", executor: "codespar-test", approvalMode: "mandate", locale: "en", exampleId });
+      const all = lines.join("\n");
+      expect(all).toContain("through Collect");
+      expect(all).toContain("POST /v1/collect/attempts/{attemptId}/test-pay");
+      expect(all).toContain("collect:read and collect:write");
+      expect(all).not.toMatch(/\bran\b|\bsent on\b|was paid|internal routes/);
+      expect(lines[lines.length - 1]).toBe(`npm start --workspace=agents/${name} -- --rail api --simulate-payer --wait 300 --provider anthropic --mode mandate --locale en`);
+    });
+
+    it(`${name} replayed on the integrated Test: the recording on the stub rail, no CodeSpar key, and how to reach Collect said`, async () => {
       const { descriptor } = await hostedKit(join(ROOT, `agents/${name}`), ROOT);
       const lines = exportCommands(descriptor, { modelMode: "replay", executor: "codespar-test", approvalMode: "mandate", locale: "en", exampleId });
       const all = lines.join("\n");
-      expect(all).not.toMatch(/\.env|API_KEY|--rail api/);
-      // An apostrophe is escaped inside the single-quoted echo, so these phrases are the ones that carry none.
-      expect(all).toContain("issued by Collect at the provider");
-      expect(all).toContain("paid by the CodeSpar Test payer");
-      expect(all).toContain("internal routes, not a public route, and does not reproduce outside the dashboard");
-      expect(all).toContain("api rail (POST /v1/charges) stays blocked");
-      expect(all).not.toMatch(/\bran\b|\bsent on\b|was paid/);
-      expect(lines).toContain(`echo 'No key: example ${exampleId} runs on the simulated rail (stub) and repeats the recorded conversation (replay). Nothing reaches CodeSpar.'`);
+      // A recording's due dates are the recording's: on the API rail (the wall clock) the recorded charge would be refused.
+      expect(all).not.toMatch(/\.env|API_KEY/);
+      expect(all).toContain(`No key: example ${exampleId} repeats the recorded conversation (replay) on the simulated rail (stub), with the recording`);
+      expect(all).toContain("run it with a model: --rail api --simulate-payer --provider anthropic");
+      expect(all).toContain("issued as a Collect link at the provider");
       expect(lines[lines.length - 1]).toBe(`npm start --workspace=agents/${name} -- --scenario ${exampleId} --rail stub --mode mandate --locale en`);
     });
   }
@@ -144,6 +158,6 @@ describe("a charge on the integrated Test: the export says what reproduces outsi
     const { descriptor } = await hostedKit(join(ROOT, "agents/bills-agent"), ROOT);
     const all = exportCommands(descriptor, { modelMode: "model", executor: "codespar-test", approvalMode: "human", locale: "pt-BR", exampleId: null }).join("\n");
     expect(all).toContain("--rail api");
-    expect(all).not.toMatch(/trilho simulado|POST \/v1\/charges/);
+    expect(all).not.toMatch(/trilho simulado|POST \/v1\/charges|\/v1\/collect|--simulate-payer/);
   });
 });

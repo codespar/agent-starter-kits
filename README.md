@@ -64,6 +64,7 @@ npm start --workspace=agents/<kit> -- --mode <human|mandate> --locale <pt-BR|en>
 The start command carries what the run used:
 
 - **Integrated Test** (`codespar-test`): `--rail api`. Put a test key (`csk_test_`) in `agents/<kit>/.env`; you create it in the CodeSpar console, under API keys, in test mode. The commands never contain a key. Without it, the start stops and names `CODESPAR_API_KEY` and the file.
+- **A charge on the integrated Test** (`checkout-agent`, `collections-agent`): `--rail api` makes the Playground's calls through Collect's public routes (a link and its publish, the payer page's read until paid, the Collect receipt `clr_`), and `--simulate-payer` lets the CodeSpar Test payer pay it once at the provider's sandbox. The key needs `collect:read` and `collect:write`, in a test project with Collect on. `docs/OPEN_QUESTIONS.md` §69 lists the routes.
 - **Configured model**: `--provider anthropic`, and `ANTHROPIC_MODEL=<model>` when the Playground says which model it ran. Put your `ANTHROPIC_API_KEY` in the same `.env`. Without it, the start stops and names the variable. The commands also echo the example's first message, which is what the Playground sent first.
 - **Replay** (no model): `--scenario <example>`. It runs on the local stub rail and repeats the recorded conversation; it says so when it starts, and nothing reaches CodeSpar.
 

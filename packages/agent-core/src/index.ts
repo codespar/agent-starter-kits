@@ -35,5 +35,6 @@ export * from "./api/rail.js";
 export * from "./api/mandate-status.js";
 export * from "./api/charge-rail.js";
 export * from "./api/sandbox-payer.js";
+export * from "./api/collect-rail.js";
 export * from "./providers/types.js";
 export * from "./providers/replay.js";
