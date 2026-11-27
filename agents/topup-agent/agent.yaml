@@ -47,6 +47,9 @@ presentation:
       happy-path:
         title: "Recarga de R$ 1,00"
         description: "Você pede R$ 1,00, autoriza no banco e o valor entra na conta."
+        inputs:
+          - { label: "Valor", value: "R$ 1,00" }
+          - { label: "Conta", value: "a sua própria conta, pelo seu banco" }
       mandate-revoked:
         title: "Mandato revogado"
         description: "Depois de uma recarga, o mandato é revogado e as próximas são recusadas."
@@ -72,6 +75,9 @@ presentation:
       happy-path:
         title: "Top up R$ 1.00"
         description: "You ask for R$ 1.00, authorize it at the bank and the money lands."
+        inputs:
+          - { label: "Amount", value: "R$ 1.00" }
+          - { label: "Account", value: "your own account, from your own bank" }
       mandate-revoked:
         title: "Mandate revoked"
         description: "After one top-up the mandate is revoked and the next ones are refused."

@@ -45,6 +45,10 @@ presentation:
       acordo-1150:
         title: "Acordo à vista, hoje"
         description: "Devedor: Bruno Alves. Acordo 1150 (pedido #1150, taxa de entrega em aberto), R$ 30,00. À vista com 10% de desconto: uma cobrança de R$ 27,00, com vencimento hoje, é gerada para ele pagar."
+        inputs:
+          - { label: "Devedor", value: "Bruno Alves" }
+          - { label: "Acordo", value: "acordo-1150: R$ 30,00, à vista com 10% de desconto" }
+          - { label: "Valor", value: "R$ 27,00, vencendo hoje" }
       beneficiary-not-allowed:
         title: "Devedor sem acordo em aberto"
         description: "Uma cobrança para quem não está na carteira não é emitida."
@@ -76,6 +80,10 @@ presentation:
       acordo-1150:
         title: "Paid in full, today"
         description: "Debtor: Bruno Alves. Agreement 1150 (order #1150, an unpaid delivery fee), R$ 30.00. Paid in full with a 10% discount: one R$ 27.00 charge, due today, is issued for him to pay."
+        inputs:
+          - { label: "Debtor", value: "Bruno Alves" }
+          - { label: "Agreement", value: "acordo-1150: R$ 30.00, in full with a 10% discount" }
+          - { label: "Amount", value: "R$ 27.00, due today" }
       beneficiary-not-allowed:
         title: "Payer without an open agreement"
         description: "A charge to someone not in the book is not issued."

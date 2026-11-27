@@ -71,6 +71,10 @@ presentation:
       aula-experimental:
         title: "Aula experimental"
         description: "Cliente: Beatriz. Item: aula experimental de violão (30 min), R$ 25,00 pelo catálogo da loja. O pedido é confirmado e uma cobrança de R$ 25,00, com vencimento hoje, é gerada para ela pagar."
+        inputs:
+          - { label: "Cliente", value: "Beatriz" }
+          - { label: "Item", value: "aula experimental de violão (30 min)" }
+          - { label: "Valor", value: "R$ 25,00" }
       item-unavailable:
         title: "Item fora de venda"
         description: "Um item que não está à venda é recusado e o agente sugere uma alternativa."
@@ -120,6 +124,10 @@ presentation:
       aula-experimental:
         title: "Trial lesson"
         description: "Customer: Beatriz. Item: a 30-minute guitar trial lesson, R$ 25.00 from the store's catalog. The order is confirmed and one R$ 25.00 charge, due today, is issued for her to pay."
+        inputs:
+          - { label: "Customer", value: "Beatriz" }
+          - { label: "Item", value: "guitar trial lesson (30 min)" }
+          - { label: "Amount", value: "R$ 25.00" }
       item-unavailable:
         title: "Item not for sale"
         description: "An item that is not for sale is refused and the agent suggests an alternative."

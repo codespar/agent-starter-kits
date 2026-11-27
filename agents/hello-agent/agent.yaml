@@ -35,6 +35,8 @@ presentation:
       conta-plataforma:
         title: "Sua conta de Test"
         description: "No Test integrado, lê o saldo do seu projeto de Test na CodeSpar, só leitura e sem mandato de gasto. No simulador não há conta para ler, e o agente diz isso."
+        inputs:
+          - { label: "Pergunta", value: "qual é o saldo da minha conta de teste?" }
       happy-path:
         title: "O que vence este mês"
         description: "Você pergunta o que vence em outubro e recebe a lista."
@@ -48,6 +50,8 @@ presentation:
       conta-plataforma:
         title: "Your Test account"
         description: "In the integrated Test it reads your Test project's balance at CodeSpar, read-only and with no spending mandate. In the simulator there is no account to read, and the agent says so."
+        inputs:
+          - { label: "Question", value: "what is my test account's balance?" }
       happy-path:
         title: "What is due this month"
         description: "You ask what is due in October and get the list."

@@ -42,6 +42,9 @@ presentation:
       lote-teste:
         title: "Lote de teste"
         description: "No Test integrado, paga R$ 10,00 a cada recebedor de teste da plataforma; cada linha vira uma proposta que você paga. No simulador esse lote não existe e nada é proposto."
+        inputs:
+          - { label: "Lote", value: "teste: um recebedor de teste da plataforma por linha" }
+          - { label: "Valor por linha", value: "R$ 10,00" }
       beneficiary-not-allowed:
         title: "Fornecedor fora do mandato"
         description: "Um fornecedor que o mandato não nomeia não é pago."
@@ -70,6 +73,9 @@ presentation:
       lote-teste:
         title: "Test batch"
         description: "In the integrated Test it pays R$ 10.00 to each of the platform's test receivers; each line becomes a proposal you pay. In the simulator that batch does not exist and nothing is proposed."
+        inputs:
+          - { label: "Batch", value: "test: one platform test receiver per line" }
+          - { label: "Amount per line", value: "R$ 10.00" }
       beneficiary-not-allowed:
         title: "Supplier outside the mandate"
         description: "A supplier the mandate does not name is not paid."
