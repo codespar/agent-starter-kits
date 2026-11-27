@@ -293,5 +293,8 @@ describe("hosted, on the simulator, from each kit's own example", () => {
     const fixture = JSON.parse(readFileSync(join(FIXTURES, "catalog.json"), "utf8")) as typeof derived;
     const strip = (c: typeof derived) => c.kits.map(({ source: _source, inputSchema: { $schema: _a, ...input }, turnSchema: { $schema: _b, ...turn }, ...rest }) => ({ ...rest, inputSchema: input, turnSchema: turn }));
     expect(strip(derived)).toEqual(strip(fixture));
+    // v1.8: the recipes too, entry for entry, so a cookbooks.yaml change that the fixture does not follow fails here.
+    expect(derived.recipes).toBeDefined();
+    expect(fixture.recipes).toEqual(derived.recipes);
   });
 });
