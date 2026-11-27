@@ -65,7 +65,18 @@ Read from `agent.yaml`, field `maturity`:
 
 What the agent applies on its own, before the mandate (`guardrails.json`): the escalation thresholds (R$ 1.500,00 per payout, first payout to each payee, 22:00–07:00), a 24-hour velocity window per payee against fractioning, and "the core's total wins" when the model states another.
 
-Not in this kit: WhatsApp, `embedded-consent` (see above), scheduling a batch for a future date, and any notion of a payroll calendar — the payables file is a fixture, not an ERP.
+Not in this kit: WhatsApp, `embedded-consent` (see above), scheduling a batch for a future date, and any notion of a payroll calendar — the payables file is a fixture, not an ERP. The boundary an HR/ERP integration is designed against is the next section.
+
+## Where the payroll comes from: HR/ERP integration
+
+The kit does not calculate payroll, and an integration does not change that. Gross salary, deductions, charges and the net per employee are computed by the HR/payroll system or the accountant, who also owns the tax and labor obligations, the declarations and the guias; paying the salaries settles none of them. What this agent is the right layer for is the financial execution of a payroll that is already calculated:
+
+1. The HR/ERP system closes the payroll and hands over the list of employees and net amounts. In the kit today that list is the `payables.ts` fixture; a connector that reads it from the ERP is integration work, not something this repository ships.
+2. Finance reviews and approves the list, the same gesture the terminal already asks for, and every approved line mints its own artifact.
+3. The agent executes the batch as one execution per line, inside the mandate and the guardrails.
+4. Each line's outcome and receipt go back to the system of origin for reconciliation. A failed line is fixed there and re-run on its own, and re-running a batch pays nobody twice, which is what makes a reprocessed payroll safe.
+
+That boundary is the requirement an integration is designed against: calculation and obligations stay in the system of origin; approval, execution, per-line status and proof come back from here.
 
 ## Commands
 
