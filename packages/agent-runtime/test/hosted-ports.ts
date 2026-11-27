@@ -10,6 +10,7 @@ import { describeKit } from "../src/hosted/catalog.js";
 import type { HostedEvent } from "../src/hosted/contract.js";
 import { FencedError, type ChargeProposalRail, type ChargeView, type ProposalRail, type ProposalState } from "../src/hosted/proposals.js";
 import type { PlatformReads } from "../src/hosted/reads.js";
+import type { TopUpRail, TopUpRead, TopUpState } from "../src/hosted/topups.js";
 import type { ApprovalPort, HostedActor, HostedKit, HostedPorts, IdentityPort, ModelPort, RailPort, RunImage, StatePort } from "../src/hosted/run.js";
 
 export const ACTOR: HostedActor = { userId: "user_fixture_owner", orgId: "org_fixture", projectId: "prj_fixture", environment: "test" };
@@ -166,6 +167,49 @@ export class FakeCharges implements ChargeProposalRail {
   /** The person declined it on its card. */
   decline(proposalId: string): void {
     Object.assign(this.states.get(proposalId)!, { state: "denied" });
+  }
+}
+
+/**
+ * The platform's top-up as the host would offer it (v1.8), IN MEMORY: a simulation for this suite, never a bank. One offer
+ * per attempt, by id; the person's pull and the bank's answer happen only when a test says so (`person`). The page is the
+ * dashboard's top-up page, as `codespar_wallet` action `top_up` answers it.
+ */
+export class FakeTopUps implements TopUpRail {
+  readonly submitted: Array<Parameters<TopUpRail["submit"]>[0]> = [];
+  readonly reads: string[] = [];
+  /** Set: the next offer's answer is lost (the host threw), as a timeout would lose it. */
+  loseNextSubmit = false;
+  /** Set to a code: the platform refuses to offer the top-up (a Live project, say); nothing is started. */
+  refuseWith: string | null = null;
+  private readonly offers = new Map<string, TopUpRead>();
+  async submit(request: Parameters<TopUpRail["submit"]>[0]) {
+    const topUpId = `ktu_${request.attemptId}`;
+    if (!this.offers.has(topUpId)) {
+      this.submitted.push(structuredClone(request));
+      this.offers.set(
+        topUpId,
+        this.refuseWith
+          ? { state: "refused", recordId: null, endToEndId: null, code: this.refuseWith, detail: "the platform refused to offer it; nothing was started", topUpUrl: null }
+          : { state: "awaiting_person", recordId: null, endToEndId: null, code: null, detail: null, topUpUrl: `/dashboard/projects/prj_fixture/shop?top_up=1&amount_minor=${request.amountMinor}` },
+      );
+    }
+    if (this.loseNextSubmit) {
+      this.loseNextSubmit = false;
+      throw new Error("the host's answer to the offer was lost");
+    }
+    return { topUpId, ...structuredClone(this.offers.get(topUpId)!) };
+  }
+  async read(topUpId: string) {
+    this.reads.push(topUpId);
+    const found = this.offers.get(topUpId);
+    if (!found) throw new Error(`no top-up ${topUpId}`);
+    return structuredClone(found);
+  }
+  /** What the person and their bank did with the offer, as the platform's record of the pull shows it. */
+  person(topUpId: string, state: TopUpState, record: Partial<Pick<TopUpRead, "recordId" | "endToEndId" | "code" | "detail">> = {}): void {
+    const found = this.offers.get(topUpId)!;
+    Object.assign(found, { state, recordId: record.recordId ?? `swp_fake_${topUpId}`, endToEndId: record.endToEndId ?? null, code: record.code ?? null, detail: record.detail ?? null });
   }
 }
 

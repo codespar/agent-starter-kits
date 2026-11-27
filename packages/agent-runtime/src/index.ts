@@ -15,6 +15,7 @@ export * from "./hosted/catalog.js";
 export * from "./hosted/run.js";
 export * from "./hosted/proposals.js";
 export * from "./hosted/reads.js";
+export * from "./hosted/topups.js";
 export * from "./hosted/artifact.js";
 export { main } from "./cli.js";
 export { checkStrings } from "./commands/check.js";

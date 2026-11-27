@@ -30,7 +30,7 @@ describe("the hosted catalog of this repository", () => {
     ]);
   });
 
-  it("recommends one executable run per kit that can run on the integrated Test with a model: bills, supplier, hello, checkout, collections", async () => {
+  it("recommends one executable run per kit that can run on the integrated Test with a model: bills, supplier, hello, checkout, collections, topup", async () => {
     const runs = [...(await catalog()).values()].flatMap((k) => k.recommendedRuns.map((r) => [k.id, r.example, r.rank]));
     expect(runs).toEqual([
       ["bills-agent", "conta-teste", 1],
@@ -39,6 +39,8 @@ describe("the hosted catalog of this repository", () => {
       ["collections-agent", "acordo-1150", 5],
       ["hello-agent", "conta-plataforma", 3],
       ["supplier-payments-agent", "lote-teste", 2],
+      // The platform's own top-up (CONTRATO v1.8): R$ 1,00, confirmed by the person at their bank.
+      ["topup-agent", "happy-path", 6],
     ]);
   });
 
@@ -46,7 +48,9 @@ describe("the hosted catalog of this repository", () => {
     const kits = await catalog();
     const topup = kits.get("topup-agent")!;
     expect(topup.outcomeKinds).toEqual(["answer", "pull"]);
-    expect(topup.supportedExecutors).toEqual(["simulator"]);
+    // v1.8: on the integrated Test the pull is the platform's own top-up, proved by the platform's record of it.
+    expect(topup.supportedExecutors).toEqual(["simulator", "codespar-test"]);
+    expect(topup.executors.find((e) => e.id === "codespar-test")).toEqual({ id: "codespar-test", evidence: "rail_record", requires: ["platform.test_project", "platform.top_ups"], blockedBy: [] });
     expect(topup.executors.some((e) => e.evidence === "codespar_receipt")).toBe(false);
     expect(kits.get("checkout-agent")!.outcomeKinds).toEqual(["answer", "order", "charge"]);
   });

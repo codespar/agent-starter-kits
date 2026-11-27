@@ -28,6 +28,13 @@ agents_md: ./AGENTS.md
 # What a person reads about this agent where it is offered (the Playground's catalog). pt-BR reviewed by the Playground's
 # product lane on 2026-11-04 (no receipt promised where a run may not produce one); en follows it. `examples` names every pack.
 presentation:
+  # The integrated Test with a model (CONTRATO v1.8): R$ 1,00 through the platform's own top-up, which the person makes on
+  # the dashboard and confirms at their bank (consent or biometrics). Only a person can confirm it.
+  recommendedRuns:
+    - executor: codespar-test
+      modelMode: model
+      example: happy-path
+      rank: 6
   pt-BR:
     title: "Recarga da sua conta"
     summary: "Traz dinheiro de outra conta sua, com a sua autorização no próprio banco."

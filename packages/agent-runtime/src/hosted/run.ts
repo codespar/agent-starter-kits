@@ -52,10 +52,11 @@ import { isAwaitingPayer } from "../poll.js";
 import { loadScenario } from "../scenarios.js";
 import { isFenced, PROPOSAL_FORWARD_CHANNEL, ProposalChargeRail, ProposalPaymentRail, type ChargeProposalRail, type ProposalRail } from "./proposals.js";
 import type { PlatformReads } from "./reads.js";
+import { PlatformTopUpRail, type TopUpRail } from "./topups.js";
 import { assembleSetup, loadAgentFiles, type Setup } from "../setup.js";
 import { decideByGesture, followUp, handleExecution, type BatchGestureRecord } from "../terminal.js";
 import { RUN_ID } from "./contract.js";
-import { chargesThroughPlatform, exportCommands } from "./export-commands.js";
+import { chargesThroughPlatform, exportCommands, topUpsThroughPlatform } from "./export-commands.js";
 import type {
   ActorView,
   ApprovalBinding,
@@ -108,9 +109,14 @@ export interface ApprovalPort {
  * `codespar-test`: each attempt is a platform proposal drafted through `proposals`; a person pays it, the platform dispatches it.
  * A kit that charges (a `charge` tool) drafts receive proposals through `charges` instead (CONTRATO v1.6): a person sends
  * the charge, the platform issues it, the payer pays it. A host without `charges` runs no charging kit on codespar-test.
+ * A kit that tops up the person's own account (its codespar-test executor requires `platform.top_ups`) offers the platform's
+ * top-up through `topups` instead (CONTRATO v1.8): the person makes the pull on the dashboard and confirms it at their bank,
+ * and the platform's record of it is the evidence. A host without `topups` runs no such kit on codespar-test.
  * The kit gets no client and no key. `mandate` is the one the host binds the kit's own policy to; absent, the kit's example.
  */
-export type RailPort = { executor: "simulator" } | { executor: "codespar-test"; proposals: ProposalRail; charges?: ChargeProposalRail; mandate?: Mandate; reads?: PlatformReads };
+export type RailPort =
+  | { executor: "simulator" }
+  | { executor: "codespar-test"; proposals: ProposalRail; charges?: ChargeProposalRail; topups?: TopUpRail; mandate?: Mandate; reads?: PlatformReads };
 
 /**
  * Whether the kit's codespar-test executor charges through the platform's receive proposals (v1.6): it requires
@@ -119,6 +125,11 @@ export type RailPort = { executor: "simulator" } | { executor: "codespar-test"; 
  */
 export function chargesOf(descriptor: HostedKitDescriptor): boolean {
   return chargesThroughPlatform(descriptor);
+}
+
+/** Whether the kit's codespar-test executor tops up through the platform's top-up (v1.8): it requires `platform.top_ups`. */
+export function topUpsOf(descriptor: HostedKitDescriptor): boolean {
+  return topUpsThroughPlatform(descriptor);
 }
 
 /**
@@ -273,6 +284,7 @@ export async function createHostedRun(kit: HostedKit, ports: HostedPorts, comman
   const executor = d.executors.find((e) => e.id === command.executor);
   if (executor && executor.blockedBy.length > 0) throw new HostedRefusal("executor_unsupported", `${d.id} on ${command.executor} is blocked by ${executor.blockedBy.join(", ")}`);
   if (ports.rail.executor === "codespar-test" && chargesOf(d) && !ports.rail.charges) throw new HostedRefusal("executor_unsupported", `${d.id} charges, and the host offers no charge proposals on codespar-test`);
+  if (ports.rail.executor === "codespar-test" && topUpsOf(d) && !ports.rail.topups) throw new HostedRefusal("executor_unsupported", `${d.id} tops up the person's account, and the host offers no platform top-up on codespar-test`);
   // Options are immutable per run: the revision is the hash of everything the run was created with.
   const inputRevision = sha256({ kit: d.id, packageDigest: d.source.packageDigest, modelMode: command.modelMode, executor: command.executor, options: { approvalMode, locale, exampleId } });
   const binding = { modelMode: command.modelMode, executor: command.executor, approvalMode, locale, exampleId, inputRevision };
@@ -375,7 +387,13 @@ export class HostedRun {
       // The kit's policy runs on the host's mandate (or its own example) and the local status gate; the platform runs its own gate on the proposal.
       railKind = "api";
       const mandate = rail.mandate ?? loadMandate(files.manifest.resolvePath(files.manifest.manifest.mandate_schema));
-      if (chargesOf(this.kit.descriptor)) {
+      if (topUpsOf(this.kit.descriptor)) {
+        if (!rail.topups) throw new HostedRefusal("executor_unsupported", `${this.kit.descriptor.id} tops up the person's account, and the host offers no platform top-up on codespar-test`);
+        // The person is the payer, at their own bank, through the platform's card: nothing here can pay for them, so the
+        // run has no payer (`simulate_payer` answers payer_not_simulatable) and the kit's example mandate (its own account,
+        // its two limits) is the policy. The platform runs its own limits and the person's consent on the pull.
+        built = { rail: new PlatformTopUpRail(this.guardedTopUps(rail.topups), store), mandate };
+      } else if (chargesOf(this.kit.descriptor)) {
         if (!rail.charges) throw new HostedRefusal("executor_unsupported", `${this.kit.descriptor.id} charges, and the host offers no charge proposals on codespar-test`);
         const charges = this.guardedCharges(rail.charges);
         // The payer is the platform's Test payer at the provider's sandbox, when the host has one; it pays only on `simulatePayer`.
@@ -823,7 +841,7 @@ export class HostedRun {
       image.language = this.loop.replyLanguage ?? null;
     }
     if (this.replay) image.replayCursor = this.replay.consumed;
-    image.status = statusOf(image, this.setup.store, chargesOf(this.kit.descriptor));
+    image.status = statusOf(image, this.setup.store, chargesOf(this.kit.descriptor), topUpsOf(this.kit.descriptor));
     image.updatedAt = this.now().toISOString();
     let saved: Awaited<ReturnType<StatePort["save"]>>;
     try {
@@ -905,6 +923,23 @@ export class HostedRun {
     };
   }
 
+  /** The host's top-up port, fenced like `guarded`. */
+  private guardedTopUps(topups: TopUpRail): TopUpRail {
+    const guard = async <T>(call: () => Promise<T>): Promise<T> => {
+      if (this.dead) throw this.dead;
+      try {
+        return await call();
+      } catch (err) {
+        if (isFenced(err)) {
+          this.dead = this.fenced(err);
+          throw this.dead;
+        }
+        throw err;
+      }
+    };
+    return { submit: (request) => guard(() => topups.submit(request)), read: (topUpId) => guard(() => topups.read(topUpId)) };
+  }
+
   /** Engine rows since the last projection, as contract events. The engine's log is the source; these are its view. */
   private project(): void {
     const rows = this.setup.store.listEvents({ after_seq: this.image.projected.storeSeq });
@@ -947,7 +982,8 @@ export class HostedRun {
         return;
       case "charge.instrument": {
         const outcome = execution?.outcomes.find((o) => o.attempt_id === payload["attempt_id"]);
-        if (this.image.binding.executor === "codespar-test") {
+        // A platform top-up's offer is not a proposal: the page the person opens travels as the instrument (v1.8).
+        if (this.image.binding.executor === "codespar-test" && !topUpsOf(this.kit.descriptor)) {
           const proposalId = String(payload["charge_id"]);
           this.emit("proposal.updated", "engine", { proposalId, attemptId: String(payload["attempt_id"]), state: String(payload["status"]) as "drafted" }, { ...ref, proposalId, attemptId: String(payload["attempt_id"]) }, row.at);
           // A charge proposal a person sent is a charge out to its payer: what the payer sees travels as for any receivable (v1.6).
@@ -976,7 +1012,13 @@ export class HostedRun {
         this.emit("outcome.pending", "engine", { kind: payload["needs_human"] ? "needs_human" : "uncertain", detail: this.redact(String(payload["detail"] ?? "")) ?? "" }, ref, row.at);
         return;
       case "execution.awaiting_settlement":
-        this.emit("outcome.pending", "engine", { kind: this.image.binding.executor === "codespar-test" ? "awaiting_proposal" : "awaiting_payer", detail: this.redact(String(payload["detail"] ?? "")) ?? "" }, ref, row.at);
+        this.emit(
+          "outcome.pending",
+          "engine",
+          { kind: this.image.binding.executor === "codespar-test" && !topUpsOf(this.kit.descriptor) ? "awaiting_proposal" : "awaiting_payer", detail: this.redact(String(payload["detail"] ?? "")) ?? "" },
+          ref,
+          row.at,
+        );
         return;
       default:
         return;
@@ -1109,7 +1151,14 @@ function evidenceOf(e: Execution, kind: EvidenceKind): EvidenceRef[] {
   if (kind === "none") return [];
   return e.outcomes.map((o) => {
     if (o.status === "settled") {
-      const detail = kind === "simulated" ? "simulator: not a CodeSpar receipt" : kind === "charge_status" ? "the platform reports the charge paid; the id is its receipt, not verified by the kit" : null;
+      const detail =
+        kind === "simulated"
+          ? "simulator: not a CodeSpar receipt"
+          : kind === "charge_status"
+            ? "the platform reports the charge paid; the id is its receipt, not verified by the kit"
+            : kind === "rail_record"
+              ? "the platform's own record of the pull the person made; not a CodeSpar receipt, not verified by the kit"
+              : null;
       return { kind, id: o.receipt_id ?? o.transaction_id ?? o.attempt_id, detail };
     }
     if (o.status === "accepted") {
@@ -1120,7 +1169,11 @@ function evidenceOf(e: Execution, kind: EvidenceKind): EvidenceRef[] {
             ? o.instrument?.status === "executing"
               ? "platform charge sent; the payer has not paid"
               : `platform charge proposal ${o.instrument?.status ?? "drafted"}; not sent, not paid`
-            : "issued; the payer has not paid";
+            : kind === "rail_record"
+              ? o.instrument?.status === "in_progress"
+                ? "top-up made by the person; the bank has not finished it"
+                : "top-up offered; the person has not made it at their bank"
+              : "issued; the payer has not paid";
       return { kind, id: o.transaction_id ?? o.attempt_id, detail };
     }
     return { kind, id: o.attempt_id, detail: o.error ?? o.code ?? "failed" };
@@ -1172,14 +1225,15 @@ function presentationView(batch: BatchPresentation): BatchView {
   };
 }
 
-function statusOf(image: RunImage, store: StateStore, charges: boolean): RunStatus {
+function statusOf(image: RunImage, store: StateStore, charges: boolean, topups = false): RunStatus {
   if (image.stopped) return "stopped";
   if (image.inflight) return "running";
   const open = store.listExecutions({ state: ["awaiting_approval", "executing"] });
   if (open.some((e) => e.state === "awaiting_approval")) return "awaiting_decision";
   if (open.some((e) => e.state === "executing" && !isAwaitingPayer(e))) return "awaiting_reconciliation";
   // A proposal waits for a person to pay it (or, for a charge, to send it): a decision, taken on the platform.
-  if (image.binding.executor === "codespar-test" && open.some((e) => e.state === "executing" && !(charges && chargeSent(e)))) return "awaiting_decision";
+  // A platform top-up offered waits for the person at their bank, like a payer (v1.8): nothing is decided on the platform.
+  if (image.binding.executor === "codespar-test" && !topups && open.some((e) => e.state === "executing" && !(charges && chargeSent(e)))) return "awaiting_decision";
   if (open.some((e) => e.state === "executing")) return "awaiting_payer";
   return "idle";
 }
@@ -1194,11 +1248,12 @@ function chargeSent(e: Execution): boolean {
 export function snapshotOf(image: RunImage, store: StateStore, descriptor: HostedKitDescriptor, payerSimulatable: boolean): RunSnapshot {
   const evidence = descriptor.executors.find((e) => e.id === image.binding.executor)?.evidence ?? "none";
   const charges = chargesOf(descriptor);
+  const topups = topUpsOf(descriptor);
   const mandatePayees = new Set<string>();
   for (const e of store.listExecutions()) for (const i of e.items) mandatePayees.add(i.payee);
   const redact = redactorFor(mandatePayees);
   const executions = store.listExecutions();
-  const status = statusOf(image, store, charges);
+  const status = statusOf(image, store, charges, topups);
   const pending: PendingAction[] = [];
   if (status !== "running" && status !== "stopped") {
     for (const e of executions.filter((x) => x.state === "awaiting_approval" && !x.batch)) {
@@ -1230,7 +1285,7 @@ export function snapshotOf(image: RunImage, store: StateStore, descriptor: Hoste
       for (const o of e.outcomes) {
         if (o.status !== "accepted" || !o.transaction_id || !o.instrument) continue;
         // A sent charge proposal waits for its payer, like any receivable; anything else waits for a person on the platform.
-        if (image.binding.executor === "codespar-test" && !(charges && o.instrument.status === "executing")) {
+        if (image.binding.executor === "codespar-test" && !topups && !(charges && o.instrument.status === "executing")) {
           const state = o.instrument.status;
           pending.push({ kind: "payment_proposal", executionId: e.id, proposalId: o.transaction_id, proposalState: state === "awaiting_approval" || state === "executing" ? state : "drafted" });
           continue;

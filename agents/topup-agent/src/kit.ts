@@ -33,9 +33,12 @@ function mandateFor(base: Mandate, limits: SweepingLimits): Mandate {
 const kit: AgentKit = {
   settlement: "await-payer",
   // A pull from the person's own bank, not a charge a payer settles and not a CodeSpar payment: no CodeSpar receipt exists for it.
-  hosted: { outcomeKinds: ["answer", "pull"] },
+  // On the Playground's integrated Test the pull is the PLATFORM's top-up (`codespar_wallet` action `top_up`, CONTRATO v1.8):
+  // the person makes it on the dashboard and confirms it at their bank; the platform's record of it is the evidence.
+  hosted: { outcomeKinds: ["answer", "pull"], platformTopUps: true },
   scenarioRail: "stub",
-  // No live rail in this kit: the pull runs on the offline simulation, and `--rail api` is refused in buildRail.
+  // No live rail in this kit: the pull runs on the offline simulation, and `--rail api` is refused in buildRail. The hosted
+  // integrated Test does not use buildRail: it is the host's top-up port (hosted/topups.ts).
   apiRailKey: "none",
 
   labels: {
