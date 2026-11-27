@@ -1230,7 +1230,8 @@ function statusOf(image: RunImage, store: StateStore, charges: boolean, topups =
   if (image.inflight) return "running";
   const open = store.listExecutions({ state: ["awaiting_approval", "executing"] });
   if (open.some((e) => e.state === "awaiting_approval")) return "awaiting_decision";
-  if (open.some((e) => e.state === "executing" && !isAwaitingPayer(e))) return "awaiting_reconciliation";
+  // A platform top-up whose record has no definite outcome is reconciled, never shown as waiting for the person (D4).
+  if (open.some((e) => e.state === "executing" && (!isAwaitingPayer(e) || (topups && e.reason !== "awaiting_settlement")))) return "awaiting_reconciliation";
   // A proposal waits for a person to pay it (or, for a charge, to send it): a decision, taken on the platform.
   // A platform top-up offered waits for the person at their bank, like a payer (v1.8): nothing is decided on the platform.
   if (image.binding.executor === "codespar-test" && !topups && open.some((e) => e.state === "executing" && !(charges && chargeSent(e)))) return "awaiting_decision";
@@ -1278,7 +1279,8 @@ export function snapshotOf(image: RunImage, store: StateStore, descriptor: Hoste
       });
     }
     for (const e of executions.filter((x) => x.state === "executing")) {
-      if (!isAwaitingPayer(e)) {
+      // A platform top-up whose record has no definite outcome offers no page to make another one: it is reconciled (D4).
+      if (!isAwaitingPayer(e) || (topups && e.reason !== "awaiting_settlement")) {
         pending.push({ kind: "reconciliation", executionId: e.id, detail: redact(e.detail ?? "") ?? "" });
         continue;
       }

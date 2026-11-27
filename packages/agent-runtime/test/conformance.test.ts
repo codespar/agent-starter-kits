@@ -112,7 +112,10 @@ describe.each(ALL.map((dir) => [dir.split("/").pop()!, dir]))("%s", (_name, dir)
     for (const e of d.executors) for (const capability of e.blockedBy) expect(manifest.maturity[capability] === "blocked" || PLATFORM_GAPS.includes(capability), capability).toBe(true);
     // codespar-test: money on the CodeSpar API, as platform proposals (CONTRATO.md v1.1); a kit on another rail has none.
     // A read-only kit gets it when it reads the Test project through the host (CONTRATO v1.5), and then needs only the project.
-    expect(d.supportedExecutors.includes("codespar-test")).toBe((moves || Boolean(agent.kit.hosted?.readsPlatform)) && agent.kit.apiRailKey !== "none");
+    // A kit that tops up the person's account gets it on the platform's own top-up (v1.8), with no API rail of its own.
+    const topsUp = moves && Boolean(agent.kit.hosted?.platformTopUps);
+    expect(d.supportedExecutors.includes("codespar-test")).toBe(((moves || Boolean(agent.kit.hosted?.readsPlatform)) && agent.kit.apiRailKey !== "none") || topsUp);
+    if (topsUp && agent.kit.apiRailKey === "none") expect(d.executors.find((e) => e.id === "codespar-test")).toEqual({ id: "codespar-test", evidence: "rail_record", requires: ["platform.test_project", "platform.top_ups"], blockedBy: [] });
     if (!moves && d.supportedExecutors.includes("codespar-test")) expect(d.executors.find((e) => e.id === "codespar-test")).toEqual({ id: "codespar-test", evidence: "none", requires: ["platform.test_project"], blockedBy: [] });
   });
 });
