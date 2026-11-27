@@ -91,6 +91,20 @@ describe("buildCatalog", () => {
     expect(elsewhere.supportedExecutors).toEqual(["simulator"]);
   });
 
+  it("v1.8: a kit with no API rail that tops up the person's account runs codespar-test on the platform's top-up, proved by its record", async () => {
+    const agent = await loadAgent(TEST_KIT);
+    // Only a kit whose outcome is a pull: a payment kit declaring it is refused, never given an executor it cannot prove.
+    expect(() => describeKit({ ...agent, kit: { ...agent.kit, apiRailKey: "none", hosted: { platformTopUps: true } } }, { root: ROOT, commit: COMMIT, shared: SHARED })).toThrow(/platformTopUps needs hosted.outcomeKinds with "pull"/);
+    const parsed = HostedKitDescriptorSchema.safeParse({
+      ...describeKit(agent, { root: ROOT, commit: COMMIT, shared: SHARED }),
+      executors: [
+        { id: "simulator", evidence: "simulated", requires: [], blockedBy: [] },
+        { id: "codespar-test", evidence: "codespar_receipt", requires: ["platform.test_project", "platform.top_ups"], blockedBy: [] },
+      ],
+    });
+    expect(parsed.success).toBe(false);
+  });
+
   it("v1.6: a capability the platform serves on codespar-test does not block it, and one that is not in the manifest is refused", async () => {
     const agent = await loadAgent(TEST_KIT);
     const dir = mkdtempSync(join(ROOT, "packages/agent-runtime/test/fixtures/kits/.served-"));

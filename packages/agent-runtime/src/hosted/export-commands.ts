@@ -37,6 +37,18 @@
  * which part reproduces outside (the conversation, the cart or agreement, the
  * policy and the approval, on a simulated charge and payer) and which part ran
  * only through the platform. It never hands out `--rail api` for it.
+ *
+ * A TOP-UP ON THE INTEGRATED TEST (CONTRATO v1.8, decision D2 of 27/11). On
+ * `codespar-test` a kit whose executor requires `platform.top_ups` offers the
+ * platform's own top-up: the public action `codespar_wallet` `top_up`, the same
+ * one the SDK calls with a `csk_test_` key, which moves no money and answers the
+ * dashboard page where the person makes the top-up and confirms it at their bank
+ * (sweeping consent or biometrics). That confirmation is the person's own act at
+ * their bank and no command reproduces it. The kit has no API rail of its own
+ * for a pull (`apiRailKey: "none"`), so the export starts it on the simulator
+ * (`--rail stub`, no CodeSpar key) and says, in the present tense and never
+ * about this run's outcome, which part is the kit's (the conversation, the two
+ * limits, the approval) and which part is the platform's and the person's.
  */
 import type { ExecutorId, HostedKitDescriptor, ModelMode } from "./contract.js";
 
@@ -66,6 +78,11 @@ export function chargesThroughPlatform(d: Pick<HostedKitDescriptor, "executors">
   return d.executors.some((e) => e.id === "codespar-test" && e.requires.includes("platform.charges"));
 }
 
+/** Whether the kit's codespar-test executor tops up through the platform's top-up (v1.8): it requires `platform.top_ups`. */
+export function topUpsThroughPlatform(d: Pick<HostedKitDescriptor, "executors">): boolean {
+  return d.executors.some((e) => e.id === "codespar-test" && e.requires.includes("platform.top_ups"));
+}
+
 /** A model id is written into a shell line: only the characters model ids have. */
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
 
@@ -82,6 +99,10 @@ const TEXT = {
       "No Playground, a cobrança deste kit roda no Test integrado pela plataforma: é uma proposta de recebimento que uma pessoa envia no cartão da proposta, emitida pelo Collect no sandbox do provedor e paga pelo pagador de teste da CodeSpar. Esse caminho usa rotas internas do Playground, não uma rota pública, e não se reproduz fora do dashboard.",
     chargeLocal:
       "Aqui o kit roda no trilho simulado (stub), sem chave da CodeSpar: a conversa, o pedido ou acordo, a política e a aprovação são os mesmos do kit; a emissão da cobrança e o pagador são simulados e nada chega à CodeSpar. O trilho api do kit (POST /v1/charges) segue bloqueado enquanto o sandbox não emite um bolepix pagável por essa rota.",
+    topUpHosted:
+      "No Playground, a recarga deste kit usa a recarga da própria plataforma: a ação pública codespar_wallet top_up (a mesma que o SDK chama com uma chave de teste csk_test_) não move dinheiro e devolve a página do dashboard onde você faz a recarga e confirma no seu banco, pelo consentimento ou pela biometria. A evidência é o registro da plataforma dessa recarga. A confirmação é sua, no seu banco, e nenhum comando a reproduz.",
+    topUpLocal:
+      "Aqui o kit roda no simulador (stub), sem chave da CodeSpar: a conversa, os dois limites do mandato e a aprovação são os mesmos do kit; o banco e a sua confirmação são simulados e nada chega à CodeSpar.",
   },
   en: {
     keys: (env: string, names: string[]) => `Fill in ${env}: ${names.join("; ")}. Without them, the last command stops and says which one is missing.`,
@@ -95,6 +116,10 @@ const TEXT = {
       "In the Playground, this kit's charge runs on the integrated Test through the platform: a receive proposal a person sends on the proposal card, issued by Collect at the provider's sandbox and paid by the CodeSpar Test payer. That path uses the Playground's internal routes, not a public route, and does not reproduce outside the dashboard.",
     chargeLocal:
       "Here the kit runs on the simulated rail (stub), with no CodeSpar key: the conversation, the order or agreement, the policy and the approval are the kit's own; issuing the charge and the payer are simulated, and nothing reaches CodeSpar. The kit's api rail (POST /v1/charges) stays blocked while the sandbox does not issue a payable bolepix through it.",
+    topUpHosted:
+      "In the Playground, this kit's top-up is the platform's own: the public action codespar_wallet top_up (the same one the SDK calls with a csk_test_ test key) moves no money and answers the dashboard page where you make the top-up and confirm it at your bank, through your consent or your biometrics. The evidence is the platform's record of that top-up. The confirmation is yours, at your bank, and no command reproduces it.",
+    topUpLocal:
+      "Here the kit runs on the simulator (stub), with no CodeSpar key: the conversation, the mandate's two limits and the approval are the kit's own; the bank and your confirmation are simulated, and nothing reaches CodeSpar.",
   },
 } as const;
 
@@ -112,7 +137,9 @@ export function exportCommands(d: Descriptor, b: ExportBinding, extras: ExportEx
   const env = `${kitDir}/.env`;
   // A charge on the integrated Test ran through the platform's own path: outside, the kit runs on its stub rail (see above).
   const platformCharge = b.executor === "codespar-test" && chargesThroughPlatform(d);
-  const integrated = b.executor === "codespar-test" && !platformCharge;
+  // A top-up on the integrated Test was the platform's own top-up and the person's confirmation: outside, the simulator (see above).
+  const platformTopUp = b.executor === "codespar-test" && topUpsThroughPlatform(d);
+  const integrated = b.executor === "codespar-test" && !platformCharge && !platformTopUp;
   const withModel = b.modelMode === "model";
   const replayed = b.modelMode === "replay" && b.exampleId !== null;
   const model = withModel && extras.model && MODEL_ID.test(extras.model) ? extras.model : undefined;
@@ -129,11 +156,12 @@ export function exportCommands(d: Descriptor, b: ExportBinding, extras: ExportEx
   if (integrated && d.needsMandate) lines.push(say(text.consent));
   if (withModel && example) lines.push(say(text.firstTurn(example.id, example.turns[0].input)));
   if (platformCharge) lines.push(say(text.chargeHosted), say(text.chargeLocal));
+  if (platformTopUp) lines.push(say(text.topUpHosted), say(text.topUpLocal));
   if (replayed && !integrated) lines.push(say(text.replay(b.exampleId!)));
 
   const flags = [
     ...(replayed ? ["--scenario", b.exampleId!] : []),
-    ...(integrated ? ["--rail", "api"] : platformCharge ? ["--rail", "stub"] : []),
+    ...(integrated ? ["--rail", "api"] : platformCharge || platformTopUp ? ["--rail", "stub"] : []),
     ...(withModel ? ["--provider", "anthropic"] : []),
     "--mode",
     b.approvalMode,

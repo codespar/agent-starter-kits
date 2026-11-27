@@ -67,6 +67,18 @@ function memoryCharges() {
   };
 }
 
+// The platform's top-up (CONTRATO v1.8), in memory: a simulation of the host's port, never a bank. The offer waits for the
+// person; "person" marks the pull the platform would record once the person confirmed it at their bank.
+function memoryTopUps() {
+  const states = new Map();
+  return {
+    states,
+    async submit(request) { const id = "ktu_" + request.attemptId; if (!states.has(id)) states.set(id, { state: "awaiting_person", recordId: null, endToEndId: null, code: null, detail: null, topUpUrl: "/dashboard/projects/prj_smoke/shop?top_up=1&amount_minor=" + request.amountMinor }); return { topUpId: id, ...states.get(id) }; },
+    async read(id) { return { ...states.get(id) }; },
+    person(id) { Object.assign(states.get(id), { state: "completed", recordId: "swp_smoke_" + id.slice(-12), endToEndId: "E2ESMOKE" }); },
+  };
+}
+
 const catalog = loadHostedCatalog();
 let failures = 0;
 for (const descriptor of catalog.kits) {
@@ -110,7 +122,9 @@ for (const descriptor of catalog.kits) {
   };
   const charges = memoryCharges();
   const charging = executor.requires.includes("platform.charges");
-  const ports = { identity: { actor: async () => actor }, state, approval: { signer, authorize: async () => ({ ok: true }) }, rail: { executor: "codespar-test", proposals, charges, reads }, model: { mode: "replay" }, clock: () => new Date("2026-09-23T14:00:00-03:00") };
+  const topups = memoryTopUps();
+  const toppingUp = executor.requires.includes("platform.top_ups");
+  const ports = { identity: { actor: async () => actor }, state, approval: { signer, authorize: async () => ({ ok: true }) }, rail: { executor: "codespar-test", proposals, charges, reads, topups }, model: { mode: "replay" }, clock: () => new Date("2026-09-23T14:00:00-03:00") };
   try {
     const kit = await openHostedKit(catalog, descriptor.id, descriptor.source.packageDigest);
     if (!descriptor.needsMandate) {
@@ -129,6 +143,16 @@ for (const descriptor of catalog.kits) {
     const run = await createHostedRun(kit, ports, { commandId: "create", modelMode: "replay", executor: "codespar-test", options: { exampleId: example.id } });
     for (let n = 0; n < example.turns.length; n += 1) await run.turn({ commandId: "turn-" + n, exampleTurn: n });
     let snapshot = await run.snapshot();
+    if (toppingUp) {
+      // The person makes the platform's top-up and confirms it at their bank; nothing here can, so the payer is not simulatable.
+      const offers = snapshot.pending.filter((p) => p.kind === "payer" && !p.simulatable);
+      if (offers.length === 0 || proposals.states.size > 0 || charges.states.size > 0) throw new Error("no platform top-up offered, or a proposal drafted: " + JSON.stringify(snapshot.pending));
+      for (const p of offers) topups.person(p.chargeId);
+      snapshot = await run.resume({ commandId: "resume-topup" });
+      if (snapshot.executions.some((e) => e.state !== "settled" || e.evidence.some((x) => x.kind !== "rail_record"))) throw new Error("not settled on the platform's record: " + JSON.stringify(snapshot.executions.map((e) => [e.state, e.evidence])));
+      console.log("ok   " + descriptor.id + " [codespar-test] " + offers.length + " platform top-up(s) offered, confirmed by the in-memory stand-in of the person at their bank (SIMULATION), " + snapshot.executions.length + " settled on rail_record");
+      continue;
+    }
     const waiting = snapshot.pending.filter((p) => p.kind === "payment_proposal");
     if (waiting.length === 0) throw new Error("no proposal drafted: " + JSON.stringify(snapshot.pending));
     if (charging) {

@@ -72,6 +72,26 @@ The run's proof bundle has the same masking as every other agent's ([`docs/OPEN_
 | `npm run poll -- --channel whatsapp --conversation recarga` | Back to a conversation whose pull completed after the run stopped looking. |
 | `npm run inspect <run-id>` | The run's bundle as a timeline. |
 
+## In the Playground's integrated Test
+
+On the CodeSpar Playground with the integrated Test (`codespar-test`), the
+pull is the platform's own top-up, not this kit's simulation
+(`packages/agent-runtime/src/hosted/topups.ts`, CONTRATO v1.8):
+
+- the attempt is an offer of the public `codespar_wallet` action `top_up`,
+  the same action the SDK calls with a `csk_test_` key. It moves no money: it
+  answers the dashboard page where the person makes the top-up;
+- the person confirms it at their own bank (the sweeping consent, or a Pix
+  with their biometrics). No agent and no command can do that for them;
+- the evidence is the platform's own record of that pull (`rail_record`),
+  not a CodeSpar receipt;
+- a record whose outcome is unknown stays open, and no other top-up is
+  offered while it holds.
+
+The exported commands of such a run start this kit on the simulator
+(`--rail stub`) and say so: the conversation, the two limits and the approval
+are the kit's own; the bank and the confirmation are simulated.
+
 ## Going to production
 
 Not in this kit. A pull to a real bank goes through the CodeSpar API, and

@@ -123,6 +123,12 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
       .map(([capability]) => capability)
       .sort();
     executors.push({ id: "codespar-test" satisfies ExecutorId, evidence, requires, blockedBy });
+  } else if (moves && agent.kit.hosted?.platformTopUps) {
+    // v1.8: a top-up of the person's own account runs on the PLATFORM's top-up (`codespar_wallet` action `top_up`): the
+    // person makes the pull on the dashboard and confirms it at their bank; the kit has no API rail of its own for it
+    // (`apiRailKey: "none"`). No spending mandate (the money is the person's, into their own account) and no proposal.
+    if (!outcomesDeclared(agent).includes("pull")) throw new Error(`${m.name}: hosted.platformTopUps needs hosted.outcomeKinds with "pull"`);
+    executors.push({ id: "codespar-test" satisfies ExecutorId, evidence: "rail_record", requires: ["platform.test_project", "platform.top_ups"], blockedBy: [] });
   } else if (!moves && agent.kit.hosted?.readsPlatform && agent.kit.apiRailKey !== "none") {
     // A read-only kit that reads the Test project through the host: the project is all it needs. No mandate, nothing to prove.
     executors.push({ id: "codespar-test", evidence: "none", requires: ["platform.test_project"], blockedBy: [] });
@@ -176,6 +182,10 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
   };
   checkDeclaredOutcomes(descriptor, effects);
   return HostedKitDescriptorSchema.parse(descriptor);
+}
+
+function outcomesDeclared(agent: Agent): readonly OutcomeKind[] {
+  return agent.kit.hosted?.outcomeKinds ?? [];
 }
 
 /** What a kit may declare beyond its tool effects: `order` rides a charge, `pull` replaces it. Nothing may claim money a tool cannot move. */

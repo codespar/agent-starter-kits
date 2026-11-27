@@ -24,8 +24,12 @@ export const OutcomeKindSchema = z.enum(["answer", "payment", "charge", "order",
  * record; `rail_record` is a rail that is not CodeSpar's.
  */
 export const EvidenceKindSchema = z.enum(["none", "simulated", "codespar_receipt", "charge_status", "rail_record"]);
-/** The closed list of platform prerequisites a descriptor may name; the host maps each one to readiness. */
-export const PlatformPrerequisiteSchema = z.enum(["platform.test_project", "platform.consumer_mandate", "platform.payouts", "platform.charges"]);
+/**
+ * The closed list of platform prerequisites a descriptor may name; the host maps each one to readiness. A host that does
+ * not know one fails it closed. `platform.top_ups` (v1.8): the platform's own top-up of the person's account
+ * (`codespar_wallet` action `top_up`) is offered on this deployment.
+ */
+export const PlatformPrerequisiteSchema = z.enum(["platform.test_project", "platform.consumer_mandate", "platform.payouts", "platform.charges", "platform.top_ups"]);
 /**
  * What the platform does not offer yet and an executor would need: listed in `blockedBy`, never worked around. Empty since
  * v1.6: `platform.charge_proposals` closed when the platform drafted receive proposals for a kit's charges.
@@ -140,6 +144,10 @@ export const HostedKitDescriptorSchema = z
       if (!moves && e.evidence !== "none") issue("a read-only kit has no evidence to show", ["executors", i, "evidence"]);
       if (e.id === "simulator" && (e.requires.length > 0 || (e.evidence !== "simulated" && e.evidence !== "none"))) issue("the simulator needs nothing from the platform and proves nothing but simulation", ["executors", i]);
       if (e.id === "codespar-test" && !e.requires.includes("platform.test_project")) issue("codespar-test runs in a Test project", ["executors", i, "requires"]);
+      // v1.8: a top-up on the platform is proved by the platform's own record of the pull, never by a CodeSpar receipt.
+      if (e.requires.includes("platform.top_ups") && (e.id !== "codespar-test" || e.evidence !== "rail_record" || !d.outcomeKinds.includes("pull"))) {
+        issue("platform.top_ups is a codespar-test executor of a kit with a pull outcome, proved by rail_record", ["executors", i]);
+      }
       for (const cap of e.blockedBy) if (d.capabilityMaturity[cap] !== "blocked" && !PLATFORM_GAPS.includes(cap)) issue(`blockedBy names ${cap}, which is neither blocked in the manifest nor a known platform gap`, ["executors", i, "blockedBy"]);
     }
   });

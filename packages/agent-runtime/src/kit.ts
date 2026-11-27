@@ -282,6 +282,10 @@ export interface AgentKit {
    * their `blocked` in `agent.yaml` speaks for the standalone rail and does not block that executor (CONTRATO v1.6).
    * `readsPlatform`: a read-only kit whose tools read the Test project through the host (`PlatformReads`); it gets a
    * `codespar-test` executor that needs the Test project and nothing else (no spending mandate).
+   * `platformTopUps`: a kit that tops up the person's own account (a `pull` outcome) gets a `codespar-test` executor on the
+   * PLATFORM's top-up (`codespar_wallet` action `top_up`, CONTRATO v1.8): it requires the Test project and
+   * `platform.top_ups`, binds no spending mandate, and its evidence is the platform's own record of the pull the person
+   * made (`rail_record`). The kit's own `apiRailKey` stays what it is: this is the host's port, not the kit's API rail.
    */
-  hosted?: { outcomeKinds?: readonly OutcomeKind[]; readsPlatform?: boolean; platformServes?: readonly string[] };
+  hosted?: { outcomeKinds?: readonly OutcomeKind[]; readsPlatform?: boolean; platformServes?: readonly string[]; platformTopUps?: boolean };
 }
