@@ -1,5 +1,5 @@
 /**
- * The six kits of this repository through the hosted channel, each from its
+ * The seven kits of this repository through the hosted channel, each from its
  * own recorded example on the simulator: read-only, money out, a batch with
  * a refused line, receivables that wait for their payer, and a pull that is
  * not a CodeSpar payment. Nothing here names a kit to the channel; the kit
@@ -243,8 +243,42 @@ describe("hosted, on the simulator, from each kit's own example", () => {
     expect(exported.code.commands.join("\n")).not.toMatch(/--rail api|CODESPAR_API_KEY/);
   });
 
+  it("pix-payment-agent on codespar-test: the order's Pix is a platform receive proposal for exactly its total, sent by a person and paid by the Test payer", async () => {
+    // FakeCharges is an in-memory SIMULATION of the host's port; the provider sandbox is the host's, exercised in the API's suite.
+    const charges = new FakeCharges();
+    const proposals = new FakeProposals();
+    const state = new MemoryState();
+    const kit = await kitOf("pix-payment-agent");
+    expect(kit.descriptor.recommendedRuns).toEqual([{ executor: "codespar-test", modelMode: "model", example: "happy-path", rank: 7 }]);
+    const run = await createHostedRun(kit, ports({ state, rail: { executor: "codespar-test", proposals, charges } }), { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "happy-path" } });
+    const drafted = await replayAll(run, 2);
+    expect(drafted.pending.map((x) => x.kind)).toEqual(["payment_proposal"]);
+    expect(proposals.submitted).toHaveLength(0);
+    expect(charges.submitted).toHaveLength(1);
+    expect(charges.submitted[0]).toMatchObject({ debtor: "Lívia Castro", amountMinor: 1800, currency: "BRL", dueDate: "2026-09-23" });
+    expect(JSON.stringify(charges.submitted)).not.toContain("28461593782");
+    const proposal = drafted.pending[0]!;
+    if (proposal.kind !== "payment_proposal") throw new Error("expected the charge proposal");
+    charges.send(proposal.proposalId);
+    const sent = valid(await run.resume({ commandId: "r1" }));
+    const payer = sent.pending.find((x) => x.kind === "payer");
+    if (!payer || payer.kind !== "payer") throw new Error(`expected the payer, got ${JSON.stringify(sent.pending)}`);
+    expect(payer.instrument).toMatchObject({ payable: true, pixCopyPaste: "00020101fake-copy-paste" });
+    const paid = valid(await run.simulatePayer({ commandId: "pay", executionId: payer.executionId, behaviour: "pays" }));
+    expect(paid.executions.map((e) => e.state)).toEqual(["settled"]);
+    expect(charges.payments).toEqual([proposal.proposalId]);
+  });
+
+  it("pix-payment-agent on the simulator: a message cannot change the price, and nothing is issued", async () => {
+    const state = new MemoryState();
+    const run = await createHostedRun(await kitOf("pix-payment-agent"), ports({ state }), { commandId: "c", modelMode: "replay", executor: "simulator", options: { exampleId: "prompt-injection" } });
+    const s = await replayAll(run, 1);
+    expect(s.executions.map((e) => [e.state, e.reason])).toEqual([["denied", "outside_envelope"]]);
+    expect(events(state, run).some((e) => e.type === "dispatch.attempted")).toBe(false);
+  });
+
   it("a charging kit on a host without the charge port has no codespar-test run: it is refused, never paid out as a payment proposal", async () => {
-    for (const name of ["collections-agent", "checkout-agent"]) {
+    for (const name of ["collections-agent", "checkout-agent", "pix-payment-agent"]) {
       const refused = await createHostedRun(await kitOf(name), ports({ rail: { executor: "codespar-test", proposals: new FakeProposals() } }), { commandId: "c", modelMode: "replay", executor: "codespar-test", options: { exampleId: "happy-path" } }).then(
         () => undefined,
         (e: unknown) => e,
@@ -259,5 +293,8 @@ describe("hosted, on the simulator, from each kit's own example", () => {
     const fixture = JSON.parse(readFileSync(join(FIXTURES, "catalog.json"), "utf8")) as typeof derived;
     const strip = (c: typeof derived) => c.kits.map(({ source: _source, inputSchema: { $schema: _a, ...input }, turnSchema: { $schema: _b, ...turn }, ...rest }) => ({ ...rest, inputSchema: input, turnSchema: turn }));
     expect(strip(derived)).toEqual(strip(fixture));
+    // v1.8: the recipes too, entry for entry, so a cookbooks.yaml change that the fixture does not follow fails here.
+    expect(derived.recipes).toBeDefined();
+    expect(fixture.recipes).toEqual(derived.recipes);
   });
 });

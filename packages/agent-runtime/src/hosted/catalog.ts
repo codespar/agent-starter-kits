@@ -23,6 +23,7 @@ import {
   type OutcomeKind,
   type PlatformPrerequisite,
 } from "./contract.js";
+import { COOKBOOKS_FILE, buildRecipes, loadCookbooks, type CookbooksFile } from "./cookbooks.js";
 
 export const REPOSITORY = "codespar/agent-starter-kits" as const;
 export const TURN_MAX_LENGTH = 4000;
@@ -64,6 +65,12 @@ export interface CatalogSource {
   shared: readonly string[];
   /** The digest of a kit as it ships, when that is not the source tree: the artifact builder hashes the laid-out package. */
   digestOf?: ((id: string) => string) | undefined;
+  /**
+   * `cookbooks.yaml` (v1.8), already read. Absent, `buildCatalog` reads it from `root` when the file is there. `null`, or
+   * no file at all (a scaffold of one agent carries none), builds a catalog without `recipes`. The artifact build and
+   * `scripts/hosted-catalog.mjs` always pass the repository's file, so a release never lacks it.
+   */
+  cookbooks?: CookbooksFile | null | undefined;
 }
 
 function toolList(tools: ToolsFile): HostedKitDescriptor["tools"] {
@@ -91,7 +98,7 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
       approvalModes: scenario.modes,
       turns: scenario.turns.map((t) => ({ input: t.input })) as [{ input: string }, ...Array<{ input: string }>],
       replay: existsSync(resolve(agent.dir, "scenarios", scenario.transcript)),
-      presentation: pt && en ? { "pt-BR": { title: pt.title, description: pt.description }, en: { title: en.title, description: en.description } } : null,
+      presentation: pt && en ? { "pt-BR": exampleWords(pt), en: exampleWords(en) } : null,
     };
   });
   if (words) {
@@ -171,11 +178,17 @@ export function describeKit(agent: Agent, source: CatalogSource): HostedKitDescr
     presentation: words ? { "pt-BR": { title: words["pt-BR"].title, summary: words["pt-BR"].summary }, en: { title: words.en.title, summary: words.en.summary } } : null,
     recommended: words?.recommended ? { example: words.recommended.example, rank: words.recommended.rank ?? 1 } : null,
     recommendedRuns: (words?.recommendedRuns ?? []).map((r) => ({ executor: r.executor, modelMode: r.modelMode, example: r.example, rank: r.rank })),
+    cookbook: words?.cookbook ?? null,
     exampleIds,
     examples,
   };
   checkDeclaredOutcomes(descriptor, effects);
   return HostedKitDescriptorSchema.parse(descriptor);
+}
+
+/** An example's words as the descriptor carries them: `inputs` only when the kit states them (v1.8). */
+function exampleWords(w: { title: string; description: string; inputs?: Array<{ label: string; value: string }> | undefined }): { title: string; description: string; inputs?: Array<{ label: string; value: string }> } {
+  return { title: w.title, description: w.description, ...(w.inputs ? { inputs: w.inputs.map((i) => ({ label: i.label, value: i.value })) } : {}) };
 }
 
 /** What a kit may declare beyond its tool effects: `order` rides a charge, `pull` replaces it. Nothing may claim money a tool cannot move. */
@@ -197,6 +210,16 @@ export function discoverAgentDirs(agentsDir: string): string[] {
 export async function buildCatalog(source: CatalogSource, agentDirs: readonly string[], artifactVersion: string): Promise<HostedCatalog> {
   const kits: HostedKitDescriptor[] = [];
   for (const dir of agentDirs) kits.push(describeKit(await loadAgent(dir), source));
-  kits.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return HostedCatalogSchema.parse({ v: 1, contractVersion: CONTRACT_VERSION, artifact: { name: "@codespar/hosted-kits", version: artifactVersion, commit: source.commit }, kits });
+  const cookbooks = source.cookbooks !== undefined ? source.cookbooks : existsSync(join(source.root, COOKBOOKS_FILE)) ? loadCookbooks(source.root) : null;
+  return assembleCatalog(kits, cookbooks, { version: artifactVersion, commit: source.commit });
+}
+
+/**
+ * The catalog of these descriptors and the recipes of `cookbooks` (v1.8), the one assembly the source catalog and the
+ * artifact build share. Refused when a recipe and the kits disagree (`buildRecipes`) or the contract does.
+ */
+export function assembleCatalog(descriptors: readonly HostedKitDescriptor[], cookbooks: CookbooksFile | null, artifact: { version: string; commit: string }): HostedCatalog {
+  const kits = [...descriptors].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const recipes = cookbooks ? { recipes: buildRecipes(cookbooks, kits) } : {};
+  return HostedCatalogSchema.parse({ v: 1, contractVersion: CONTRACT_VERSION, artifact: { name: "@codespar/hosted-kits", version: artifact.version, commit: artifact.commit }, kits, ...recipes });
 }

@@ -50,6 +50,86 @@ const HASH = /^sha256:[0-9a-f]{64}$/;
 
 const JsonSchemaObject = z.record(z.string(), z.unknown());
 
+/** A docs cookbook slug (`content/docs/cookbooks/<slug>.mdx` on the docs site). */
+export const COOKBOOK_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const Words = z.object({ "pt-BR": z.string().min(1).max(600), en: z.string().min(1).max(600) }).strict();
+/** One business input of an example as a person reads it (v1.8): what the run is about, never a key or a document. */
+export const ExampleInputSchema = z.object({ label: z.string().min(1).max(40), value: z.string().min(1).max(120) }).strict();
+const ExampleWords = z.object({ title: z.string(), description: z.string(), inputs: z.array(ExampleInputSchema).max(8).optional() }).strict();
+
+/**
+ * One docs cookbook as the catalog offers it (CONTRATO v1.8, `cookbooks.yaml` at the repository root). `hosted`: a kit and
+ * one of its examples run it in the Playground; `coverage: partial` says what the kit does NOT cover. `local`: it runs on
+ * the person's machine from a CLI template (`command`), never in the Playground. `reference`: a page to read. A recipe that
+ * is not hosted says why (`reason`).
+ */
+export const RecipeSchema = z
+  .object({
+    slug: z.string().regex(COOKBOOK_SLUG),
+    title: Words,
+    status: z.enum(["hosted", "local", "reference"]),
+    kit: z.string().regex(/^[a-z0-9-]+$/).nullable(),
+    example: z.string().regex(/^[a-z0-9-]+$/).nullable(),
+    coverage: z.enum(["full", "partial"]).nullable(),
+    notCovered: Words.nullable(),
+    template: z.string().regex(/^[a-z0-9-]+$/).nullable(),
+    command: z.string().min(1).max(200).nullable(),
+    inputs: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), "pt-BR": z.string().min(1).max(200), en: z.string().min(1).max(200) }).strict()).max(12),
+    prerequisites: z
+      .object({
+        /** Environment variable names the person sets; never a value. */
+        keys: z.array(z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/)).max(8),
+        mandate: Words.nullable(),
+        /** Provider connections (MCP server names) the recipe needs in the project. */
+        connections: z.array(z.string().regex(/^[a-z0-9-]+$/)).max(8),
+      })
+      .strict(),
+    expected: Words,
+    reason: Words.nullable(),
+  })
+  .strict()
+  .superRefine((r, ctx) => {
+    const issue = (message: string, path: string[]) => ctx.addIssue({ code: z.ZodIssueCode.custom, message, path });
+    if (r.status === "hosted") {
+      if (!r.kit || !r.example) issue("a hosted recipe names its kit and example", ["kit"]);
+      if (!r.coverage) issue("a hosted recipe says whether the kit covers it in full or in part", ["coverage"]);
+      if ((r.coverage === "partial") !== (r.notCovered !== null)) issue("notCovered is stated exactly when the coverage is partial", ["notCovered"]);
+      if (r.reason !== null) issue("a hosted recipe has no reason not to be hosted", ["reason"]);
+    } else {
+      if (r.kit !== null || r.example !== null || r.coverage !== null || r.notCovered !== null) issue(`a ${r.status} recipe names no kit, example or coverage`, ["kit"]);
+      if (r.reason === null) issue(`a ${r.status} recipe says why it is not hosted`, ["reason"]);
+    }
+    if (r.status === "local" && (!r.template || !r.command)) issue("a local recipe names its CLI template and the command that exports it", ["template"]);
+    if (r.status === "reference" && (r.template !== null || r.command !== null)) issue("a reference recipe exports nothing", ["template"]);
+    if ((r.template === null) !== (r.command === null)) issue("command is stated exactly when a CLI template is", ["command"]);
+  });
+
+export type Recipe = z.infer<typeof RecipeSchema>;
+
+/**
+ * What the recipes and the kits must agree on (v1.8), as problems: one entry per slug, a hosted recipe names a kit and an
+ * example that exist, and a kit that declares a cookbook has its recipe, hosted on that kit. The build refuses on any.
+ */
+export function recipeProblems(recipes: readonly Recipe[], kits: ReadonlyArray<Pick<HostedKitDescriptor, "id" | "exampleIds" | "cookbook">>): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const r of recipes) {
+    if (seen.has(r.slug)) problems.push(`cookbook ${r.slug} is listed twice`);
+    seen.add(r.slug);
+    if (r.status !== "hosted") continue;
+    const kit = kits.find((k) => k.id === r.kit);
+    if (!kit) problems.push(`cookbook ${r.slug} is hosted on ${r.kit}, which is not a kit of this catalog`);
+    else if (!kit.exampleIds.includes(r.example!)) problems.push(`cookbook ${r.slug} runs example ${r.example}, which ${r.kit} does not have`);
+  }
+  for (const k of kits) {
+    if (!k.cookbook) continue;
+    const r = recipes.find((x) => x.slug === k.cookbook);
+    if (!r) problems.push(`${k.id} declares cookbook ${k.cookbook}, which cookbooks.yaml does not list`);
+    else if (r.status !== "hosted" || r.kit !== k.id) problems.push(`${k.id} declares cookbook ${k.cookbook}, which cookbooks.yaml does not host on ${k.id}`);
+  }
+  return problems;
+}
+
 export const HostedKitDescriptorSchema = z
   .object({
     id: z.string().regex(/^[a-z0-9-]+$/),
@@ -96,6 +176,8 @@ export const HostedKitDescriptorSchema = z
     recommended: z.object({ example: z.string(), rank: z.number().int().min(1) }).strict().nullable(),
     /** First runs on another executor and model mode than the simulator's replay (`presentation.recommendedRuns`): today the integrated Test with a model. */
     recommendedRuns: z.array(z.object({ executor: z.literal("codespar-test"), modelMode: z.literal("model"), example: z.string(), rank: z.number().int().min(1).max(99) }).strict()),
+    /** v1.8: the docs cookbook this kit implements (`presentation.cookbook`), null when none. Absent in artifacts before v1.8. */
+    cookbook: z.string().regex(COOKBOOK_SLUG).nullable().optional(),
     exampleIds: z.array(z.string()),
     examples: z.array(
       z
@@ -106,10 +188,8 @@ export const HostedKitDescriptorSchema = z
           /** What the person typed in each recorded turn, in order; `input` as in the scenario pack. */
           turns: z.array(z.object({ input: z.string() }).strict()).nonempty(),
           replay: z.boolean(),
-          presentation: z
-            .object({ "pt-BR": z.object({ title: z.string(), description: z.string() }).strict(), en: z.object({ title: z.string(), description: z.string() }).strict() })
-            .strict()
-            .nullable(),
+          /** v1.8: `inputs` per locale, only when the kit states the example's business inputs. */
+          presentation: z.object({ "pt-BR": ExampleWords, en: ExampleWords }).strict().nullable(),
         })
         .strict(),
     ),
@@ -150,9 +230,12 @@ export const HostedCatalogSchema = z
     contractVersion: z.literal(CONTRACT_VERSION),
     artifact: z.object({ name: z.literal("@codespar/hosted-kits"), version: z.string(), commit: z.string().regex(COMMIT) }).strict(),
     kits: z.array(HostedKitDescriptorSchema),
+    /** v1.8: one entry per docs cookbook (`cookbooks.yaml`). Absent in artifacts before v1.8. */
+    recipes: z.array(RecipeSchema).optional(),
   })
   .strict()
   .superRefine((c, ctx) => {
+    if (c.recipes) for (const message of recipeProblems(c.recipes, c.kits)) ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: ["recipes"] });
     const ids = c.kits.map((k) => k.id);
     if (JSON.stringify(ids) !== JSON.stringify([...ids].sort())) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "kits sorted by id", path: ["kits"] });
     if (new Set(ids).size !== ids.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate kit id", path: ["kits"] });

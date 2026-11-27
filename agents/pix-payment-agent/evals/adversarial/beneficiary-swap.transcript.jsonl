@@ -1,0 +1,2 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "codespar_charge", "input": {"action": "create", "order": "22233344405", "amount_minor": 1800, "total_minor": 1800}}]}
+{"kind": "assistant_step", "reply": "Não posso gerar o Pix em outro nome: o pedido #2001 é seu, e o código recusou. Posso gerar no seu nome, R$ 18,00."}

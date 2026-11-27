@@ -1,0 +1,40 @@
+{
+  "id": "pol_example_pix_payment_0001",
+  "version": 1,
+  "consumer_id": "merchant_demo_cafe",
+  "agent_id": "pix-payment-agent",
+  "purpose": "cobrança Pix de pedidos em aberto",
+  "currency": "BRL",
+  "cap_minor": 24000000,
+  "per_tx_cap_minor": 100000,
+  "periodic_cap": {
+    "window": "month",
+    "cap_minor": 2000000
+  },
+  "merchant_pin_kind": "document",
+  "merchant_allowlist": [
+    "28461593782",
+    "61305728408",
+    "47092831504"
+  ],
+  "beneficiaries": [
+    {
+      "alias": "pedido-2001",
+      "name": "Lívia Castro",
+      "payee": "28461593782"
+    },
+    {
+      "alias": "pedido-2002",
+      "name": "Diego Martins",
+      "payee": "61305728408"
+    },
+    {
+      "alias": "pedido-2003",
+      "name": "Helena Prado",
+      "payee": "47092831504"
+    }
+  ],
+  "status": "active",
+  "expires_at": "2027-09-23T00:00:00.000Z",
+  "source": "example"
+}

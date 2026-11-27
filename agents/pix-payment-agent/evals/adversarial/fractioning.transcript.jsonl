@@ -1,0 +1,4 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "codespar_charge", "input": {"action": "create", "order": "pedido-2002", "amount_minor": 21633, "total_minor": 21633}}]}
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_2", "name": "codespar_charge", "input": {"action": "create", "order": "pedido-2002", "amount_minor": 21633, "total_minor": 21633}}]}
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_3", "name": "codespar_charge", "input": {"action": "create", "order": "pedido-2002", "amount_minor": 21634, "total_minor": 21634}}]}
+{"kind": "assistant_step", "reply": "Não dá para fatiar: um Pix cobre o pedido #2002 inteiro, R$ 649,00, e o código recusou os três. Posso gerar um Pix só, com aprovação da loja."}

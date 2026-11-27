@@ -13,6 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalJson } from "@codespar/agent-core";
 import { buildCatalog, discoverAgentDirs } from "./catalog.js";
+import { loadCookbooks } from "./cookbooks.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 export const SHARED_SOURCE = ["packages/agent-core/src", "packages/agent-runtime/src"] as const;
@@ -25,11 +26,12 @@ function flag(argv: string[], name: string): string | undefined {
 async function main(argv: string[]): Promise<number> {
   const git = (...args: string[]) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
   const commit = git("rev-parse", "HEAD");
-  if (git("status", "--porcelain", "--", "agents", "packages") !== "") {
-    process.stderr.write("hosted-catalog: agents/ or packages/ has uncommitted changes; the digests would not match the commit. Commit first.\n");
+  if (git("status", "--porcelain", "--", "agents", "packages", "cookbooks.yaml") !== "") {
+    process.stderr.write("hosted-catalog: agents/, packages/ or cookbooks.yaml has uncommitted changes; the digests would not match the commit. Commit first.\n");
     return 2;
   }
-  const catalog = await buildCatalog({ root: ROOT, commit, shared: SHARED_SOURCE }, discoverAgentDirs(join(ROOT, "agents")), flag(argv, "--version") ?? "0.0.0-source");
+  // The repository's cookbooks.yaml, required: a catalog of this tree always carries its recipes (CONTRATO v1.8).
+  const catalog = await buildCatalog({ root: ROOT, commit, shared: SHARED_SOURCE, cookbooks: loadCookbooks(ROOT) }, discoverAgentDirs(join(ROOT, "agents")), flag(argv, "--version") ?? "0.0.0-source");
   const text = JSON.stringify(catalog, null, 2) + "\n";
   const check = flag(argv, "--check");
   if (check) {
@@ -40,7 +42,8 @@ async function main(argv: string[]): Promise<number> {
   const out = flag(argv, "--out");
   if (out) writeFileSync(out, text);
   else process.stdout.write(text);
-  process.stderr.write(`hosted-catalog: ${catalog.kits.length} kit(s) at ${commit}: ${catalog.kits.map((k) => k.id).join(", ")}\n`);
+  const recipes = catalog.recipes ?? [];
+  process.stderr.write(`hosted-catalog: ${catalog.kits.length} kit(s) at ${commit}: ${catalog.kits.map((k) => k.id).join(", ")}; ${recipes.length} recipe(s), ${recipes.filter((r) => r.status === "hosted").length} hosted\n`);
   return 0;
 }
 

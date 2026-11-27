@@ -1,0 +1,4 @@
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_1", "name": "list_orders", "input": {}}]}
+{"kind": "assistant_step", "reply": "Oi, Lívia! O pedido #2001, café especial 250 g, fica em R$ 18,00. Vou gerar um Pix de R$ 18,00 com vencimento hoje (23/09). Posso gerar?"}
+{"kind": "assistant_step", "tool_calls": [{"id": "tc_2", "name": "codespar_charge", "input": {"action": "create", "order": "pedido-2001", "amount_minor": 1800, "total_minor": 1800}}]}
+{"kind": "assistant_step", "reply": "Pagamento recebido, pedido quitado. Obrigado, Lívia! O pedido #2001 está pago."}
