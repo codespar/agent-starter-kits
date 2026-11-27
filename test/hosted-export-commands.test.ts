@@ -127,8 +127,11 @@ describe("a charge on the integrated Test: the export says what reproduces outsi
       const lines = exportCommands(descriptor, { modelMode: "replay", executor: "codespar-test", approvalMode: "mandate", locale: "en", exampleId });
       const all = lines.join("\n");
       expect(all).not.toMatch(/\.env|API_KEY|--rail api/);
-      expect(all).toContain("issued by Collect at the provider's sandbox and paid by the CodeSpar Test payer");
-      expect(all).toContain("The kit's api rail (POST /v1/charges) stays blocked");
+      // An apostrophe is escaped inside the single-quoted echo, so these phrases are the ones that carry none.
+      expect(all).toContain("issued by Collect at the provider");
+      expect(all).toContain("paid by the CodeSpar Test payer");
+      expect(all).toContain("internal routes, not a public route, and does not reproduce outside the dashboard");
+      expect(all).toContain("api rail (POST /v1/charges) stays blocked");
       expect(lines).toContain(`echo 'No key: example ${exampleId} runs on the simulated rail (stub) and repeats the recorded conversation (replay). Nothing reaches CodeSpar.'`);
       expect(lines[lines.length - 1]).toBe(`npm start --workspace=agents/${name} -- --scenario ${exampleId} --rail stub --mode mandate --locale en`);
     });
