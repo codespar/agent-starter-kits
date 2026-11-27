@@ -148,7 +148,7 @@ describe("a charge on the integrated Test: the export reproduces it through Coll
       // A recording's due dates are the recording's: on the API rail (the wall clock) the recorded charge would be refused.
       expect(all).not.toMatch(/\.env|API_KEY/);
       expect(all).toContain(`No key: example ${exampleId} repeats the recorded conversation (replay) on the simulated rail (stub), with the recording`);
-      expect(all).toContain("run it with a model: --rail api --simulate-payer --provider anthropic");
+      expect(all).toContain("run it with a model: --rail api --simulate-payer --wait 300 --provider anthropic");
       expect(all).toContain("issued as a Collect link at the provider");
       expect(lines[lines.length - 1]).toBe(`npm start --workspace=agents/${name} -- --scenario ${exampleId} --rail stub --mode mandate --locale en`);
     });

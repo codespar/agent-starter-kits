@@ -147,6 +147,22 @@ describe("the Test payer and the read: from the link to the Collect receipt, cre
     expect(routes(fake).at(-1)).toBe("GET /v1/collect/links/cl_…/payments");
   });
 
+  it("the same attempt presented again after it was paid answers the paid link, and its Collect receipt stays readable", async () => {
+    const { fake, api, rail } = await rig();
+    const issued = await rail.pay(payment());
+    if (issued.status !== "accepted") throw new Error("not accepted");
+    expect(await payCollectLinkAsTestPayer(api, issued.transaction_id, { sleep: async () => undefined })).toMatchObject({ ok: true });
+    await api.get("/v1/collect/{linkId}", { path: { linkId: issued.transaction_id } });
+    // Another process (a new rail, nothing in memory) presenting the same attempt: the create answers the same link, already paid.
+    const fresh = new CollectChargeRail(api, { clock });
+    const again = await fresh.pay(payment());
+    expect(again).toMatchObject({ status: "settled", transaction_id: issued.transaction_id });
+    if (again.status !== "settled" || !again.receipt_id) throw new Error("not settled with a receipt");
+    expect(again.receipt_id).toMatch(/^clr_/);
+    expect(fake.links.size).toBe(1);
+    expect(await fresh.receipt(again.receipt_id, ACTOR)).toMatchObject({ receipt_id: again.receipt_id, kind: "charge", state: "paid" });
+  });
+
   it("an open attempt with its Pix is shown before it is paid: the read carries the copia-e-cola", async () => {
     const { api, rail } = await rig({ issuingReads: 1 });
     const issued = await rail.pay(payment());

@@ -248,7 +248,7 @@ export class CollectChargeRail implements PaymentRail {
       }
     }
     const page = await this.page(link.id);
-    if (page.kind === "view") return outcomeOfPage(page.view);
+    if (page.kind === "view") return this.seen(outcomeOfPage(page.view), page.view.id);
     if (page.kind === "gone") return { status: "failed", code: "charge_cancelled", message: `link ${link.id} was withdrawn before anybody paid it` };
     // Published, and its read did not answer: the link exists and may be paid. Never "not issued".
     return { status: "uncertain", code: page.failure.code, message: `link ${link.id} was published and its read answered ${page.failure.code}: ${page.failure.message}` };
@@ -268,8 +268,12 @@ export class CollectChargeRail implements PaymentRail {
     const page = await this.page(linkId);
     if (page.kind === "gone") return { status: "failed", code: "charge_cancelled", message: `link ${linkId} was withdrawn unpaid` };
     if (page.kind === "failure") return isUncertain(page.failure) || page.failure.status === 429 ? { status: "in_flight" } : { status: "uncertain", code: page.failure.code, message: page.failure.message };
-    const outcome = outcomeOfPage(page.view);
-    if (outcome.status === "settled" && outcome.receipt_id) this.linkOfReceipt.set(outcome.receipt_id, page.view.id);
+    return this.seen(outcomeOfPage(page.view), page.view.id);
+  }
+
+  /** A settled outcome's receipt is read off its link's payments: the link is kept for `receipt()`, whichever call saw it paid. */
+  private seen(outcome: RailOutcome, linkId: string): RailOutcome {
+    if (outcome.status === "settled" && outcome.receipt_id) this.linkOfReceipt.set(outcome.receipt_id, linkId);
     return outcome;
   }
 

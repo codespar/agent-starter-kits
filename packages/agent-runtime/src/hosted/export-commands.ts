@@ -88,7 +88,7 @@ const TEXT = {
     chargePayer:
       "Com --simulate-payer, o pagador de teste da CodeSpar paga a cobrança uma vez, com um Pix real no sandbox do provedor (POST /v1/collect/{linkId}/attempts e POST /v1/collect/attempts/{attemptId}/test-pay). Sem ele, o kit mostra o link do Collect para uma pessoa pagar na página de teste.",
     chargeScenario: (id: string) =>
-      `Sem chave: o exemplo ${id} repete a conversa gravada (replay) no trilho simulado (stub), com as datas da gravação, e nada chega à CodeSpar. Para fazer as chamadas do Collect com a sua chave de teste, rode com um modelo: --rail api --simulate-payer --provider anthropic.`,
+      `Sem chave: o exemplo ${id} repete a conversa gravada (replay) no trilho simulado (stub), com as datas da gravação, e nada chega à CodeSpar. Para fazer as chamadas do Collect com a sua chave de teste, rode com um modelo: --rail api --simulate-payer --wait 300 --provider anthropic.`,
   },
   en: {
     keys: (env: string, names: string[]) => `Fill in ${env}: ${names.join("; ")}. Without them, the last command stops and says which one is missing.`,
@@ -107,7 +107,7 @@ const TEXT = {
     chargePayer:
       "With --simulate-payer, the CodeSpar Test payer pays the charge once, with a real Pix at the provider's sandbox (POST /v1/collect/{linkId}/attempts and POST /v1/collect/attempts/{attemptId}/test-pay). Without it, the kit shows the Collect link for a person to pay on the test page.",
     chargeScenario: (id: string) =>
-      `No key: example ${id} repeats the recorded conversation (replay) on the simulated rail (stub), with the recording's dates, and nothing reaches CodeSpar. To make the Collect calls with your test key, run it with a model: --rail api --simulate-payer --provider anthropic.`,
+      `No key: example ${id} repeats the recorded conversation (replay) on the simulated rail (stub), with the recording's dates, and nothing reaches CodeSpar. To make the Collect calls with your test key, run it with a model: --rail api --simulate-payer --wait 300 --provider anthropic.`,
   },
 } as const;
 

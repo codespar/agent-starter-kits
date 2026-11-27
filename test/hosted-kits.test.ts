@@ -242,7 +242,7 @@ describe("hosted, on the simulator, from each kit's own example", () => {
     // that a run with a model reaches Collect through --rail api (D1 of 27/11, OPEN_QUESTIONS §69).
     expect(exported.code.commands[exported.code.commands.length - 1]).toBe("npm start --workspace=agents/checkout-agent -- --scenario aula-experimental --rail stub --mode human --locale pt-BR");
     expect(exported.code.commands.join("\n")).not.toMatch(/CODESPAR_API_KEY|\.env/);
-    expect(exported.code.commands.join("\n")).toContain("rode com um modelo: --rail api --simulate-payer --provider anthropic");
+    expect(exported.code.commands.join("\n")).toContain("rode com um modelo: --rail api --simulate-payer --wait 300 --provider anthropic");
   });
 
   it("a charging kit on a host without the charge port has no codespar-test run: it is refused, never paid out as a payment proposal", async () => {
