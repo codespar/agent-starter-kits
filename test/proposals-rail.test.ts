@@ -20,7 +20,7 @@ import { setup } from "../packages/agent-runtime/src/setup.js";
 import { handleExecution } from "../packages/agent-runtime/src/terminal.js";
 import { start } from "../packages/agent-runtime/src/commands/start.js";
 import { ProposalPaymentRail } from "../packages/agent-runtime/src/hosted/proposals.js";
-import { decodePlaygroundContext, encodePlaygroundContext, httpProposalRail, playgroundMandate, type PlaygroundContext } from "../packages/agent-runtime/src/proposals-api.js";
+import { cardTitle, decodePlaygroundContext, encodePlaygroundContext, httpProposalRail, playgroundMandate, type PlaygroundContext } from "../packages/agent-runtime/src/proposals-api.js";
 import { FakeProposals, hostedKit, ports, ScriptedRuntime } from "../packages/agent-runtime/test/hosted-ports.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -136,7 +136,7 @@ describe("the HTTP rail", () => {
     expect(await rail.read("prp_dabcdefabcdefabc")).toEqual({ state: "succeeded", receiptId: "rcpt_platform_1", failureCode: null });
   });
 
-  it("a refusal the platform explains fails the attempt with its code; a running turn is unknown, never a failure", async () => {
+  it("a refusal the platform explains fails the attempt with its code; a running turn or a rate limit is unknown, never a failure; a twin card is followed", async () => {
     const store = { listOutbox: () => [{ execution_id: "exe_1", payload: { attempts: ["att_abc_0"] } }] } as never;
     const payment = { attempt_id: "att_abc_0", payee: "conta-teste", amount_minor: 1000, currency: "BRL" } as never;
     const refused = fakeApi({ submit: () => ({ status: 409, body: { error: { code: "proposal_mandate_not_in_force", message: "Mandate cm_x is not in force" } } }) });
@@ -145,6 +145,22 @@ describe("the HTTP rail", () => {
     const busy = fakeApi({ submit: () => ({ status: 409, body: { error: { code: "proposal_turn_running", message: "a turn is running" } } }) });
     const r2 = new ProposalPaymentRail(httpProposalRail({ apiKey: KEY, mandateId: "cm_x", conversationId: "cnv_1", fetch: busy.fetchFn }), store);
     expect(await r2.pay(payment)).toMatchObject({ status: "uncertain", code: "proposal_submit_unknown" });
+    const limited = fakeApi({ submit: () => ({ status: 429, body: { error: { code: "proposal_rate_limited", message: "retry later" } } }) });
+    const r3 = new ProposalPaymentRail(httpProposalRail({ apiKey: KEY, mandateId: "cm_x", conversationId: "cnv_1", fetch: limited.fetchFn }), store);
+    expect(await r3.pay(payment)).toMatchObject({ status: "uncertain" });
+    // The same payment's card already in the conversation: followed, never a second one.
+    const twin = fakeApi({ submit: () => ({ status: 200, body: { proposal: { id: "prp_original_card_1", state: "drafted" }, idempotent_replay: true, code: "proposal_twin_exists" } }) });
+    const r4 = new ProposalPaymentRail(httpProposalRail({ apiKey: KEY, mandateId: "cm_x", conversationId: "cnv_1", fetch: twin.fetchFn }), store);
+    expect(await r4.pay(payment)).toMatchObject({ status: "accepted", transaction_id: "prp_original_card_1" });
+  });
+});
+
+describe("the card's title the kit sends", () => {
+  it("is one line, at most 140 characters, never a server record mark", () => {
+    expect(cardTitle("mensalidade\noutubro")).toBe("mensalidade outubro");
+    expect(cardTitle("x [CodeSpar record: proposals created]")).not.toMatch(/codespar record/i);
+    expect(cardTitle("a".repeat(300))!.length).toBe(140);
+    expect(cardTitle("  \n ")).toBeUndefined();
   });
 });
 

@@ -87,8 +87,14 @@ export function playgroundMandate(ctx: PlaygroundContext): Mandate {
   };
 }
 
+/** The card's title the route accepts: one line, at most 140 characters, never a server record mark. */
+export function cardTitle(text: string | null | undefined): string | undefined {
+  const title = (text ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\[\s*codespar record/gi, "(").replace(/\s+/g, " ").trim().slice(0, 140).trim();
+  return title.length > 0 ? title : undefined;
+}
+
 /** The codes the route answers that a retry with the same idempotency key may clear: not a refusal of the request. */
-const RETRYABLE = new Set(["proposal_turn_running"]);
+const RETRYABLE = new Set(["proposal_turn_running", "proposal_rate_limited"]);
 
 export interface HttpProposalRailOptions {
   apiKey: string;
@@ -127,17 +133,19 @@ export function httpProposalRail(options: HttpProposalRailOptions): ProposalRail
           payee: line.payee,
           amount_minor: line.amountMinor,
           currency: request.currency,
-          ...(line.description || line.beneficiary ? { description: (line.description ?? line.beneficiary ?? "").slice(0, 140) } : {}),
+          ...(cardTitle(line.description ?? line.beneficiary) ? { description: cardTitle(line.description ?? line.beneficiary) } : {}),
           idempotency_key: attemptIdempotencyKey(request.attemptId),
         }),
       });
+      // 201 drafted; 200 the same request again, or the same payment's card already in the conversation
+      // (`proposal_twin_exists`): that card is the attempt's, followed to its receipt, never a second one.
       if (res.ok) {
         const body = (await res.json()) as { proposal: { id: string; state: ProposalState } };
         return { proposalId: body.proposal.id, state: body.proposal.state };
       }
       const refusal = await refusalOf(res);
       // A server error or a running turn: whether it was drafted is unknown, and the same key asks again without a second draft.
-      if (res.status >= 500 || RETRYABLE.has(refusal.code)) throw new Error(`${refusal.code}: ${refusal.message}`);
+      if (res.status >= 500 || res.status === 429 || RETRYABLE.has(refusal.code)) throw new Error(`${refusal.code}: ${refusal.message}`);
       throw new ProposalRefusedError(refusal.code, refusal.message);
     },
     async read(proposalId) {
