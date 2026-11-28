@@ -47,6 +47,20 @@ export function isFenced(err: unknown): err is { reason?: string } {
   return err instanceof FencedError || (err instanceof Error && (err.name === "FencedError" || (err as { code?: unknown }).code === "fenced"));
 }
 
+/**
+ * The platform refused to draft the proposal, and said why (its code and words): a definite answer, not an unknown one. The
+ * attempt fails with that code and nothing was drafted. Thrown by a `ProposalRail` that speaks to the API (proposals-api.ts).
+ */
+export class ProposalRefusedError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ProposalRefusedError";
+  }
+}
+
 export type ProposalState = "drafted" | "awaiting_approval" | "executing" | "succeeded" | "failed" | "denied";
 
 /** What the host offers for `codespar-test`. Both calls are the host's; neither pays. */
@@ -89,6 +103,8 @@ export class ProposalPaymentRail implements PaymentRail {
     } catch (err) {
       // A fence is not an unknown answer: the process stops, and the new owner looks at the attempt.
       if (isFenced(err)) throw err;
+      // A refusal the platform explained is the attempt's answer: nothing was drafted, and asking again would be refused again.
+      if (err instanceof ProposalRefusedError) return { status: "failed", code: err.code, message: err.message, raw: { refused: err.code } };
       // Whether the host drafted it is unknown; a look submits again under the same attempt, which drafts nothing twice.
       return { status: "uncertain", code: "proposal_submit_unknown", message: err instanceof Error ? err.message : String(err) };
     }

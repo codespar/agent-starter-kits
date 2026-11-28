@@ -63,11 +63,11 @@ npm start --workspace=agents/<kit> -- --mode <human|mandate> --locale <pt-BR|en>
 
 The start command carries what the run used:
 
-- **Integrated Test** (`codespar-test`): `--rail api`. Put a test key (`csk_test_`) in `agents/<kit>/.env`; you create it in the CodeSpar console, under API keys, in test mode. The commands never contain a key. Without it, the start stops and names `CODESPAR_API_KEY` and the file.
+- **Integrated Test** (`codespar-test`): `--rail proposals --playground <context>`. The same path the Playground took: each payment becomes ONE platform proposal in the run's own Playground conversation, under the run's mandate, and you pay it on its card in the dashboard. The kit drafts it through `POST /v1/proposals` and reads it back through `GET /v1/proposals/:id` until the receipt (it waits up to 10 minutes, then `npm run resume` picks it up). It signs no mandate, adds no balance and pays nothing. `<context>` is the run's conversation id and its mandate (caps, expiry, receivers by alias and name; no key, no signature). Put a test key (`csk_test_`) of the same project, with the `proposals:draft` scope, in `agents/<kit>/.env`; you create it in the CodeSpar console, under API keys, in test mode. The commands never contain a key. Without the key or the context, the start stops and names what is missing.
 - **Configured model**: `--provider anthropic`, and `ANTHROPIC_MODEL=<model>` when the Playground says which model it ran. Put your `ANTHROPIC_API_KEY` in the same `.env`. Without it, the start stops and names the variable. The commands also echo the example's first message, which is what the Playground sent first.
 - **Replay** (no model): `--scenario <example>`. It runs on the local stub rail and repeats the recorded conversation; it says so when it starts, and nothing reaches CodeSpar.
 
-A start with no `--rail` and no CodeSpar key says `[stub] no CODESPAR_API_KEY` before it runs: on the stub rail nothing reaches CodeSpar. It is the same kit on your machine, not the Playground's run: the integrated Test's proposals and its mandate are the platform's, and your local run signs its own test mandate on the first start.
+A start with no `--rail` and no CodeSpar key says `[stub] no CODESPAR_API_KEY` before it runs: on the stub rail nothing reaches CodeSpar. `--rail api` (the kit's own consented mandate, paid through the API) and the stub rail stay as they are for anyone who wants them; a Playground run's export no longer points to them.
 
 ## How it works
 

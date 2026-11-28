@@ -14,6 +14,8 @@ import { executorLabel, executorOf, formatBRL, isExecutorRefusal, railErrorOf, t
 import { pollUntilClosed, type PollResult } from "./poll.js";
 import { draftRefusals, refusalLine, sayOutcome } from "./outcome.js";
 import { inLocaleOf, type Setup } from "./setup.js";
+import { PROPOSAL_FORWARD_CHANNEL } from "./hosted/proposals.js";
+import { PROPOSALS_STRINGS } from "./proposals-api.js";
 
 export interface TerminalOptions {
   setup: Setup;
@@ -104,6 +106,10 @@ export async function handleExecution(execution: Execution, options: TerminalOpt
   for (const line of describeExecution(execution, setup)) say(line);
 
   let current = execution;
+  // `--rail proposals` (a Playground run's export): as on the hosted integrated Test, the kit's approval is not where the
+  // person decides; the proposal's card is. The execution is forwarded (channel `platform-proposal`), the engine runs its
+  // last gate and drafts the proposal, and the run waits for the person to pay or refuse it on the dashboard.
+  if (setup.railKind === "proposals") return proposalExecution(current, options, say);
   if (current.state === "awaiting_approval") {
     const gesture = options.decision === undefined && current.batch ? options.gestures?.get(current.batch.ref) : undefined;
     if (gesture) {
@@ -321,3 +327,36 @@ export function transitionLine(execution: Execution): string {
   const human = execution.state === "executing" && execution.reason === "rail_needs_human" && execution.detail ? ` — ${execution.detail}` : "";
   return `  -> ${execution.state}${execution.reason ? ` (${execution.reason})` : ""}${answer}${human}`;
 }
+
+/** `--rail proposals`: forward, draft the proposal, and read it back until the person pays or refuses it (or the wait ends). */
+async function proposalExecution(execution: Execution, options: TerminalOptions, say: (line: string) => void): Promise<Execution> {
+  const { setup, approver } = options;
+  const engine = setup.engine;
+  const strings = PROPOSALS_STRINGS[setup.locale];
+  let current = execution;
+  if (current.state === "awaiting_approval") {
+    current = engine.approve(current.id, { id: approver.id, channel: PROPOSAL_FORWARD_CHANNEL });
+    say(transitionLine(current));
+  }
+  if (current.state === "approved") {
+    current = await engine.execute(current.id);
+    say(transitionLine(current));
+  }
+  const proposalId = current.outcomes.find((o) => o.transaction_id)?.transaction_id ?? null;
+  if (current.state === "executing" && proposalId) {
+    say(strings.drafted(proposalId));
+    const waitSeconds = options.waitSeconds ?? PROPOSAL_WAIT_SECONDS;
+    const deadline = Date.now() + waitSeconds * 1000;
+    while (current.state === "executing" && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, setup.pollIntervalMs || 3_000));
+      current = await engine.reconcile(current.id);
+    }
+    say(transitionLine(current));
+    if (current.state === "executing") say(strings.timedOut(proposalId, waitSeconds));
+  }
+  receiptLines(current, setup, say);
+  return current;
+}
+
+/** How long a terminal run waits for the person to pay or refuse a proposal before it leaves it to `npm run resume`. */
+const PROPOSAL_WAIT_SECONDS = 600;

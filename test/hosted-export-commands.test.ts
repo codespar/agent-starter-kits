@@ -13,6 +13,7 @@ import { basename, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createHostedRun, discoverAgentDirs } from "@codespar/agent-runtime";
 import { exportCommands } from "../packages/agent-runtime/src/hosted/export-commands.js";
+import { decodePlaygroundContext, encodePlaygroundContext } from "../packages/agent-runtime/src/proposals-api.js";
 import { hostedKit, ports } from "../packages/agent-runtime/test/hosted-ports.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -53,20 +54,48 @@ describe("the exported commands install outside this repository", () => {
 describe("the exported commands say and prepare what the Playground run used", () => {
   const bills = () => hostedKit(join(ROOT, "agents/bills-agent"), ROOT);
 
-  it("integrated Test with a model: the CodeSpar API rail, the model and its id, the example's first message, each key named and none written", async () => {
+  const PLAYGROUND = {
+    v: 1 as const,
+    conversation_id: "cnv_playground_1",
+    mandate: {
+      id: "cm_HICRUYzxiZZiX6Hc",
+      purpose: "playground",
+      cap_minor: 20_000,
+      per_tx_cap_minor: 3_000,
+      periodic_cap: { window: "month" as const, cap_minor: 10_000 },
+      expires_at: "2026-12-03T00:00:00.000Z",
+      beneficiaries: [{ alias: "conta-teste", name: "Recebedor de teste da plataforma" }] as [{ alias: string; name: string }],
+    },
+  };
+
+  it("integrated Test with a model: the run's proposals in its conversation, the model and its id, the example's first message, each key named and none written", async () => {
     const { descriptor } = await bills();
-    const lines = exportCommands(descriptor, { modelMode: "model", executor: "codespar-test", approvalMode: "mandate", locale: "pt-BR", exampleId: "conta-teste" }, { model: "claude-opus-4-7" });
+    const lines = exportCommands(
+      descriptor,
+      { modelMode: "model", executor: "codespar-test", approvalMode: "mandate", locale: "pt-BR", exampleId: "conta-teste" },
+      { model: "claude-opus-4-7", playground: PLAYGROUND },
+    );
     const all = lines.join("\n");
     expect(lines).toContain("cp -n agents/bills-agent/.env.example agents/bills-agent/.env");
-    expect(all).toMatch(/^echo '.*agents\/bills-agent\/\.env.*CODESPAR_API_KEY.*csk_test_.*console da CodeSpar.*ANTHROPIC_API_KEY/m);
+    expect(all).toMatch(/^echo '.*agents\/bills-agent\/\.env.*CODESPAR_API_KEY.*csk_test_.*proposals:draft.*console da CodeSpar.*ANTHROPIC_API_KEY/m);
     expect(all).toContain("echo 'Modelo do Playground: claude-opus-4-7.'");
-    expect(all).toContain("consentimento para o mandato de teste");
+    // No local consent: the proposal is drafted in the same conversation and paid on its card.
+    expect(all).not.toContain("consentimento");
+    expect(all).toContain("mesma conversa do Playground");
     const first = descriptor.examples.find((e) => e.id === "conta-teste")!.turns[0].input;
     expect(all).toContain(`a primeira mensagem foi ${JSON.stringify(first)}`);
-    expect(lines[lines.length - 1]).toBe("ANTHROPIC_MODEL=claude-opus-4-7 npm start --workspace=agents/bills-agent -- --rail api --provider anthropic --mode mandate --locale pt-BR");
-    // No key, no flag that confirms a payment, no comment line a zsh would run as a command.
-    expect(all).not.toMatch(/csk_test_[A-Za-z0-9]{12,}|sk-ant-|--approve|--yes|--simulate-payer/);
+    const start = lines[lines.length - 1]!;
+    expect(start).toBe(`ANTHROPIC_MODEL=claude-opus-4-7 npm start --workspace=agents/bills-agent -- --rail proposals --playground ${encodePlaygroundContext(PLAYGROUND)} --provider anthropic --mode mandate --locale pt-BR`);
+    expect(decodePlaygroundContext(start.split("--playground ")[1]!.split(" ")[0]!)).toEqual(PLAYGROUND);
+    // No key, no flag that confirms a payment, no comment line a zsh would run as a command; never the API rail of the kit's own mandate.
+    expect(all).not.toMatch(/csk_test_[A-Za-z0-9]{12,}|sk-ant-|--approve|--yes|--simulate-payer|--rail api/);
     expect(lines.some((l) => l.startsWith("#"))).toBe(false);
+  });
+
+  it("an integrated run whose host named no conversation exports --rail proposals without a context, which the start refuses by name", async () => {
+    const { descriptor } = await bills();
+    const lines = exportCommands(descriptor, { modelMode: "model", executor: "codespar-test", approvalMode: "human", locale: "en", exampleId: null });
+    expect(lines[lines.length - 1]).toBe("npm start --workspace=agents/bills-agent -- --rail proposals --provider anthropic --mode human --locale en");
   });
 
   it("a replay on the simulator says it runs on the stub rail and the recorded conversation, and asks for no key", async () => {

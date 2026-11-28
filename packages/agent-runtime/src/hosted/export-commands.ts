@@ -13,7 +13,8 @@
  * the root, is the one that comes with the copy.
  *
  * WHAT THE RUN USED, SAID AND ASKED FOR. The start command carries the run's
- * own choices: on `codespar-test` the CodeSpar API rail (`--rail api`), with a
+ * own choices: on `codespar-test` the platform's proposals in the run's own
+ * conversation, under its mandate (`--rail proposals --playground`), with a
  * model the model provider (`--provider anthropic`, and `ANTHROPIC_MODEL` when
  * the host names its model), the approval mode and the language. Each key the
  * command needs is named in a line the commands echo and is never written: the person
@@ -23,6 +24,7 @@
  * the recorded conversation; nothing in it reaches CodeSpar.
  */
 import type { ExecutorId, HostedKitDescriptor, ModelMode } from "./contract.js";
+import { encodePlaygroundContext, type PlaygroundContext } from "../proposals-api.js";
 
 /** The directory the copy lands in: the repository's own name. */
 export const EXPORT_DIR = "agent-starter-kits";
@@ -38,6 +40,11 @@ export interface ExportBinding {
 export interface ExportExtras {
   /** The model the host ran, when it says which (`ModelPort.model`). Not a secret; a key never is passed here. */
   model?: string | undefined;
+  /**
+   * On `codespar-test`: the run's conversation and mandate (ids, caps, receivers' aliases and names; no key, no
+   * signature), so the exported start drafts the same proposals in the same conversation (`--rail proposals`).
+   */
+  playground?: PlaygroundContext | undefined;
 }
 
 type Descriptor = Pick<HostedKitDescriptor, "id" | "source" | "examples" | "needsMandate">;
@@ -48,19 +55,19 @@ const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
 const TEXT = {
   "pt-BR": {
     keys: (env: string, names: string[]) => `Preencha ${env}: ${names.join("; ")}. Sem elas, o último comando para e diz qual falta.`,
-    codesparKey: "CODESPAR_API_KEY com uma chave de teste (csk_test_) que você cria no console da CodeSpar, em API keys, no modo de teste",
+    codesparKey: "CODESPAR_API_KEY com uma chave de teste (csk_test_) deste projeto, com o escopo proposals:draft, que você cria no console da CodeSpar, em API keys, no modo de teste",
     modelKey: "ANTHROPIC_API_KEY com a sua chave da Anthropic",
     model: (model: string) => `Modelo do Playground: ${model}.`,
-    consent: "Antes da primeira mensagem, o kit pede o seu consentimento para o mandato de teste.",
+    proposals: "Cada pagamento vira uma proposta na mesma conversa do Playground, sob o mesmo mandato: pague pelo card no dashboard. O kit não assina mandato, não adiciona saldo e não paga.",
     firstTurn: (id: string, text: string) => `Exemplo ${id}: no Playground, a primeira mensagem foi ${JSON.stringify(text)}.`,
     replay: (id: string) => `Sem chave: o exemplo ${id} roda no trilho simulado (stub) e repete a conversa gravada (replay). Nada chega à CodeSpar.`,
   },
   en: {
     keys: (env: string, names: string[]) => `Fill in ${env}: ${names.join("; ")}. Without them, the last command stops and says which one is missing.`,
-    codesparKey: "CODESPAR_API_KEY with a test key (csk_test_) you create in the CodeSpar console, under API keys, in test mode",
+    codesparKey: "CODESPAR_API_KEY with a test key (csk_test_) of this project, with the proposals:draft scope, that you create in the CodeSpar console, under API keys, in test mode",
     modelKey: "ANTHROPIC_API_KEY with your Anthropic key",
     model: (model: string) => `The Playground's model: ${model}.`,
-    consent: "Before the first message, the kit asks for your consent to the test mandate.",
+    proposals: "Each payment becomes a proposal in the same Playground conversation, under the same mandate: pay it on its card in the dashboard. The kit signs no mandate, adds no balance and pays nothing.",
     firstTurn: (id: string, text: string) => `Example ${id}: in the Playground, the first message was ${JSON.stringify(text)}.`,
     replay: (id: string) => `No key: example ${id} runs on the simulated rail (stub) and repeats the recorded conversation (replay). Nothing reaches CodeSpar.`,
   },
@@ -92,13 +99,14 @@ export function exportCommands(d: Descriptor, b: ExportBinding, extras: ExportEx
     lines.push(`cp -n ${kitDir}/.env.example ${env}`, say(text.keys(env, keys)));
   }
   if (model) lines.push(say(text.model(model)));
-  if (integrated && d.needsMandate) lines.push(say(text.consent));
+  if (integrated && d.needsMandate) lines.push(say(text.proposals));
   if (withModel && example) lines.push(say(text.firstTurn(example.id, example.turns[0].input)));
   if (replayed && !integrated) lines.push(say(text.replay(b.exampleId!)));
 
   const flags = [
     ...(replayed ? ["--scenario", b.exampleId!] : []),
-    ...(integrated ? ["--rail", "api"] : []),
+    // The integrated Test the way the Playground ran it: one platform proposal per attempt, in the run's conversation.
+    ...(integrated ? ["--rail", "proposals", ...(extras.playground ? ["--playground", encodePlaygroundContext(extras.playground)] : [])] : []),
     ...(withModel ? ["--provider", "anthropic"] : []),
     "--mode",
     b.approvalMode,

@@ -33,7 +33,12 @@ import type { ScenarioCheck } from "./scenarios.js";
 import type { AdversarialResult } from "./adversarial.js";
 import type { OutcomeKind } from "./hosted/contract.js";
 
-export type RailKind = "stub" | "api";
+/**
+ * `stub`: the kit's offline fixture. `api`: the CodeSpar API with the kit's own consented mandate. `proposals`: the
+ * integrated Test the way a Playground run takes it, one platform proposal per attempt, paid by a person on its card
+ * (proposals-api.ts); what a `codespar-test` run's export starts.
+ */
+export type RailKind = "stub" | "api" | "proposals";
 
 /**
  * The configuration a kit reads, by name: the process environment on a
